@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "mcp-cpp-sdk",
+  "version": "0.1.0",
+  "description": "Model Context Protocol SDK for C++",
+  "license": "MIT",
+  "builtin-baseline": "120deac3062162151622ca4860575a33844ba10b",
+  "dependencies": []
+}
