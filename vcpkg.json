@@ -5,5 +5,41 @@
   "description": "Model Context Protocol SDK for C++",
   "license": "MIT",
   "builtin-baseline": "120deac3062162151622ca4860575a33844ba10b",
-  "dependencies": []
+  "dependencies": [
+    {
+      "name": "jsoncons",
+      "version>=": "0.176.0"
+    },
+    {
+      "name": "boost-asio",
+      "version>=": "1.85.0"
+    },
+    {
+      "name": "boost-beast",
+      "version>=": "1.85.0"
+    },
+    {
+      "name": "boost-process",
+      "version>=": "1.85.0",
+      "platform": "!uwp"
+    },
+    {
+      "name": "openssl",
+      "version>=": "3.3.0"
+    }
+  ],
+  "features": {
+    "tests": {
+      "description": "Build tests (requires Catch2)",
+      "dependencies": [
+        {
+          "name": "catch2",
+          "version>=": "3.6.0"
+        }
+      ]
+    },
+    "examples": {
+      "description": "Build example applications"
+    }
+  }
 }

@@ -13,20 +13,24 @@
 ### ADR-003: Networking/HTTP/TLS stack
 - Decision: Use Boost.Asio + Boost.Beast for HTTP client/server; OpenSSL for TLS on both client and server.
 - Rationale: Cross-platform, production-proven; required HTTPS support with runtime-configurable server TLS.
+- Vcpkg Ports: `boost-asio`, `boost-beast`, `openssl` (minimum versions pinned in `vcpkg.json`)
 
 ### ADR-004: JSON + JSON-RPC modeling
 - Decision: Use `jsoncons` as the single in-memory JSON model across the SDK and tests; implement explicit JSON-RPC 2.0 message types (request/notification/response) with strict validation.
 - Rationale: The SDK must validate against JSON Schema 2020-12; `jsoncons` provides a JSON Schema implementation supporting draft 2020-12 and is available via vcpkg.
+- Vcpkg Port: `jsoncons` (header-only library, minimum version 0.176.0)
 
 ### ADR-005: JSON Schema validation
 - Decision: Validate protocol messages and tool input/output schemas against the pinned MCP JSON Schema using `jsoncons` JSON Schema support (draft 2020-12).
 - Rationale: SRS requires JSON Schema 2020-12 support; pinned mirror schema declares 2020-12; `jsoncons` explicitly supports draft 2020-12.
+- Implementation: Uses `jsoncons::jsonschema` namespace for schema compilation and validation.
 
 ### ADR-006: Transport support
 - Decision: Implement both required transports:
-  - stdio (newline-delimited JSON)
-  - Streamable HTTP (single endpoint; POST + GET SSE listen; resumability; session management)
+  - stdio (newline-delimited JSON) via `boost-process` for subprocess management
+  - Streamable HTTP (single endpoint; POST + GET SSE listen; resumability; session management) via `boost-asio` and `boost-beast`
 - Rationale: Explicit MUSTs in SRS; required for interoperability.
+- Platform Note: `boost-process` is not available on UWP; stdio transport will be conditionally compiled.
 
 ### ADR-007: Bidirectional operation model
 - Decision: Provide a shared bidirectional JSON-RPC session core used by both client and server roles, with:
@@ -57,8 +61,18 @@
 - Rationale: SRS says SHOULD interoperate with at least one older revision, but MCP 2025-11-25 changed HTTP transport semantics; implementing the legacy transport adds substantial scope.
 
 ### ADR-010: Dependency management via vcpkg (manifest mode) + future vcpkg port
-- Decision: Use vcpkg (manifest mode) for third-party dependencies, pinned via `builtin-baseline`, and ensure the SDK’s CMake install/export layout is compatible with publishing as a vcpkg port later.
+- Decision: Use vcpkg (manifest mode) for third-party dependencies, pinned via `builtin-baseline`, and ensure the SDK's CMake install/export layout is compatible with publishing as a vcpkg port later.
 - Rationale: Deterministic builds and cross-platform dependency resolution are requirements; vcpkg ports require a `vcpkg.json` manifest and a conventional CMake install surface.
+- Pinning Strategy:
+  - `builtin-baseline` in `vcpkg.json` pins the vcpkg registry commit (currently: `120deac3062162151622ca4860575a33844ba10b`)
+  - `vcpkg-configuration.json` mirrors this baseline for consistency
+  - Minimum versions specified per dependency (e.g., `jsoncons>=0.176.0`, `openssl>=3.3.0`)
+  - Upgrades require explicit baseline bumps in both files
+- CMake Integration:
+  - Uses `find_package()` with imported targets from vcpkg (no FetchContent)
+  - Optional test dependencies (Catch2) only required when `MCP_SDK_BUILD_TESTS=ON`
+  - Core dependencies: `jsoncons`, `boost-asio`, `boost-beast`, `boost-process`, `openssl`
+  - Test dependencies: `catch2` (via vcpkg feature `tests`)
 
 ## Target Files (Planned Touch List)
 
