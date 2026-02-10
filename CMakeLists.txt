@@ -44,9 +44,21 @@ target_sources(mcp_sdk
         src/version.cpp
 )
 
-target_compile_definitions(mcp_sdk
+set(MCP_SDK_PINNED_MCP_SCHEMA_FILE "${CMAKE_CURRENT_SOURCE_DIR}/.docs/requirements/mcp-spec-2025-11-25/schema/schema.json")
+if(NOT EXISTS "${MCP_SDK_PINNED_MCP_SCHEMA_FILE}")
+    message(FATAL_ERROR "Pinned MCP schema file not found at: ${MCP_SDK_PINNED_MCP_SCHEMA_FILE}")
+endif()
+
+file(READ "${MCP_SDK_PINNED_MCP_SCHEMA_FILE}" MCP_SDK_PINNED_MCP_SCHEMA_JSON)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/schema/pinned_schema_data.cpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/src/schema/pinned_schema_data.cpp"
+    @ONLY
+)
+
+target_sources(mcp_sdk
     PRIVATE
-        MCP_SDK_PINNED_MCP_SCHEMA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/.docs/requirements/mcp-spec-2025-11-25/schema/schema.json"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/src/schema/pinned_schema_data.cpp"
 )
 
 target_link_libraries(mcp_sdk

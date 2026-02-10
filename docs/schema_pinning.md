@@ -14,6 +14,7 @@ This SDK validates MCP messages and tool schemas against a pinned copy of the MC
 
 ## Runtime Usage
 
-- The SDK loads the pinned schema at runtime through `mcp::schema::Validator::loadPinnedMcpSchema()`.
+- The pinned schema is embedded into the SDK binary at build time and parsed by `mcp::schema::Validator::loadPinnedMcpSchema()`.
+- Runtime schema validation does not depend on external schema files being present on disk.
 - Method-specific MCP validation uses the pinned schema definitions under `#/$defs`.
 - Tool `inputSchema` and `outputSchema` are validated with default dialect `draft 2020-12` when `$schema` is omitted.

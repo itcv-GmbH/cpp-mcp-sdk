@@ -1,6 +1,5 @@
 #include <array>
 #include <exception>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -11,16 +10,15 @@
 #include <jsoncons_ext/jsonschema/json_schema.hpp>
 #include <jsoncons_ext/jsonschema/json_schema_factory.hpp>
 #include <jsoncons_ext/jsonschema/validation_message.hpp>
+#include <mcp/schema/pinned_schema.hpp>
 #include <mcp/schema/validator.hpp>
-
-#ifndef MCP_SDK_PINNED_MCP_SCHEMA_PATH
-#  define MCP_SDK_PINNED_MCP_SCHEMA_PATH ".docs/requirements/mcp-spec-2025-11-25/schema/schema.json"
-#endif
 
 namespace mcp::schema
 {
 using JsonSchema = jsoncons::jsonschema::json_schema<JsonValue>;
 using WalkResult = jsoncons::jsonschema::walk_result;
+
+constexpr std::string_view kPinnedSchemaEmbeddedId = "embedded://mcp-spec-2025-11-25/schema/schema.json";
 
 constexpr std::string_view kPinnedSchemaUpstreamUrl = "https://raw.githubusercontent.com/modelcontextprotocol/specification/main/schema/2025-11-25/schema.json";
 constexpr std::string_view kPinnedSchemaUpstreamRef = "2025-11-25";
@@ -208,15 +206,18 @@ static auto diagnosticsJson(const ValidationResult &result) -> JsonValue
 
 auto Validator::loadPinnedMcpSchema() -> Validator
 {
-  std::ifstream input(MCP_SDK_PINNED_MCP_SCHEMA_PATH);
-  if (!input)
+  Validator validator;
+
+  try
   {
-    throw std::runtime_error(std::string("Failed to open pinned MCP schema file at '") + MCP_SDK_PINNED_MCP_SCHEMA_PATH + "'.");
+    validator.schemaDocument_ = JsonValue::parse(std::string(detail::pinnedSchemaJson()));
+  }
+  catch (const std::exception &exception)
+  {
+    throw std::runtime_error(std::string("Failed to parse embedded pinned MCP schema: ") + exception.what());
   }
 
-  Validator validator;
-  validator.schemaDocument_ = JsonValue::parse(input);
-  validator.metadata_.localPath = MCP_SDK_PINNED_MCP_SCHEMA_PATH;
+  validator.metadata_.localPath = std::string(kPinnedSchemaEmbeddedId);
   validator.metadata_.upstreamSchemaUrl = std::string(kPinnedSchemaUpstreamUrl);
   validator.metadata_.upstreamRef = std::string(kPinnedSchemaUpstreamRef);
   validator.metadata_.sha256 = std::string(kPinnedSchemaSha256);

@@ -1,0 +1,10 @@
+#pragma once
+
+#include <string_view>
+
+namespace mcp::schema::detail
+{
+
+auto pinnedSchemaJson() -> std::string_view;
+
+}  // namespace mcp::schema::detail

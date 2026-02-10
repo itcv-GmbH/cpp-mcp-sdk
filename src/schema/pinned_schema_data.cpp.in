@@ -1,0 +1,15 @@
+#include <string_view>
+
+#include <mcp/schema/pinned_schema.hpp>
+
+namespace mcp::schema::detail
+{
+
+auto pinnedSchemaJson() -> std::string_view
+{
+  return R"__mcp_schema__(
+@MCP_SDK_PINNED_MCP_SCHEMA_JSON@
+)__mcp_schema__";
+}
+
+}  // namespace mcp::schema::detail
