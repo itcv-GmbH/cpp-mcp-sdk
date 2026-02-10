@@ -38,7 +38,13 @@ add_library(mcp::sdk ALIAS mcp_sdk)
 
 target_sources(mcp_sdk
     PRIVATE
+        src/jsonrpc/messages.cpp
         src/version.cpp
+)
+
+target_link_libraries(mcp_sdk
+    PUBLIC
+        jsoncons
 )
 
 target_include_directories(mcp_sdk

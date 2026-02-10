@@ -7,5 +7,14 @@ target_link_libraries(mcp_sdk_test_smoke
         mcp::sdk
 )
 
+add_executable(mcp_sdk_test_jsonrpc_messages jsonrpc_messages_test.cpp)
+
+target_link_libraries(mcp_sdk_test_jsonrpc_messages
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
 # Register with CTest
 add_test(NAME mcp_sdk_smoke_test COMMAND mcp_sdk_test_smoke)
+add_test(NAME mcp_sdk_jsonrpc_messages_test COMMAND mcp_sdk_test_jsonrpc_messages)

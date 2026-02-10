@@ -1,9 +1,10 @@
 #pragma once
 
-#include <any>
 #include <cstdint>
 #include <optional>
 #include <string>
+
+#include <jsoncons/json.hpp>
 
 namespace mcp
 {
@@ -22,7 +23,7 @@ struct JsonRpcError
 {
   std::int32_t code = static_cast<std::int32_t>(JsonRpcErrorCode::kInternalError);
   std::string message;
-  std::optional<std::any> data;
+  std::optional<jsoncons::json> data;
 };
 
 }  // namespace mcp

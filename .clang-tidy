@@ -12,6 +12,8 @@ Checks: "*,\
   -llvmlibc-*,\
   -modernize-use-nodiscard,\
   -misc-non-private-member-variables-in-classes,\
+  -misc-use-internal-linkage,\
+  -misc-use-anonymous-namespace,\
   -google-default-arguments, \
   -fuchsia-multiple-inheritance, \
   -clang-analyzer-optin.performance.Padding, \
@@ -113,7 +115,7 @@ CheckOptions:
   - key: 'readability-identifier-naming.MethodCase'
     value: 'camelBack'
   - key: 'readability-identifier-naming.NamespaceCase'
-    value: 'CamelCase'
+    value: 'lower_case'
   - key: 'readability-identifier-naming.ParameterCase'
     value: 'camelBack'
   - key: 'readability-identifier-naming.ParameterPackCase'
