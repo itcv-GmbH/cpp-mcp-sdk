@@ -29,12 +29,12 @@ static constexpr double kProgressQuarter = 0.25;
 static constexpr double kProgressLate = 0.8;
 static constexpr double kProgressHalf = 0.5;
 
-static constexpr int kWaitPollAttempts = 40;
-static constexpr int kWaitPollMillis = 5;
-static constexpr int kRequestTimeoutMillis = 30;
-static constexpr int kInitializeTimeoutMillis = 20;
-static constexpr int kResponseWaitMillis = 500;
-static constexpr int kInitializePostTimeoutWaitMillis = 30;
+static constexpr std::int64_t kWaitPollAttempts = 40;
+static constexpr std::int64_t kWaitPollMillis = 5;
+static constexpr std::int64_t kRequestTimeoutMillis = 30;
+static constexpr std::int64_t kInitializeTimeoutMillis = 20;
+static constexpr std::int64_t kResponseWaitMillis = 500;
+static constexpr std::int64_t kInitializePostTimeoutWaitMillis = 30;
 
 static auto hasIdValue(const mcp::jsonrpc::RequestId &id, std::int64_t expectedValue) -> bool
 {
@@ -55,7 +55,7 @@ static auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::fut
 
 static auto waitForMessageCount(const std::vector<mcp::jsonrpc::Message> &messages, std::mutex &messagesMutex, std::size_t expectedCount) -> void
 {
-  for (int attempt = 0; attempt < kWaitPollAttempts; ++attempt)
+  for (std::int64_t attempt = 0; attempt < kWaitPollAttempts; ++attempt)
   {
     {
       const std::scoped_lock lock(messagesMutex);
