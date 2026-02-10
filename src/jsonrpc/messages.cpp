@@ -12,6 +12,7 @@
 
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/schema/validator.hpp>
 #include <mcp/version.hpp>
 
 namespace mcp::jsonrpc
@@ -397,6 +398,26 @@ static auto parseResponseMessage(const JsonValue &messageJson, bool hasResult, b
   return parseErrorResponseMessage(messageJson);
 }
 
+static auto mcpSchemaValidator() -> const mcp::schema::Validator &
+{
+  static const mcp::schema::Validator validator = mcp::schema::Validator::loadPinnedMcpSchema();
+  return validator;
+}
+
+static auto ensureMcpMethodMessageSchema(const JsonValue &messageJson) -> void
+{
+  if (!messageJson.contains("method"))
+  {
+    return;
+  }
+
+  const mcp::schema::ValidationResult validationResult = mcpSchemaValidator().validateMcpMethodMessage(messageJson);
+  if (!validationResult.valid)
+  {
+    throw MessageValidationError("MCP schema validation failed: " + mcp::schema::formatDiagnostics(validationResult));
+  }
+}
+
 }  // namespace detail
 
 auto parseMessage(std::string_view utf8Json) -> Message
@@ -420,6 +441,19 @@ auto parseMessageJson(const JsonValue &messageJson) -> Message
 {
   detail::ensureMessageObject(messageJson);
   detail::ensureJsonRpcVersion(messageJson);
+
+  try
+  {
+    detail::ensureMcpMethodMessageSchema(messageJson);
+  }
+  catch (const MessageValidationError &)
+  {
+    throw;
+  }
+  catch (const std::exception &exception)
+  {
+    throw MessageValidationError(std::string("Failed to validate MCP message against schema: ") + exception.what());
+  }
 
   const bool hasMethod = messageJson.contains("method");
   const bool hasResult = messageJson.contains("result");

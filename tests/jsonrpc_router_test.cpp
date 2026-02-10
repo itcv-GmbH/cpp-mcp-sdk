@@ -373,5 +373,4 @@ TEST_CASE("Router can emit progress notifications from an inbound request progre
     REQUIRE(progressNotification.params->at("progress").as<double>() == Catch::Approx(kProgressHalf));
   }
 }
-
 // NOLINTEND(readability-function-cognitive-complexity)

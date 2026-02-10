@@ -9,6 +9,8 @@ This document defines the initial public API surface and module boundaries for t
   - `include/mcp/jsonrpc/router.hpp` contains method-based handler registration and dispatch contracts.
 - Lifecycle session:
   - `include/mcp/lifecycle/session.hpp` contains `mcp::Session`, lifecycle state, outbound request APIs, and transport binding.
+- Schema validation:
+  - `include/mcp/schema/validator.hpp` contains pinned MCP schema loading and validation APIs for method messages and tool schemas.
 - Transports:
   - `include/mcp/transport/transport.hpp` defines the base transport contract (`attach`, `start`, `stop`, `send`).
   - `include/mcp/transport/stdio.hpp` defines stdio transport options and type.
