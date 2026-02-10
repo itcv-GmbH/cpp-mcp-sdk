@@ -1,14 +1,11 @@
 #include <mcp/sdk/version.hpp>
 
-namespace mcp
-{
-namespace sdk
+namespace mcp::sdk
 {
 
-const char *get_version()
+auto get_version() -> const char *
 {
   return "0.1.0";
 }
 
-}  // namespace sdk
-}  // namespace mcp
+}  // namespace mcp::sdk

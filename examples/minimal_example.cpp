@@ -3,8 +3,8 @@
 
 #include <mcp/sdk/version.hpp>
 
-int main()
+auto main() -> int
 {
-  std::cout << "MCP SDK Version: " << mcp::sdk::get_version() << std::endl;
+  std::cout << "MCP SDK Version: " << mcp::sdk::get_version() << '\n';
   return 0;
 }

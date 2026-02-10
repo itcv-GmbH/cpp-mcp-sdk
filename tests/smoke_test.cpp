@@ -3,8 +3,8 @@
 
 #include <mcp/sdk/version.hpp>
 
-int main()
+auto main() -> int
 {
   const char *version = mcp::sdk::get_version();
-  return version ? EXIT_SUCCESS : EXIT_FAILURE;
+  return (version != nullptr) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
