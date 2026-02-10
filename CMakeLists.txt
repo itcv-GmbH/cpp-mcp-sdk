@@ -23,6 +23,15 @@ endif()
 # Include dependencies configuration
 include(cmake/Dependencies.cmake)
 
+# Enable clang-tidy during build if available
+find_program(CLANG_TIDY_EXE NAMES clang-tidy)
+if(CLANG_TIDY_EXE)
+    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
+    set(CMAKE_CXX_CLANG_TIDY ${CLANG_TIDY_EXE})
+else()
+    message(WARNING "clang-tidy not found - static analysis disabled")
+endif()
+
 # Create the main SDK library
 add_library(mcp_sdk)
 add_library(mcp::sdk ALIAS mcp_sdk)
@@ -100,3 +109,36 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdk-config-version.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mcp_sdk
 )
+
+# Code quality targets
+find_program(CLANG_FORMAT_EXE NAMES clang-format)
+
+# Get all source files for formatting
+file(GLOB_RECURSE ALL_SOURCE_FILES 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.hpp
+)
+
+# Filter out vcpkg_installed directory
+list(FILTER ALL_SOURCE_FILES EXCLUDE REGEX ".*/vcpkg_installed/.*")
+
+if(CLANG_FORMAT_EXE)
+    add_custom_target(clang-format
+        COMMAND ${CLANG_FORMAT_EXE} -i ${ALL_SOURCE_FILES}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Running clang-format on source files"
+        VERBATIM
+    )
+    
+    add_custom_target(clang-format-check
+        COMMAND ${CLANG_FORMAT_EXE} --dry-run --Werror ${ALL_SOURCE_FILES}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking code formatting with clang-format"
+        VERBATIM
+    )
+endif()
