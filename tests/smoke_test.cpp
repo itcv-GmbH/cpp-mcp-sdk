@@ -1,10 +1,48 @@
 // Smoke test for MCP SDK
+#include <cstddef>
 #include <cstdlib>
+#include <string>
 
-#include <mcp/sdk/version.hpp>
+#include <mcp/auth/provider.hpp>
+#include <mcp/client/client.hpp>
+#include <mcp/errors.hpp>
+#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/router.hpp>
+#include <mcp/lifecycle/session.hpp>
+#include <mcp/server/server.hpp>
+#include <mcp/transport/http.hpp>
+#include <mcp/transport/stdio.hpp>
+#include <mcp/transport/transport.hpp>
+#include <mcp/version.hpp>
 
 auto main() -> int
 {
-  const char *version = mcp::sdk::get_version();
-  return (version != nullptr) ? EXIT_SUCCESS : EXIT_FAILURE;
+  const std::size_t apiSurfaceSanity = sizeof(mcp::auth::AuthProvider *) + sizeof(mcp::Client *) + sizeof(mcp::JsonRpcError) + sizeof(mcp::jsonrpc::Message)
+    + sizeof(mcp::jsonrpc::Router) + sizeof(mcp::Session *) + sizeof(mcp::Server *) + sizeof(mcp::transport::HttpTransport *) + sizeof(mcp::transport::StdioTransport *)
+    + sizeof(mcp::transport::Transport *);
+
+  if (apiSurfaceSanity == 0)
+  {
+    return EXIT_FAILURE;
+  }
+
+  const char *sdkVersion = mcp::getLibraryVersion();
+  if (sdkVersion == nullptr)
+  {
+    return EXIT_FAILURE;
+  }
+
+  if (mcp::kLatestProtocolVersion.empty())
+  {
+    return EXIT_FAILURE;
+  }
+
+  mcp::NegotiatedProtocolVersion negotiatedVersion;
+  negotiatedVersion.setNegotiatedProtocolVersion(std::string(mcp::kLatestProtocolVersion));
+  if (!negotiatedVersion.hasNegotiatedProtocolVersion())
+  {
+    return EXIT_FAILURE;
+  }
+
+  return EXIT_SUCCESS;
 }

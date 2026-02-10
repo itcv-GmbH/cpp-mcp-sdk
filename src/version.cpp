@@ -1,11 +1,11 @@
-#include <mcp/sdk/version.hpp>
+#include <mcp/version.hpp>
 
-namespace mcp::sdk
+namespace mcp
 {
 
-auto get_version() -> const char *
+auto getLibraryVersion() noexcept -> const char *
 {
-  return "0.1.0";
+  return kSdkVersion.data();
 }
 
-}  // namespace mcp::sdk
+}  // namespace mcp

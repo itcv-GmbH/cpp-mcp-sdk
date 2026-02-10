@@ -1,12 +1,16 @@
 #pragma once
 
+#include <mcp/version.hpp>
+
 namespace mcp
 {
 namespace sdk
 {
 
-// Returns the version string of the MCP SDK
-const char *get_version();
+inline auto get_version() noexcept -> const char *
+{
+  return mcp::getLibraryVersion();
+}
 
 }  // namespace sdk
 }  // namespace mcp

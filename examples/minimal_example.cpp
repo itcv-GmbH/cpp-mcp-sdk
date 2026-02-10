@@ -1,10 +1,10 @@
 // Minimal example for MCP SDK
 #include <iostream>
 
-#include <mcp/sdk/version.hpp>
+#include <mcp/version.hpp>
 
 auto main() -> int
 {
-  std::cout << "MCP SDK Version: " << mcp::sdk::get_version() << '\n';
+  std::cout << "MCP SDK Version: " << mcp::getLibraryVersion() << '\n';
   return 0;
 }
