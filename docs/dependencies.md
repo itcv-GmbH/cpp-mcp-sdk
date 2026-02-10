@@ -10,7 +10,7 @@ These dependencies are always required to build the SDK:
 
 | Library | Vcpkg Port | CMake Target | Purpose |
 |---------|------------|--------------|---------|
-| jsoncons | `jsoncons` | Header-only | JSON representation and JSON Schema 2020-12 validation |
+| jsoncons | `jsoncons` | `jsoncons` | JSON representation and JSON Schema 2020-12 validation (header-only) |
 
 **Rationale**: jsoncons was selected because it explicitly supports JSON Schema draft 2020-12, which is required by the MCP specification. Other validators that only support draft-07 are insufficient.
 
@@ -43,7 +43,7 @@ These dependencies are always required to build the SDK:
 |---------|------------|--------------|---------|
 | Catch2 | `catch2` | `Catch2::Catch2`, `Catch2::Catch2WithMain` | Unit and conformance testing |
 
-**When Required**: Only when `MCP_SDK_BUILD_TESTS` CMake option is enabled (default: ON) or when the `tests` vcpkg feature is requested.
+**When Required**: Catch2 is always installed as a default dependency since `MCP_SDK_BUILD_TESTS` defaults to ON. Tests are built by default; disable with `-DMCP_SDK_BUILD_TESTS=OFF` to skip test compilation.
 
 ## Dependency Installation
 
@@ -72,10 +72,9 @@ vcpkg install --feature-flags=manifests --x-feature=tests
 The SDK uses explicit version pinning via:
 
 1. **`builtin-baseline`** in `vcpkg.json`: Pins the vcpkg registry commit
-2. **`vcpkg-configuration.json`**: Mirrors the baseline for registry consistency
-3. **Minimum versions** in `vcpkg.json` dependencies: Ensures required features are available
+2. **Minimum versions** in `vcpkg.json` dependencies: Ensures required features are available
 
-Upgrading dependencies requires explicit baseline bumps in both files.
+The `vcpkg-configuration.json` file is reserved for overlay ports (local custom ports) and does not override the default registry. Upgrading dependencies requires updating the `builtin-baseline` in `vcpkg.json`.
 
 ## CMake Integration
 

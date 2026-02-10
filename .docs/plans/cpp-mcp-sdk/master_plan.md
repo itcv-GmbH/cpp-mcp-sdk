@@ -65,14 +65,13 @@
 - Rationale: Deterministic builds and cross-platform dependency resolution are requirements; vcpkg ports require a `vcpkg.json` manifest and a conventional CMake install surface.
 - Pinning Strategy:
   - `builtin-baseline` in `vcpkg.json` pins the vcpkg registry commit (currently: `120deac3062162151622ca4860575a33844ba10b`)
-  - `vcpkg-configuration.json` mirrors this baseline for consistency
   - Minimum versions specified per dependency (e.g., `jsoncons>=0.176.0`, `openssl>=3.3.0`)
-  - Upgrades require explicit baseline bumps in both files
+  - Upgrades require explicit baseline bumps in `vcpkg.json`
+  - `vcpkg-configuration.json` is reserved for overlay ports and does not override the default registry
 - CMake Integration:
   - Uses `find_package()` with imported targets from vcpkg (no FetchContent)
-  - Optional test dependencies (Catch2) only required when `MCP_SDK_BUILD_TESTS=ON`
   - Core dependencies: `jsoncons`, `boost-asio`, `boost-beast`, `boost-process`, `openssl`
-  - Test dependencies: `catch2` (via vcpkg feature `tests`)
+  - Test framework: `catch2` is a default dependency since tests are enabled by default (`MCP_SDK_BUILD_TESTS=ON`)
 
 ## Target Files (Planned Touch List)
 

@@ -4,7 +4,7 @@
 # Required dependencies
 
 # JSON and JSON Schema 2020-12 support
-# jsoncons is header-only and provides jsoncons::json target
+# jsoncons is header-only and provides jsoncons target (vcpkg-generated usage)
 find_package(jsoncons CONFIG REQUIRED)
 
 # Boost libraries for networking, HTTP, and process management

@@ -26,17 +26,16 @@
     {
       "name": "openssl",
       "version>=": "3.3.0"
+    },
+    {
+      "name": "catch2",
+      "version>=": "3.6.0"
     }
   ],
   "features": {
     "tests": {
-      "description": "Build tests (requires Catch2)",
-      "dependencies": [
-        {
-          "name": "catch2",
-          "version>=": "3.6.0"
-        }
-      ]
+      "description": "Build tests (enables Catch2 test targets)",
+      "dependencies": []
     },
     "examples": {
       "description": "Build example applications"
