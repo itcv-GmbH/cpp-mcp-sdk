@@ -7,6 +7,8 @@
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 
+// NOLINTBEGIN(readability-function-cognitive-complexity)
+
 constexpr std::int64_t kTestRequestId = 42;
 
 namespace test_detail
@@ -146,3 +148,5 @@ TEST_CASE("Single-line encoding mode rejects embedded newlines", "[jsonrpc][mess
   REQUIRE(test_detail::containsNoChar(encoded, '\n'));
   REQUIRE(test_detail::containsNoChar(encoded, '\r'));
 }
+
+// NOLINTEND(readability-function-cognitive-complexity)

@@ -9,6 +9,8 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 
+// NOLINTBEGIN(readability-function-cognitive-complexity)
+
 namespace
 {
 
@@ -101,3 +103,5 @@ TEST_CASE("Router allows same request id from different senders", "[jsonrpc][rou
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(responseA));
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(responseB));
 }
+
+// NOLINTEND(readability-function-cognitive-complexity)

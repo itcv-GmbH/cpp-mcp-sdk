@@ -40,7 +40,13 @@ target_sources(mcp_sdk
     PRIVATE
         src/jsonrpc/messages.cpp
         src/jsonrpc/router.cpp
+        src/schema/validator.cpp
         src/version.cpp
+)
+
+target_compile_definitions(mcp_sdk
+    PRIVATE
+        MCP_SDK_PINNED_MCP_SCHEMA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/.docs/requirements/mcp-spec-2025-11-25/schema/schema.json"
 )
 
 target_link_libraries(mcp_sdk

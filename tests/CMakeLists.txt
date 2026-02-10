@@ -28,3 +28,13 @@ target_link_libraries(mcp_sdk_test_jsonrpc_router
 )
 
 add_test(NAME mcp_sdk_jsonrpc_router_test COMMAND mcp_sdk_test_jsonrpc_router)
+
+add_executable(mcp_sdk_test_schema_validator schema_validator_test.cpp)
+
+target_link_libraries(mcp_sdk_test_schema_validator
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_schema_validator_test COMMAND mcp_sdk_test_schema_validator)
