@@ -30,11 +30,6 @@ add_library(mcp::sdk ALIAS mcp_sdk)
 target_sources(mcp_sdk
     PRIVATE
         src/version.cpp
-    PUBLIC
-        FILE_SET HEADERS
-        BASE_DIRS include
-        FILES
-            include/mcp/sdk/version.hpp
 )
 
 target_include_directories(mcp_sdk
@@ -65,13 +60,17 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-# Install the library and headers
+# Install the library
 install(TARGETS mcp_sdk
     EXPORT mcp_sdk-targets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# Install headers
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 # Install the export targets
