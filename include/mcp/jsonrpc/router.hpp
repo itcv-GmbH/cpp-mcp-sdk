@@ -5,6 +5,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <mcp/jsonrpc/messages.hpp>
 
@@ -30,6 +31,7 @@ private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, RequestHandler> requestHandlers_;
   std::unordered_map<std::string, NotificationHandler> notificationHandlers_;
+  mutable std::unordered_map<std::string, std::unordered_set<std::string>> seenRequestIdsBySender_;
 };
 
 }  // namespace jsonrpc
