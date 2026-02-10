@@ -1,15 +1,15 @@
 # Dependency Graph
 
 ## Phase 1: Foundation (Must complete first)
-- [ ] `task-001`: Create Repo Layout + CMake + vcpkg Skeleton
-- [ ] `task-002`: Select Dependencies (vcpkg ports; JSON + JSON Schema 2020-12) (Depends on: `task-001`)
-- [ ] `task-003`: Define Public API Surface + Core Types (Depends on: `task-002`)
+- [x] `task-001`: Create Repo Layout + CMake + vcpkg Skeleton
+- [x] `task-002`: Select Dependencies (vcpkg ports; JSON + JSON Schema 2020-12) (Depends on: `task-001`)
+- [x] `task-003`: Define Public API Surface + Core Types (Depends on: `task-002`)
 
 ## Phase 2: Core Protocol (Blocked by Phase 1)
-- [ ] `task-004`: Implement JSON-RPC Message Model + Parsing/Encoding (Depends on: `task-003`)
-- [ ] `task-005`: Implement Router + In-Flight Requests + Timeouts/Cancellation/Progress Plumbing (Depends on: `task-004`)
+- [x] `task-004`: Implement JSON-RPC Message Model + Parsing/Encoding (Depends on: `task-003`)
+- [x] `task-005`: Implement Router + In-Flight Requests + Timeouts/Cancellation/Progress Plumbing (Depends on: `task-004`)
 - [ ] `task-006`: Implement Lifecycle State Machine + Version/Capability Negotiation (Depends on: `task-005`)
-- [ ] `task-007`: Implement Schema Validation Module (Pinned MCP schema.json) (Depends on: `task-002`, `task-004`)
+- [x] `task-007`: Implement Schema Validation Module (Pinned MCP schema.json) (Depends on: `task-002`, `task-004`)
 
 ## Phase 3: Transports (Blocked by Phase 2)
 - [ ] `task-008`: Implement stdio Transport (Server + Client I/O) (Depends on: `task-006`)
