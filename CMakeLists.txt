@@ -45,6 +45,7 @@ target_sources(mcp_sdk
 
 target_link_libraries(mcp_sdk
     PUBLIC
+        Boost::asio
         jsoncons
 )
 
