@@ -68,11 +68,6 @@ struct OAuthTokenVerificationResult
 class OAuthTokenVerifier
 {
 public:
-  OAuthTokenVerifier() = default;
-  OAuthTokenVerifier(const OAuthTokenVerifier &) = delete;
-  auto operator=(const OAuthTokenVerifier &) -> OAuthTokenVerifier & = delete;
-  OAuthTokenVerifier(OAuthTokenVerifier &&) = delete;
-  auto operator=(OAuthTokenVerifier &&) -> OAuthTokenVerifier & = delete;
   virtual ~OAuthTokenVerifier() = default;
   virtual auto verifyToken(const OAuthTokenVerificationRequest &request) const -> OAuthTokenVerificationResult = 0;
 };

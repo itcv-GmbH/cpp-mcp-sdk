@@ -91,6 +91,40 @@ TEST_CASE("WWW-Authenticate Bearer parser extracts resource_metadata and scope f
   REQUIRE(*challenges[1].scope == "mcp:admin");
 }
 
+TEST_CASE("WWW-Authenticate Bearer parser handles multiple quoted challenges in one header", "[auth][discovery]")
+{
+  const std::vector<std::string> headers = {
+    "Digest realm=\"legacy\", Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\", scope=\"mcp:read,mcp:write\", Bearer "
+    "error=\"insufficient_scope\", error_description=\"Need \\\"admin\\\", token\", scope=\"mcp:admin\"",
+  };
+
+  const auto challenges = mcp::auth::parseBearerWwwAuthenticateChallenges(headers);
+  REQUIRE(challenges.size() == 2);
+
+  REQUIRE(challenges[0].resourceMetadata.has_value());
+  REQUIRE(*challenges[0].resourceMetadata == "https://mcp.example.com/.well-known/oauth-protected-resource/mcp");
+  REQUIRE(challenges[0].scope.has_value());
+  REQUIRE(*challenges[0].scope == "mcp:read,mcp:write");
+
+  REQUIRE(challenges[1].error.has_value());
+  REQUIRE(*challenges[1].error == "insufficient_scope");
+  REQUIRE(challenges[1].scope.has_value());
+  REQUIRE(*challenges[1].scope == "mcp:admin");
+
+  std::optional<std::string> errorDescription;
+  for (const auto &parameter : challenges[1].parameters)
+  {
+    if (parameter.name == "error_description")
+    {
+      errorDescription = parameter.value;
+      break;
+    }
+  }
+
+  REQUIRE(errorDescription.has_value());
+  REQUIRE(*errorDescription == "Need \"admin\", token");
+}
+
 TEST_CASE("Discovery uses WWW-Authenticate resource_metadata and RFC8414/OIDC path insertion order", "[auth][discovery]")
 {
   CannedDiscoveryTransport transport;
@@ -217,6 +251,39 @@ TEST_CASE("Discovery blocks redirects that change origin", "[auth][discovery][se
   {
     REQUIRE(error.code() == mcp::auth::AuthorizationDiscoveryErrorCode::kSecurityPolicyViolation);
   }
+}
+
+TEST_CASE("Discovery blocks explicit HTTPS downgrade redirects", "[auth][discovery][security]")
+{
+  CannedDiscoveryTransport transport;
+
+  mcp::auth::DiscoveryHttpResponse redirectResponse;
+  redirectResponse.statusCode = 302;
+  redirectResponse.headers.push_back({"Location", "http://mcp.example.com/downgraded-metadata"});
+  transport.addResponse("https://mcp.example.com/.well-known/oauth-protected-resource/mcp", redirectResponse);
+
+  mcp::auth::AuthorizationDiscoveryRequest request;
+  request.mcpEndpointUrl = "https://mcp.example.com/mcp";
+  request.wwwAuthenticateHeaderValues = {
+    "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\"",
+  };
+  request.httpFetcher = [&transport](const mcp::auth::DiscoveryHttpRequest &httpRequest) -> mcp::auth::DiscoveryHttpResponse { return transport.fetch(httpRequest); };
+  request.dnsResolver = makeDnsResolver({
+    {"mcp.example.com", {"93.184.216.34"}},
+  });
+  request.securityPolicy.requireSameOriginRedirects = false;
+
+  try
+  {
+    static_cast<void>(mcp::auth::discoverAuthorizationMetadata(request));
+    FAIL("Expected discovery to reject HTTPS downgrade redirect");
+  }
+  catch (const mcp::auth::AuthorizationDiscoveryError &error)
+  {
+    REQUIRE(error.code() == mcp::auth::AuthorizationDiscoveryErrorCode::kSecurityPolicyViolation);
+  }
+
+  REQUIRE(transport.requestedUrls() == std::vector<std::string> {"https://mcp.example.com/.well-known/oauth-protected-resource/mcp"});
 }
 
 TEST_CASE("Discovery blocks SSRF when DNS resolves to private ranges", "[auth][discovery][security]")
