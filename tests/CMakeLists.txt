@@ -90,7 +90,7 @@ target_link_libraries(mcp_sdk_test_auth_protected_resource_metadata
         mcp::sdk
 )
 
-add_test(NAME mcp_sdk_auth_protected_resource_metadata_test COMMAND mcp_sdk_test_auth_protected_resource_metadata)
+add_test(NAME mcp_sdk_auth_protected_resource_metadata_test_authorization COMMAND mcp_sdk_test_auth_protected_resource_metadata)
 
 add_executable(mcp_sdk_test_auth_client_registration auth_client_registration_test.cpp)
 
@@ -100,7 +100,7 @@ target_link_libraries(mcp_sdk_test_auth_client_registration
         mcp::sdk
 )
 
-add_test(NAME mcp_sdk_auth_client_registration_test COMMAND mcp_sdk_test_auth_client_registration)
+add_test(NAME mcp_sdk_auth_client_registration_test_authorization COMMAND mcp_sdk_test_auth_client_registration)
 
 add_executable(mcp_sdk_test_transport_stdio transport_stdio_test.cpp)
 

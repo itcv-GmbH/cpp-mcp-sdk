@@ -2375,6 +2375,23 @@ auto Client::handleResponse(const jsonrpc::RequestContext &context, const jsonrp
     pendingInitializeRequestId_.reset();
   }
 
+  if (initializeResponse && std::holds_alternative<jsonrpc::SuccessResponse>(response))
+  {
+    try
+    {
+      session_->handleInitializeResponse(response);
+    }
+    catch (const LifecycleError &error)
+    {
+      static_cast<void>(error);
+      const bool dispatched = router_.dispatchResponse(context, response);
+      static_cast<void>(dispatched);
+      throw;
+    }
+
+    return router_.dispatchResponse(context, response);
+  }
+
   const bool dispatched = router_.dispatchResponse(context, response);
 
   if (initializeResponse)
