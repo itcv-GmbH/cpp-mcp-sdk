@@ -44,6 +44,7 @@ target_sources(mcp_sdk
     PRIVATE
         src/jsonrpc/messages.cpp
         src/jsonrpc/router.cpp
+        src/auth_client_registration.cpp
         src/auth_protected_resource_metadata.cpp
         src/client/client.cpp
         src/lifecycle/session.cpp
