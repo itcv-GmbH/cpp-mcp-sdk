@@ -8,6 +8,9 @@ target_link_libraries(mcp_sdk_example_minimal
 )
 
 add_subdirectory(stdio_server)
-add_subdirectory(http_server_auth)
-add_subdirectory(http_client_auth)
 add_subdirectory(bidirectional_sampling_elicitation)
+
+if(MCP_SDK_ENABLE_TLS AND MCP_SDK_ENABLE_AUTH)
+    add_subdirectory(http_server_auth)
+    add_subdirectory(http_client_auth)
+endif()

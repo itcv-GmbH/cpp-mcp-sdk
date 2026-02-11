@@ -54,7 +54,7 @@
 - [x] `task-036`: Examples (server/client; bidirectional sampling/elicitation/tasks) (Depends on: `task-018`, `task-023`, `task-024`, `task-029`)
 - [x] `task-037`: Documentation (quickstarts, version policy, security) (Depends on: `task-036`)
 - [ ] `task-038`: CI Matrix (Linux/macOS/Windows) (Depends on: `task-031`, `task-032`, `task-034`)
-- [ ] `task-039`: Packaging (CMake config package; static/shared options) (Depends on: `task-001`, `task-037`)
+- [x] `task-039`: Packaging (CMake config package; static/shared options) (Depends on: `task-001`, `task-037`)
 - [ ] `task-043`: vcpkg Port Readiness (Overlay Port + Consumer Verification) (Depends on: `task-039`)
 - [x] `task-040`: Runtime Limits + Backpressure Knobs (Depends on: `task-011`, `task-012`, `task-024`)
 

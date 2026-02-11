@@ -15,17 +15,22 @@
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/ssl.hpp>  // NOLINT(misc-include-cleaner)
 #include <boost/beast/core.hpp>  // NOLINT(misc-include-cleaner)
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/transport/http.hpp>
+
+#if MCP_SDK_ENABLE_TLS
+#  include <boost/asio/ssl.hpp>  // NOLINT(misc-include-cleaner)
+#endif
 
 // NOLINTBEGIN(misc-include-cleaner, llvm-prefer-static-over-anonymous-namespace, readability-identifier-naming,
 // cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers, bugprone-unused-return-value, cert-err33-c, hicpp-signed-bitwise,
 // google-runtime-int, modernize-use-trailing-return-type, readability-implicit-bool-conversion, performance-no-automatic-move,
 // bugprone-empty-catch, cppcoreguidelines-pro-bounds-array-to-pointer-decay, hicpp-no-array-decay, modernize-return-braced-init-list)
-#include <openssl/err.h>
-#include <openssl/ssl.h>
+#if MCP_SDK_ENABLE_TLS
+#  include <openssl/err.h>
+#  include <openssl/ssl.h>
+#endif
 
 namespace mcp::transport
 {
@@ -35,7 +40,9 @@ namespace
 namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace beast_http = boost::beast::http;
+#if MCP_SDK_ENABLE_TLS
 namespace ssl = asio::ssl;
+#endif
 using tcp = asio::ip::tcp;
 
 struct ParsedEndpointUrl
@@ -47,6 +54,7 @@ struct ParsedEndpointUrl
   bool useTls = false;
 };
 
+#if MCP_SDK_ENABLE_TLS
 auto sslErrorMessage() -> std::string
 {
   const unsigned long errorCode = ERR_get_error();
@@ -59,6 +67,7 @@ auto sslErrorMessage() -> std::string
   ERR_error_string_n(errorCode, buffer, sizeof(buffer));
   return std::string(buffer);
 }
+#endif
 
 auto parseEndpointUrl(std::string_view endpointUrl) -> ParsedEndpointUrl
 {
@@ -167,6 +176,7 @@ auto hostHeaderValue(const ParsedEndpointUrl &endpoint) -> std::string
   return host + ":" + endpoint.port;
 }
 
+#if MCP_SDK_ENABLE_TLS
 auto configureServerTlsContext(ssl::context &context, const http::ServerTlsConfiguration &configuration) -> void
 {
   if (configuration.certificateChainFile.empty() || configuration.privateKeyFile.empty())
@@ -246,6 +256,7 @@ auto configureClientTlsContext(ssl::context &context, const http::ClientTlsConfi
     context.set_default_verify_paths();
   }
 }
+#endif
 
 auto toBeastMethod(http::ServerRequestMethod method) -> beast_http::verb
 {
@@ -324,10 +335,12 @@ auto writeAndRead(Stream &stream, const beast_http::request<beast_http::string_b
   return response;
 }
 
+#if MCP_SDK_ENABLE_TLS
 auto shouldIgnoreTlsShutdownError(const beast::error_code &error) -> bool
 {
   return error == asio::error::eof || error == asio::ssl::error::stream_truncated;
 }
+#endif
 
 }  // namespace
 
@@ -429,11 +442,18 @@ struct HttpServerRuntime::Impl
         throw std::runtime_error("HTTP server failed to resolve bound local port.");
       }
 
+#if MCP_SDK_ENABLE_TLS
       std::optional<ssl::context> tlsContext;
+#endif
+
       if (options_.tls.has_value())
       {
+#if MCP_SDK_ENABLE_TLS
         tlsContext.emplace(ssl::context::tls_server);
         configureServerTlsContext(*tlsContext, *options_.tls);
+#else
+        throw std::invalid_argument("Server TLS configuration requires MCP_SDK_ENABLE_TLS=ON.");
+#endif
       }
 
       startupPromise.set_value(localPort_);
@@ -453,9 +473,17 @@ struct HttpServerRuntime::Impl
           break;
         }
 
-        if (tlsContext.has_value())
+        if (options_.tls.has_value())
         {
+#if MCP_SDK_ENABLE_TLS
+          if (!tlsContext.has_value())
+          {
+            throw std::runtime_error("Server TLS context was not initialized.");
+          }
           handleTlsConnection(std::move(socket), *tlsContext);
+#else
+          throw std::runtime_error("Server TLS requested but TLS support is disabled.");
+#endif
         }
         else
         {
@@ -526,6 +554,7 @@ struct HttpServerRuntime::Impl
     socket.shutdown(tcp::socket::shutdown_both, error);
   }
 
+#if MCP_SDK_ENABLE_TLS
   auto handleTlsConnection(tcp::socket socket, ssl::context &context) -> void
   {
     ssl::stream<tcp::socket> stream(std::move(socket), context);
@@ -550,6 +579,7 @@ struct HttpServerRuntime::Impl
 
     stream.shutdown(error);
   }
+#endif
 
   auto wakeAcceptLoop() const noexcept -> void
   {
@@ -589,13 +619,24 @@ struct HttpClientRuntime::Impl
     {
       throw std::invalid_argument("HttpClientOptions.endpointUrl must not be empty.");
     }
+
+#if !MCP_SDK_ENABLE_TLS
+    if (endpoint_.useTls)
+    {
+      throw std::invalid_argument("HTTPS endpoints require MCP_SDK_ENABLE_TLS=ON.");
+    }
+#endif
   }
 
   [[nodiscard]] auto execute(const http::ServerRequest &request) const -> http::ServerResponse
   {
     if (endpoint_.useTls)
     {
+#if MCP_SDK_ENABLE_TLS
       return executeTls(request);
+#else
+      throw std::runtime_error("TLS support is disabled (MCP_SDK_ENABLE_TLS=OFF).");
+#endif
     }
 
     return executePlain(request);
@@ -652,6 +693,7 @@ struct HttpClientRuntime::Impl
     return toServerResponse(response);
   }
 
+#if MCP_SDK_ENABLE_TLS
   [[nodiscard]] auto executeTls(const http::ServerRequest &request) const -> http::ServerResponse
   {
     asio::io_context ioContext {1};
@@ -691,6 +733,7 @@ struct HttpClientRuntime::Impl
 
     return toServerResponse(response);
   }
+#endif
 
   HttpClientOptions options_;
   ParsedEndpointUrl endpoint_;

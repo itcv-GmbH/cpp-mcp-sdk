@@ -7,6 +7,11 @@ option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(MCP_SDK_BUILD_TESTS "Build tests" ON)
 option(MCP_SDK_BUILD_EXAMPLES "Build examples" ON)
 option(MCP_SDK_ENABLE_TLS "Enable TLS support" ON)
+option(MCP_SDK_ENABLE_AUTH "Enable authorization features" ON)
+
+if(NOT MCP_SDK_ENABLE_AUTH AND NOT MCP_SDK_ENABLE_TLS)
+    message(STATUS "Both MCP_SDK_ENABLE_AUTH and MCP_SDK_ENABLE_TLS are OFF")
+endif()
 
 # Export compile commands for IDE support
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

@@ -18,7 +18,9 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
 endif()
 
 # OpenSSL for TLS/HTTPS support
-find_package(OpenSSL REQUIRED)
+if(MCP_SDK_ENABLE_TLS OR MCP_SDK_ENABLE_AUTH)
+    find_package(OpenSSL REQUIRED)
+endif()
 
 # Optional dependencies based on build options
 
@@ -38,7 +40,11 @@ message(STATUS "  Boost.Beast: ${boost_beast_VERSION}")
 if(TARGET Boost::process)
     message(STATUS "  Boost.Process: ${boost_process_VERSION}")
 endif()
-message(STATUS "  OpenSSL: ${OPENSSL_VERSION} (TLS/HTTPS)")
+if(MCP_SDK_ENABLE_TLS OR MCP_SDK_ENABLE_AUTH)
+    message(STATUS "  OpenSSL: ${OPENSSL_VERSION} (TLS/HTTPS + OAuth)")
+else()
+    message(STATUS "  OpenSSL: disabled")
+endif()
 if(MCP_SDK_BUILD_TESTS)
     message(STATUS "  Catch2: ${Catch2_VERSION} (testing)")
 endif()

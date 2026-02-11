@@ -40,26 +40,32 @@ endif()
 add_library(mcp_sdk)
 add_library(mcp::sdk ALIAS mcp_sdk)
 
-target_sources(mcp_sdk
-    PRIVATE
-        src/jsonrpc/messages.cpp
-        src/jsonrpc/router.cpp
-        src/auth_client_registration.cpp
-        src/auth_loopback_receiver.cpp
-        src/auth_oauth_client.cpp
-        src/auth_protected_resource_metadata.cpp
-        src/client/client.cpp
-        src/lifecycle/session.cpp
-        src/security/crypto_random.cpp
-        src/server/server.cpp
-        src/schema/validator.cpp
-        src/transport/http_client.cpp
-        src/transport/http_runtime.cpp
-        src/transport/http_server.cpp
-        src/transport/stdio.cpp
-        src/util/tasks.cpp
-        src/version.cpp
+set(MCP_SDK_SOURCES
+    src/jsonrpc/messages.cpp
+    src/jsonrpc/router.cpp
+    src/auth_client_registration.cpp
+    src/auth_loopback_receiver.cpp
+    src/auth_protected_resource_metadata.cpp
+    src/client/client.cpp
+    src/lifecycle/session.cpp
+    src/security/crypto_random.cpp
+    src/server/server.cpp
+    src/schema/validator.cpp
+    src/transport/http_client.cpp
+    src/transport/http_runtime.cpp
+    src/transport/http_server.cpp
+    src/transport/stdio.cpp
+    src/util/tasks.cpp
+    src/version.cpp
 )
+
+if(MCP_SDK_ENABLE_AUTH)
+    list(APPEND MCP_SDK_SOURCES src/auth_oauth_client.cpp)
+else()
+    list(APPEND MCP_SDK_SOURCES src/auth_oauth_client_disabled.cpp)
+endif()
+
+target_sources(mcp_sdk PRIVATE ${MCP_SDK_SOURCES})
 
 set(MCP_SDK_PINNED_MCP_SCHEMA_FILE "${CMAKE_CURRENT_SOURCE_DIR}/.docs/requirements/mcp-spec-2025-11-25/schema/schema.json")
 if(NOT EXISTS "${MCP_SDK_PINNED_MCP_SCHEMA_FILE}")
@@ -78,16 +84,31 @@ target_sources(mcp_sdk
         "${CMAKE_CURRENT_BINARY_DIR}/generated/src/schema/pinned_schema_data.cpp"
 )
 
+set(MCP_SDK_REQUIRES_OPENSSL OFF)
+
 target_link_libraries(mcp_sdk
     PUBLIC
         Boost::asio
-        OpenSSL::Crypto
-        OpenSSL::SSL
         jsoncons
 )
 
+if(MCP_SDK_ENABLE_TLS OR MCP_SDK_ENABLE_AUTH)
+    target_link_libraries(mcp_sdk
+        PUBLIC
+            OpenSSL::Crypto
+            OpenSSL::SSL
+    )
+    set(MCP_SDK_REQUIRES_OPENSSL ON)
+endif()
+
+if(TARGET Boost::beast)
+    target_link_libraries(mcp_sdk PRIVATE Boost::beast)
+endif()
+
+set(MCP_SDK_USES_BOOST_PROCESS OFF)
 if(TARGET Boost::process)
     target_link_libraries(mcp_sdk PUBLIC Boost::process)
+    set(MCP_SDK_USES_BOOST_PROCESS ON)
 endif()
 
 if(WIN32)
@@ -98,6 +119,14 @@ target_include_directories(mcp_sdk
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+)
+
+target_compile_features(mcp_sdk PUBLIC cxx_std_17)
+
+target_compile_definitions(mcp_sdk
+    PUBLIC
+        MCP_SDK_ENABLE_TLS=$<BOOL:${MCP_SDK_ENABLE_TLS}>
+        MCP_SDK_ENABLE_AUTH=$<BOOL:${MCP_SDK_ENABLE_AUTH}>
 )
 
 # Set library properties for shared/static
@@ -124,10 +153,11 @@ include(CMakePackageConfigHelpers)
 
 # Install the library
 install(TARGETS mcp_sdk
-    EXPORT mcp_sdk-targets
+    EXPORT mcp_sdkTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 # Install headers
@@ -136,30 +166,35 @@ install(DIRECTORY include/
 )
 
 # Install the export targets
-install(EXPORT mcp_sdk-targets
-    FILE mcp_sdk-targets.cmake
+install(EXPORT mcp_sdkTargets
+    FILE mcp_sdkTargets.cmake
     NAMESPACE mcp::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mcp_sdk
+)
+
+export(EXPORT mcp_sdkTargets
+    FILE ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdkTargets.cmake
+    NAMESPACE mcp::
 )
 
 # Create package config file
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/mcp_sdk-config.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdk-config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdkConfig.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mcp_sdk
 )
 
 # Create version file
 write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdk-config-version.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdkConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 
 # Install the package configuration files
 install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdk-config.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdk-config-version.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdkConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/mcp_sdkConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mcp_sdk
 )
 
