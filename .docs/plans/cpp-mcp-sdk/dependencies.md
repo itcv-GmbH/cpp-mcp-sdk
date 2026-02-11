@@ -42,7 +42,7 @@
 - [x] `task-027`: Client-side Discovery (WWW-Authenticate + RFC9728 + RFC8414/OIDC) (Depends on: `task-013`)
 - [x] `task-044`: Client Registration Strategies (Pre-reg, CIMD, Dynamic Registration) (Depends on: `task-027`)
 - [x] `task-028`: OAuth 2.1 + PKCE + Loopback Redirect Receiver (Depends on: `task-027`, `task-044`)
-- [ ] `task-029`: Step-up Auth Retries + Token Storage Interfaces + SSRF/Redirect Hardening (Depends on: `task-028`)
+- [x] `task-029`: Step-up Auth Retries + Token Storage Interfaces + SSRF/Redirect Hardening (Depends on: `task-028`)
 
 ## Phase 8: Conformance + Delivery (Blocked by prior phases)
 - [ ] `task-030`: Pinned Mirror Verification Tests (Depends on: `task-001`)

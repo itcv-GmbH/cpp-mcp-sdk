@@ -4,11 +4,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -29,12 +32,22 @@ namespace
 constexpr std::size_t kPkceVerifierMinLength = 43U;
 constexpr std::size_t kPkceVerifierMaxLength = 128U;
 constexpr std::string_view kPkceMethodS256 = "S256";
+constexpr std::uint16_t kHttpStatusMovedPermanently = 301;
+constexpr std::uint16_t kHttpStatusFound = 302;
+constexpr std::uint16_t kHttpStatusSeeOther = 303;
+constexpr std::uint16_t kHttpStatusTemporaryRedirect = 307;
+constexpr std::uint16_t kHttpStatusPermanentRedirect = 308;
 
 struct ParsedUrl
 {
   std::string scheme;
   std::string host;
+  std::string port;
+  std::string path;
+  std::optional<std::string> query;
   std::string serialized;
+  bool hasExplicitPort = false;
+  bool ipv6Literal = false;
   bool hasQuery = false;
 };
 
@@ -94,6 +107,46 @@ auto isValidUrlScheme(std::string_view value) -> bool
                      });
 }
 
+auto parsePort(std::string_view portText, std::string_view fieldName) -> std::string
+{
+  if (portText.empty())
+  {
+    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port must not be empty");
+  }
+
+  std::uint32_t portValue = 0;
+  for (const char character : portText)
+  {
+    if (std::isdigit(static_cast<unsigned char>(character)) == 0)
+    {
+      throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port must contain decimal digits only");
+    }
+
+    portValue = (portValue * 10U) + static_cast<std::uint32_t>(character - '0');
+    if (portValue > 65535U)
+    {
+      throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port must be <= 65535");
+    }
+  }
+
+  return std::string(portText);
+}
+
+auto defaultPortForScheme(std::string_view scheme) -> std::string
+{
+  if (scheme == "https")
+  {
+    return "443";
+  }
+
+  if (scheme == "http")
+  {
+    return "80";
+  }
+
+  return {};
+}
+
 auto parseAbsoluteUrl(std::string_view rawUrl, std::string_view fieldName) -> ParsedUrl
 {
   const std::string_view trimmed = trimAsciiWhitespace(rawUrl);
@@ -124,6 +177,10 @@ auto parseAbsoluteUrl(std::string_view rawUrl, std::string_view fieldName) -> Pa
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " contains an invalid URL scheme");
   }
 
+  ParsedUrl parsed;
+  parsed.scheme = toLowerAscii(schemeText);
+  parsed.port = defaultPortForScheme(parsed.scheme);
+
   const std::size_t authorityBegin = schemeSeparator + 3;
   if (authorityBegin >= trimmed.size())
   {
@@ -142,7 +199,6 @@ auto parseAbsoluteUrl(std::string_view rawUrl, std::string_view fieldName) -> Pa
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " authority is invalid");
   }
 
-  std::string host;
   if (authority.front() == '[')
   {
     const std::size_t ipv6End = authority.find(']');
@@ -151,10 +207,19 @@ auto parseAbsoluteUrl(std::string_view rawUrl, std::string_view fieldName) -> Pa
       throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " host is invalid");
     }
 
-    host = toLowerAscii(authority.substr(1, ipv6End - 1));
-    if (ipv6End + 1 < authority.size() && authority[ipv6End + 1] != ':')
+    parsed.ipv6Literal = true;
+    parsed.host = toLowerAscii(authority.substr(1, ipv6End - 1));
+
+    const std::string_view remainder = authority.substr(ipv6End + 1);
+    if (!remainder.empty())
     {
-      throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port separator is invalid");
+      if (remainder.front() != ':')
+      {
+        throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port separator is invalid");
+      }
+
+      parsed.hasExplicitPort = true;
+      parsed.port = parsePort(remainder.substr(1), fieldName);
     }
   }
   else
@@ -168,25 +233,179 @@ auto parseAbsoluteUrl(std::string_view rawUrl, std::string_view fieldName) -> Pa
 
     if (firstColon == std::string_view::npos)
     {
-      host = toLowerAscii(authority);
+      parsed.host = toLowerAscii(authority);
     }
     else
     {
-      host = toLowerAscii(authority.substr(0, firstColon));
+      parsed.host = toLowerAscii(authority.substr(0, firstColon));
+      parsed.hasExplicitPort = true;
+      parsed.port = parsePort(authority.substr(firstColon + 1), fieldName);
     }
   }
 
-  if (host.empty())
+  if (parsed.host.empty())
   {
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " host must not be empty");
   }
 
-  ParsedUrl parsed;
-  parsed.scheme = toLowerAscii(schemeText);
-  parsed.host = std::move(host);
+  if (parsed.port.empty())
+  {
+    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port is not valid for this scheme");
+  }
+
+  parsed.path = "/";
+  const std::size_t querySeparator = trimmed.find('?', authorityEnd);
+  if (authorityEnd < trimmed.size())
+  {
+    if (trimmed[authorityEnd] == '?')
+    {
+      parsed.path = "/";
+    }
+    else
+    {
+      if (querySeparator == std::string_view::npos)
+      {
+        parsed.path = std::string(trimmed.substr(authorityEnd));
+      }
+      else
+      {
+        parsed.path = std::string(trimmed.substr(authorityEnd, querySeparator - authorityEnd));
+      }
+    }
+  }
+
+  if (parsed.path.empty())
+  {
+    parsed.path = "/";
+  }
+
+  if (querySeparator != std::string_view::npos)
+  {
+    parsed.query = std::string(trimmed.substr(querySeparator + 1));
+    parsed.hasQuery = true;
+  }
+
   parsed.serialized = std::string(trimmed);
-  parsed.hasQuery = trimmed.find('?') != std::string_view::npos;
   return parsed;
+}
+
+auto equalsIgnoreCase(std::string_view left, std::string_view right) -> bool
+{
+  if (left.size() != right.size())
+  {
+    return false;
+  }
+
+  for (std::size_t index = 0; index < left.size(); ++index)
+  {
+    if (std::tolower(static_cast<unsigned char>(left[index])) != std::tolower(static_cast<unsigned char>(right[index])))
+    {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+auto originForUrl(const ParsedUrl &url) -> std::string
+{
+  std::string origin = url.scheme;
+  origin += "://";
+  if (url.ipv6Literal)
+  {
+    origin += "[";
+    origin += url.host;
+    origin += "]";
+  }
+  else
+  {
+    origin += url.host;
+  }
+
+  const std::string defaultPort = defaultPortForScheme(url.scheme);
+  if (url.hasExplicitPort || url.port != defaultPort)
+  {
+    origin.push_back(':');
+    origin += url.port;
+  }
+
+  return origin;
+}
+
+auto serializeUrl(const ParsedUrl &url) -> std::string
+{
+  std::string serialized = originForUrl(url);
+  serialized += url.path.empty() ? "/" : url.path;
+  if (url.query.has_value())
+  {
+    serialized.push_back('?');
+    serialized += *url.query;
+  }
+
+  return serialized;
+}
+
+auto isRedirectStatusCode(std::uint16_t statusCode) -> bool
+{
+  return statusCode == kHttpStatusMovedPermanently || statusCode == kHttpStatusFound || statusCode == kHttpStatusSeeOther || statusCode == kHttpStatusTemporaryRedirect
+    || statusCode == kHttpStatusPermanentRedirect;
+}
+
+auto resolveRedirectUrl(const ParsedUrl &currentUrl, std::string_view locationHeader) -> std::string
+{
+  const std::string_view trimmedLocation = trimAsciiWhitespace(locationHeader);
+  if (trimmedLocation.empty())
+  {
+    throw OAuthClientError(OAuthClientErrorCode::kNetworkFailure, "Redirect response is missing a non-empty Location header");
+  }
+
+  if (trimmedLocation.find("://") != std::string_view::npos)
+  {
+    return std::string(trimmedLocation);
+  }
+
+  const std::string origin = originForUrl(currentUrl);
+  if (trimmedLocation.size() >= 2 && trimmedLocation[0] == '/' && trimmedLocation[1] == '/')
+  {
+    return currentUrl.scheme + ":" + std::string(trimmedLocation);
+  }
+
+  if (trimmedLocation.front() == '/')
+  {
+    return origin + std::string(trimmedLocation);
+  }
+
+  std::string basePath = currentUrl.path.empty() ? "/" : currentUrl.path;
+  const std::size_t separator = basePath.rfind('/');
+  if (separator == std::string::npos)
+  {
+    basePath = "/";
+  }
+  else
+  {
+    basePath = basePath.substr(0, separator + 1);
+  }
+
+  return origin + basePath + std::string(trimmedLocation);
+}
+
+auto headerValue(const std::vector<OAuthHttpHeader> &headers, std::string_view name) -> std::optional<std::string>
+{
+  for (const OAuthHttpHeader &header : headers)
+  {
+    if (equalsIgnoreCase(trimAsciiWhitespace(header.name), name))
+    {
+      return header.value;
+    }
+  }
+
+  return std::nullopt;
+}
+
+auto methodAllowsBodyOnRedirectRewrite(std::string_view method) -> bool
+{
+  const std::string normalized = toLowerAscii(trimAsciiWhitespace(method));
+  return normalized == "post" || normalized == "put" || normalized == "patch" || normalized == "delete";
 }
 
 auto isUnreservedUriCharacter(unsigned char value) -> bool
@@ -309,6 +528,154 @@ auto joinScopes(const OAuthScopeSet &scopes) -> std::optional<std::string>
   }
 
   return joined;
+}
+
+auto parseScopeString(std::string_view scopeText) -> OAuthScopeSet
+{
+  OAuthScopeSet scopeSet;
+  std::size_t begin = 0;
+
+  while (begin < scopeText.size())
+  {
+    while (begin < scopeText.size() && std::isspace(static_cast<unsigned char>(scopeText[begin])) != 0)
+    {
+      ++begin;
+    }
+
+    if (begin >= scopeText.size())
+    {
+      break;
+    }
+
+    std::size_t end = begin;
+    while (end < scopeText.size() && std::isspace(static_cast<unsigned char>(scopeText[end])) == 0)
+    {
+      ++end;
+    }
+
+    const std::string scope(scopeText.substr(begin, end - begin));
+    if (!scope.empty() && std::find(scopeSet.values.begin(), scopeSet.values.end(), scope) == scopeSet.values.end())
+    {
+      scopeSet.values.push_back(scope);
+    }
+
+    begin = end;
+  }
+
+  return scopeSet;
+}
+
+auto sanitizeScopeSet(const OAuthScopeSet &scopes) -> OAuthScopeSet
+{
+  OAuthScopeSet sanitized;
+  for (const std::string &scope : scopes.values)
+  {
+    const std::string_view trimmedScope = trimAsciiWhitespace(scope);
+    if (trimmedScope.empty())
+    {
+      continue;
+    }
+
+    if (std::find(sanitized.values.begin(), sanitized.values.end(), trimmedScope) != sanitized.values.end())
+    {
+      continue;
+    }
+
+    sanitized.values.emplace_back(trimmedScope);
+  }
+
+  return sanitized;
+}
+
+auto mergeScopes(const OAuthScopeSet &baseScopes, const OAuthScopeSet &requiredScopes) -> OAuthScopeSet
+{
+  OAuthScopeSet merged = sanitizeScopeSet(baseScopes);
+  const OAuthScopeSet required = sanitizeScopeSet(requiredScopes);
+  for (const std::string &scope : required.values)
+  {
+    if (std::find(merged.values.begin(), merged.values.end(), scope) == merged.values.end())
+    {
+      merged.values.push_back(scope);
+    }
+  }
+
+  return merged;
+}
+
+auto canonicalScopeSetKey(const OAuthScopeSet &scopes) -> std::string
+{
+  OAuthScopeSet sanitized = sanitizeScopeSet(scopes);
+  std::sort(sanitized.values.begin(), sanitized.values.end());
+
+  std::string key;
+  for (const std::string &scope : sanitized.values)
+  {
+    if (!key.empty())
+    {
+      key.push_back(' ');
+    }
+
+    key += scope;
+  }
+
+  return key;
+}
+
+auto normalizeResourceKey(std::string_view value) -> std::string
+{
+  const std::string_view trimmed = trimAsciiWhitespace(value);
+  if (trimmed.empty())
+  {
+    return {};
+  }
+
+  try
+  {
+    const ParsedUrl parsed = parseAbsoluteUrl(trimmed, "resource");
+    return serializeUrl(parsed);
+  }
+  catch (const OAuthClientError &)
+  {
+    return std::string(trimmed);
+  }
+}
+
+auto collectHeaderValues(const std::vector<OAuthHttpHeader> &headers, std::string_view name) -> std::vector<std::string>
+{
+  std::vector<std::string> values;
+  for (const OAuthHttpHeader &header : headers)
+  {
+    if (equalsIgnoreCase(trimAsciiWhitespace(header.name), name))
+    {
+      values.push_back(header.value);
+    }
+  }
+
+  return values;
+}
+
+auto withBearerAuthorization(const OAuthProtectedResourceRequest &request, const std::optional<OAuthAccessToken> &token) -> OAuthProtectedResourceRequest
+{
+  OAuthProtectedResourceRequest authorized = request;
+  authorized.headers.erase(std::remove_if(authorized.headers.begin(),
+                                          authorized.headers.end(),
+                                          [](const OAuthHttpHeader &header) -> bool { return equalsIgnoreCase(trimAsciiWhitespace(header.name), "Authorization"); }),
+                           authorized.headers.end());
+
+  if (token.has_value() && !token->value.empty())
+  {
+    authorized.headers.push_back(OAuthHttpHeader {"Authorization", "Bearer " + token->value});
+  }
+
+  return authorized;
+}
+
+auto toTokenRequest(const OAuthTokenHttpRequest &request) -> OAuthTokenHttpRequest
+{
+  OAuthTokenHttpRequest normalized = request;
+  const std::string_view normalizedMethod = trimAsciiWhitespace(normalized.method);
+  normalized.method = normalizedMethod.empty() ? "POST" : std::string(normalizedMethod);
+  return normalized;
 }
 
 auto requireNonEmptyTokenValue(std::string_view value, std::string_view fieldName) -> std::string
@@ -596,6 +963,212 @@ auto buildTokenExchangeHttpRequest(const OAuthTokenExchangeRequest &request) -> 
   }
 
   return tokenRequest;
+}
+
+auto InMemoryOAuthTokenStorage::load(std::string_view resource) const -> std::optional<OAuthAccessToken>
+{
+  const std::string key = normalizeResourceKey(resource);
+  if (key.empty())
+  {
+    return std::nullopt;
+  }
+
+  const std::scoped_lock lock(mutex_);
+  const auto found = tokensByResource_.find(key);
+  if (found == tokensByResource_.end())
+  {
+    return std::nullopt;
+  }
+
+  return found->second;
+}
+
+auto InMemoryOAuthTokenStorage::save(std::string resource, OAuthAccessToken token) -> void
+{
+  const std::string key = normalizeResourceKey(resource);
+  if (key.empty())
+  {
+    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, "Token storage resource key must not be empty");
+  }
+
+  const std::scoped_lock lock(mutex_);
+  tokensByResource_[key] = std::move(token);
+}
+
+auto executeTokenRequestWithPolicy(const OAuthTokenRequestExecutionRequest &request) -> OAuthHttpResponse
+{
+  if (!request.requestExecutor)
+  {
+    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, "Token request execution requires a non-null request executor");
+  }
+
+  OAuthTokenHttpRequest currentRequest = toTokenRequest(request.tokenRequest);
+  ParsedUrl currentUrl = parseAbsoluteUrl(currentRequest.url, "token request URL");
+  if (request.securityPolicy.requireHttps && currentUrl.scheme != "https")
+  {
+    throw OAuthClientError(OAuthClientErrorCode::kSecurityPolicyViolation, "Token endpoint interactions must use HTTPS");
+  }
+
+  std::size_t redirects = 0;
+  while (true)
+  {
+    const OAuthHttpResponse response = request.requestExecutor(currentRequest);
+    if (!isRedirectStatusCode(response.statusCode))
+    {
+      return response;
+    }
+
+    if (redirects >= request.securityPolicy.maxRedirects)
+    {
+      throw OAuthClientError(OAuthClientErrorCode::kSecurityPolicyViolation, "Token endpoint redirect limit exceeded");
+    }
+
+    const auto location = headerValue(response.headers, "Location");
+    if (!location.has_value())
+    {
+      throw OAuthClientError(OAuthClientErrorCode::kNetworkFailure, "Token endpoint redirect response is missing a Location header");
+    }
+
+    const ParsedUrl redirectedUrl = parseAbsoluteUrl(resolveRedirectUrl(currentUrl, *location), "token endpoint redirect URL");
+    if (request.securityPolicy.requireHttps && redirectedUrl.scheme != "https")
+    {
+      throw OAuthClientError(OAuthClientErrorCode::kSecurityPolicyViolation, "Token endpoint redirect downgraded away from HTTPS");
+    }
+
+    const bool sameOrigin = originForUrl(currentUrl) == originForUrl(redirectedUrl);
+    if (request.securityPolicy.requireSameOriginRedirects && !sameOrigin)
+    {
+      throw OAuthClientError(OAuthClientErrorCode::kSecurityPolicyViolation, "Token endpoint redirect changed origin");
+    }
+
+    if (!sameOrigin)
+    {
+      currentRequest.headers.erase(std::remove_if(currentRequest.headers.begin(),
+                                                  currentRequest.headers.end(),
+                                                  [](const OAuthHttpHeader &header) -> bool { return equalsIgnoreCase(trimAsciiWhitespace(header.name), "Authorization"); }),
+                                   currentRequest.headers.end());
+    }
+
+    if ((response.statusCode == kHttpStatusMovedPermanently || response.statusCode == kHttpStatusFound || response.statusCode == kHttpStatusSeeOther)
+        && methodAllowsBodyOnRedirectRewrite(currentRequest.method))
+    {
+      throw OAuthClientError(OAuthClientErrorCode::kSecurityPolicyViolation, "Refusing to follow token endpoint redirects that can rewrite a credential-bearing request method");
+    }
+
+    currentRequest.url = serializeUrl(redirectedUrl);
+    currentUrl = redirectedUrl;
+    ++redirects;
+  }
+}
+
+auto executeProtectedResourceRequestWithStepUp(const OAuthStepUpExecutionRequest &request) -> OAuthHttpResponse
+{
+  if (!request.requestExecutor)
+  {
+    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, "Step-up execution requires a non-null request executor");
+  }
+
+  if (!request.authorizer)
+  {
+    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, "Step-up execution requires a non-null authorizer callback");
+  }
+
+  std::shared_ptr<OAuthTokenStorage> tokenStorage = request.tokenStorage;
+  if (!tokenStorage)
+  {
+    tokenStorage = std::make_shared<InMemoryOAuthTokenStorage>();
+  }
+
+  const std::string normalizedResource = normalizeResourceKey(request.resource);
+  if (normalizedResource.empty())
+  {
+    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, "Step-up execution requires a non-empty resource identifier");
+  }
+
+  std::optional<OAuthAccessToken> currentToken = tokenStorage->load(normalizedResource);
+  std::unordered_map<std::string, std::unordered_set<std::string>> attemptedScopeSetsByResource;
+  std::size_t attempts = 0;
+
+  OAuthHttpResponse response = request.requestExecutor(withBearerAuthorization(request.protectedResourceRequest, currentToken));
+  while (response.statusCode == 403 && attempts < request.maxStepUpAttempts)
+  {
+    const std::vector<std::string> wwwAuthenticateHeaders = collectHeaderValues(response.headers, "WWW-Authenticate");
+    if (wwwAuthenticateHeaders.empty())
+    {
+      break;
+    }
+
+    const std::vector<BearerWwwAuthenticateChallenge> challenges = parseBearerWwwAuthenticateChallenges(wwwAuthenticateHeaders);
+
+    std::optional<BearerWwwAuthenticateChallenge> insufficientScopeChallenge;
+    for (const BearerWwwAuthenticateChallenge &challenge : challenges)
+    {
+      if (challenge.error.has_value() && equalsIgnoreCase(trimAsciiWhitespace(*challenge.error), "insufficient_scope"))
+      {
+        insufficientScopeChallenge = challenge;
+        break;
+      }
+    }
+
+    if (!insufficientScopeChallenge.has_value() || !insufficientScopeChallenge->scope.has_value())
+    {
+      break;
+    }
+
+    const OAuthScopeSet requiredScopes = sanitizeScopeSet(parseScopeString(*insufficientScopeChallenge->scope));
+    if (requiredScopes.values.empty())
+    {
+      break;
+    }
+
+    OAuthScopeSet baseScopes = request.initialScopes;
+    if (currentToken.has_value())
+    {
+      baseScopes = mergeScopes(baseScopes, currentToken->scopes);
+    }
+
+    const OAuthScopeSet targetScopes = mergeScopes(baseScopes, requiredScopes);
+    const std::string scopeSetKey = canonicalScopeSetKey(targetScopes);
+    if (scopeSetKey.empty())
+    {
+      break;
+    }
+
+    std::optional<std::string> challengeResourceMetadata;
+    std::string scopeTrackingResource = normalizedResource;
+    if (insufficientScopeChallenge->resourceMetadata.has_value())
+    {
+      const std::string normalizedResourceMetadata = normalizeResourceKey(*insufficientScopeChallenge->resourceMetadata);
+      if (!normalizedResourceMetadata.empty())
+      {
+        challengeResourceMetadata = normalizedResourceMetadata;
+        scopeTrackingResource = normalizedResourceMetadata;
+      }
+    }
+
+    auto &attemptedScopeSets = attemptedScopeSetsByResource[scopeTrackingResource];
+    const auto insertResult = attemptedScopeSets.insert(scopeSetKey);
+    if (!insertResult.second)
+    {
+      break;
+    }
+
+    OAuthStepUpAuthorizationRequest authorizationRequest;
+    authorizationRequest.resource = normalizedResource;
+    authorizationRequest.requestedScopes = targetScopes;
+    authorizationRequest.resourceMetadataUrl = challengeResourceMetadata;
+
+    OAuthAccessToken refreshedToken = request.authorizer(authorizationRequest);
+    refreshedToken.value = requireNonEmptyTokenValue(refreshedToken.value, "step-up access token");
+    refreshedToken.scopes = sanitizeScopeSet(refreshedToken.scopes);
+    tokenStorage->save(normalizedResource, refreshedToken);
+
+    currentToken = std::move(refreshedToken);
+    ++attempts;
+    response = request.requestExecutor(withBearerAuthorization(request.protectedResourceRequest, currentToken));
+  }
+
+  return response;
 }
 
 }  // namespace mcp::auth
