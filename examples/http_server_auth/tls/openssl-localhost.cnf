@@ -1,0 +1,18 @@
+[req]
+default_bits = 2048
+distinguished_name = req_distinguished_name
+prompt = no
+x509_extensions = v3_req
+
+[req_distinguished_name]
+CN = localhost
+O = MCP SDK Examples
+
+[v3_req]
+subjectAltName = @alt_names
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+
+[alt_names]
+DNS.1 = localhost
+IP.1 = 127.0.0.1
