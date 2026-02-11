@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "mcp-cpp-sdk",
+  "version-string": "0.1.0",
+  "description": "Model Context Protocol SDK for C++",
+  "license": "MIT",
+  "dependencies": [
+    "jsoncons",
+    "boost-asio",
+    "boost-beast",
+    {
+      "name": "boost-process",
+      "platform": "!uwp"
+    },
+    "openssl",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}
