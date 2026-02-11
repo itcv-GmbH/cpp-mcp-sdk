@@ -42,6 +42,22 @@ target_link_libraries(mcp_sdk_test_conformance_capabilities
         mcp::sdk
 )
 
+add_executable(mcp_sdk_test_conformance_stdio_transport conformance/test_stdio_transport.cpp)
+
+target_link_libraries(mcp_sdk_test_conformance_stdio_transport
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_executable(mcp_sdk_test_conformance_streamable_http_transport conformance/test_streamable_http_transport.cpp)
+
+target_link_libraries(mcp_sdk_test_conformance_streamable_http_transport
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
 add_executable(mcp_sdk_test_jsonrpc_messages jsonrpc_messages_test.cpp)
 
 target_link_libraries(mcp_sdk_test_jsonrpc_messages
@@ -57,6 +73,8 @@ add_test(NAME mcp_sdk_conformance_pinned_mirror_test COMMAND mcp_sdk_test_pinned
 add_test(NAME mcp_sdk_conformance_jsonrpc_invariants_test COMMAND mcp_sdk_test_conformance_jsonrpc_invariants)
 add_test(NAME mcp_sdk_conformance_lifecycle_test COMMAND mcp_sdk_test_conformance_lifecycle)
 add_test(NAME mcp_sdk_conformance_capabilities_test COMMAND mcp_sdk_test_conformance_capabilities)
+add_test(NAME mcp_sdk_conformance_stdio_transport_test COMMAND mcp_sdk_test_conformance_stdio_transport)
+add_test(NAME mcp_sdk_conformance_streamable_http_transport_test COMMAND mcp_sdk_test_conformance_streamable_http_transport)
 add_test(NAME mcp_sdk_jsonrpc_messages_test COMMAND mcp_sdk_test_jsonrpc_messages)
 
 add_executable(mcp_sdk_test_jsonrpc_router jsonrpc_router_test.cpp)
