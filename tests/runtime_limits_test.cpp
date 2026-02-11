@@ -286,6 +286,88 @@ TEST_CASE("HTTP client enforces retry and payload limits", "[limits][transport][
     REQUIRE(reconnectDelays.size() == 2);
   }
 
+  SECTION("SSE retry hint is clamped by max retry delay")
+  {
+    mcp_http::StreamableHttpServer server;
+    server.setRequestHandler(
+      [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &) -> mcp_http::StreamableRequestResult
+      {
+        mcp_http::StreamableRequestResult result;
+        result.useSse = true;
+        result.closeSseConnection = true;
+        result.retryMilliseconds = 250;
+        return result;
+      });
+
+    std::vector<std::uint32_t> reconnectDelays;
+    mcp_http::StreamableHttpClientOptions options;
+    options.endpointUrl = "http://localhost/mcp";
+    options.limits.maxRetryAttempts = 2;
+    options.limits.maxRetryDelayMilliseconds = 7;
+    options.waitBeforeReconnect = [&reconnectDelays](std::uint32_t retryMilliseconds) -> void { reconnectDelays.push_back(retryMilliseconds); };
+
+    mcp_http::StreamableHttpClient client(options, [&server](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse { return server.handleRequest(request); });
+
+    bool threw = false;
+    try
+    {
+      static_cast<void>(client.send(makeRequestMessage(78, "work")));
+    }
+    catch (const std::runtime_error &error)
+    {
+      threw = true;
+      REQUIRE(contains(error.what(), "retry attempts"));
+    }
+
+    REQUIRE(threw);
+    REQUIRE(reconnectDelays.size() == 2);
+    for (const std::uint32_t delay : reconnectDelays)
+    {
+      REQUIRE(delay == 7);
+    }
+  }
+
+  SECTION("Default retry delay is clamped by max retry delay")
+  {
+    mcp_http::StreamableHttpServer server;
+    server.setRequestHandler(
+      [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &) -> mcp_http::StreamableRequestResult
+      {
+        mcp_http::StreamableRequestResult result;
+        result.useSse = true;
+        result.closeSseConnection = true;
+        return result;
+      });
+
+    std::vector<std::uint32_t> reconnectDelays;
+    mcp_http::StreamableHttpClientOptions options;
+    options.endpointUrl = "http://localhost/mcp";
+    options.defaultRetryMilliseconds = 250;
+    options.limits.maxRetryAttempts = 2;
+    options.limits.maxRetryDelayMilliseconds = 11;
+    options.waitBeforeReconnect = [&reconnectDelays](std::uint32_t retryMilliseconds) -> void { reconnectDelays.push_back(retryMilliseconds); };
+
+    mcp_http::StreamableHttpClient client(options, [&server](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse { return server.handleRequest(request); });
+
+    bool threw = false;
+    try
+    {
+      static_cast<void>(client.send(makeRequestMessage(79, "work")));
+    }
+    catch (const std::runtime_error &error)
+    {
+      threw = true;
+      REQUIRE(contains(error.what(), "retry attempts"));
+    }
+
+    REQUIRE(threw);
+    REQUIRE(reconnectDelays.size() == 2);
+    for (const std::uint32_t delay : reconnectDelays)
+    {
+      REQUIRE(delay == 11);
+    }
+  }
+
   SECTION("JSON payload size cap is enforced")
   {
     mcp_http::StreamableHttpClientOptions options;

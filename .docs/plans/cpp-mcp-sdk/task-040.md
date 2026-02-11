@@ -26,4 +26,4 @@ Add configurable limits to mitigate resource exhaustion and provide backpressure
 5. Add tests for each limit.
 
 ## Verification
-* `ctest --test-dir build -R limits`
+* `ctest --test-dir build/vcpkg-unix-release -R limits --output-on-failure`
