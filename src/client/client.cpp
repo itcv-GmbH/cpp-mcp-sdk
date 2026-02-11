@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <future>
 #include <memory>
@@ -7,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -399,7 +401,9 @@ auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestO
   request.method = std::move(method);
   request.params = std::move(params);
 
-  if (request.method == kInitializeMethod)
+  const bool isInitializeRequest = request.method == kInitializeMethod;
+
+  if (isInitializeRequest)
   {
     applyInitializeDefaults(request);
   }
@@ -409,7 +413,7 @@ auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestO
 
   {
     const std::scoped_lock lock(mutex_);
-    if (request.method == kInitializeMethod)
+    if (isInitializeRequest)
     {
       pendingInitializeRequestId_ = request.id;
     }
@@ -418,13 +422,49 @@ auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestO
   jsonrpc::OutboundRequestOptions outboundOptions;
   outboundOptions.timeout = options.timeout;
   outboundOptions.cancelOnTimeout = options.cancelOnTimeout;
-  return router_.sendRequest(jsonrpc::RequestContext {}, std::move(request), std::move(outboundOptions));
+  auto responseFuture = router_.sendRequest(jsonrpc::RequestContext {}, std::move(request), std::move(outboundOptions));
+
+  if (isInitializeRequest)
+  {
+    const auto status = responseFuture.wait_for(std::chrono::milliseconds {0});
+    if (status == std::future_status::ready)
+    {
+      bool initializeResponseWasAlreadyHandled = false;
+      {
+        const std::scoped_lock lock(mutex_);
+        initializeResponseWasAlreadyHandled = !pendingInitializeRequestId_.has_value();
+      }
+
+      if (!initializeResponseWasAlreadyHandled)
+      {
+        jsonrpc::Response response = responseFuture.get();
+
+        {
+          const std::scoped_lock lock(mutex_);
+          pendingInitializeRequestId_.reset();
+        }
+
+        try
+        {
+          session_->handleInitializeResponse(response);
+        }
+        catch (const LifecycleError &error)
+        {
+          static_cast<void>(error);
+        }
+
+        return makeReadyResponseFuture(std::move(response));
+      }
+    }
+  }
+
+  return responseFuture;
 }
 
 auto Client::sendRequestAsync(std::string method, jsonrpc::JsonValue params, const ResponseCallback &callback, RequestOptions options) -> void
 {
   auto responseFuture = sendRequest(std::move(method), std::move(params), options);
-  callback(responseFuture.get());
+  std::thread([callback, responseFuture = std::move(responseFuture)]() mutable -> void { callback(responseFuture.get()); }).detach();
 }
 
 auto Client::sendNotification(std::string method, std::optional<jsonrpc::JsonValue> params) -> void

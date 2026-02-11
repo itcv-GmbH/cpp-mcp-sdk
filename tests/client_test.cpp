@@ -1,9 +1,15 @@
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstddef>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -63,6 +69,69 @@ public:
 private:
   mutable std::mutex mutex_;
   bool running_ = false;
+  std::weak_ptr<mcp::Session> attachedSession_;
+  std::vector<mcp::jsonrpc::Message> messages_;
+};
+
+class FlakyTransport final : public mcp::transport::Transport
+{
+public:
+  explicit FlakyTransport(std::size_t failuresBeforeSuccess)
+    : failuresRemaining_(failuresBeforeSuccess)
+  {
+  }
+
+  auto attach(std::weak_ptr<mcp::Session> session) -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    attachedSession_ = std::move(session);
+  }
+
+  auto start() -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    running_ = true;
+  }
+
+  auto stop() -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    running_ = false;
+  }
+
+  auto isRunning() const noexcept -> bool override
+  {
+    const std::scoped_lock lock(mutex_);
+    return running_;
+  }
+
+  auto send(mcp::jsonrpc::Message message) -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    if (!running_)
+    {
+      throw std::runtime_error("FlakyTransport must be running before send().");
+    }
+
+    if (failuresRemaining_ > 0)
+    {
+      --failuresRemaining_;
+      throw std::runtime_error("Injected local send failure.");
+    }
+
+    messages_.push_back(std::move(message));
+  }
+
+  [[nodiscard]] auto messages() const -> std::vector<mcp::jsonrpc::Message>
+  {
+    const std::scoped_lock lock(mutex_);
+    return messages_;
+  }
+
+private:
+  mutable std::mutex mutex_;
+  bool running_ = false;
+  std::size_t failuresRemaining_ = 0;
   std::weak_ptr<mcp::Session> attachedSession_;
   std::vector<mcp::jsonrpc::Message> messages_;
 };
@@ -241,6 +310,111 @@ TEST_CASE("Client surfaces initialize failures without sending initialized notif
   const auto outboundAfterError = transport->messages();
   REQUIRE(outboundAfterError.size() == 1);
   REQUIRE(client->session()->state() == mcp::SessionState::kCreated);
+}
+
+TEST_CASE("Client recovers from local initialize send failure and allows retry", "[client][core][initialize]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<FlakyTransport>(1);
+  client->attachTransport(transport);
+  client->start();
+
+  auto firstInitializeFuture = client->initialize();
+  const mcp::jsonrpc::Response firstInitializeResult = firstInitializeFuture.get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(firstInitializeResult));
+  REQUIRE(client->session()->state() == mcp::SessionState::kCreated);
+
+  auto retryInitializeFuture = client->initialize();
+  REQUIRE(client->session()->state() == mcp::SessionState::kInitializing);
+
+  const auto outboundAfterRetry = transport->messages();
+  REQUIRE(outboundAfterRetry.size() == 1);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(outboundAfterRetry.front()));
+  const auto &retryInitializeRequest = std::get<mcp::jsonrpc::Request>(outboundAfterRetry.front());
+  REQUIRE(retryInitializeRequest.method == "initialize");
+
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(retryInitializeRequest.id)));
+
+  const mcp::jsonrpc::Response retryInitializeResult = retryInitializeFuture.get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(retryInitializeResult));
+  REQUIRE(client->session()->state() == mcp::SessionState::kOperating);
+
+  const auto finalOutboundMessages = transport->messages();
+  REQUIRE(finalOutboundMessages.size() == 2);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::Notification>(finalOutboundMessages.back()));
+  REQUIRE(std::get<mcp::jsonrpc::Notification>(finalOutboundMessages.back()).method == "notifications/initialized");
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("Client sendRequestAsync is non-blocking and invokes callback asynchronously", "[client][core][async]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  std::atomic<bool> sendRequestAsyncReturned = false;
+  std::promise<std::thread::id> callerThreadIdPromise;
+  auto callerThreadIdFuture = callerThreadIdPromise.get_future();
+
+  std::mutex callbackMutex;
+  std::condition_variable callbackCv;
+  bool callbackInvoked = false;
+  std::thread::id callbackThreadId;
+  std::optional<mcp::jsonrpc::Response> callbackResponse;
+
+  std::thread caller(
+    [&]() -> void
+    {
+      callerThreadIdPromise.set_value(std::this_thread::get_id());
+      client->sendRequestAsync("initialize",
+                               mcp::jsonrpc::JsonValue::object(),
+                               [&](const mcp::jsonrpc::Response &response) -> void
+                               {
+                                 {
+                                   const std::scoped_lock lock(callbackMutex);
+                                   callbackInvoked = true;
+                                   callbackThreadId = std::this_thread::get_id();
+                                   callbackResponse = response;
+                                 }
+                                 callbackCv.notify_one();
+                               });
+      sendRequestAsyncReturned.store(true, std::memory_order_release);
+    });
+
+  const auto callerThreadId = callerThreadIdFuture.get();
+
+  const auto waitDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds {500};
+  while (transport->messages().empty() && std::chrono::steady_clock::now() < waitDeadline)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds {1});
+  }
+
+  REQUIRE(!transport->messages().empty());
+  REQUIRE(sendRequestAsyncReturned.load(std::memory_order_acquire));
+
+  {
+    const std::scoped_lock lock(callbackMutex);
+    REQUIRE(!callbackInvoked);
+  }
+
+  const auto outboundMessages = transport->messages();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(outboundMessages.front()));
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+
+  {
+    std::unique_lock<std::mutex> lock(callbackMutex);
+    REQUIRE(callbackCv.wait_for(lock, std::chrono::milliseconds {500}, [&]() -> bool { return callbackInvoked; }));
+  }
+
+  REQUIRE(callbackResponse.has_value());
+  const auto callbackResult = callbackResponse.value_or(mcp::jsonrpc::Response {mcp::jsonrpc::ErrorResponse {}});
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(callbackResult));
+  REQUIRE(callbackThreadId != callerThreadId);
+
+  caller.join();
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
