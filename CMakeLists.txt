@@ -40,6 +40,7 @@ target_sources(mcp_sdk
     PRIVATE
         src/jsonrpc/messages.cpp
         src/jsonrpc/router.cpp
+        src/lifecycle/session.cpp
         src/schema/validator.cpp
         src/version.cpp
 )
