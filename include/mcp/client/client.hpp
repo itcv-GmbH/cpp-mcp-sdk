@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <mcp/client/roots.hpp>
+#include <mcp/client/sampling.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/prompts.hpp>
@@ -92,6 +93,8 @@ public:
   auto setRootsProvider(RootsProvider provider) -> void;
   auto clearRootsProvider() -> void;
   auto notifyRootsListChanged() -> bool;
+  auto setSamplingCreateMessageHandler(SamplingCreateMessageHandler handler) -> void;
+  auto clearSamplingCreateMessageHandler() -> void;
 
   template<typename FetchPage, typename ConsumePage>
   auto forEachPage(FetchPage fetchPage, ConsumePage consumePage, std::optional<std::string> cursor = std::nullopt, std::size_t maxPages = kDefaultMaxPaginationPages) -> void
@@ -181,6 +184,7 @@ private:
   std::shared_ptr<transport::Transport> transport_;
   ClientInitializeConfiguration initializeConfiguration_;
   std::optional<RootsProvider> rootsProvider_;
+  std::optional<SamplingCreateMessageHandler> samplingCreateMessageHandler_;
   std::optional<jsonrpc::RequestId> pendingInitializeRequestId_;
   std::int64_t nextRequestId_ = 1;
 };

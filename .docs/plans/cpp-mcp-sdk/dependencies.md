@@ -30,7 +30,7 @@
 - [x] `task-019`: Client Core (connect, initialize/initialized, base RPC calls) (Depends on: `task-006`, `task-007`, `task-012`)
 - [x] `task-020`: Client: Tools/Resources/Prompts APIs (Depends on: `task-019`)
 - [x] `task-021`: Client: Roots (handle roots/list + roots/list_changed) (Depends on: `task-019`)
-- [ ] `task-022`: Client: Sampling (handle sampling/createMessage constraints) (Depends on: `task-019`)
+- [x] `task-022`: Client: Sampling (handle sampling/createMessage constraints) (Depends on: `task-019`)
 - [ ] `task-023`: Client: Elicitation (form+url, URL safety, completion notifications) (Depends on: `task-019`)
 
 ## Phase 6: Tasks + Utilities (Blocked by Phases 4 and 5)

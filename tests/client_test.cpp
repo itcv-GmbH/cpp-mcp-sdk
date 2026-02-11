@@ -806,6 +806,177 @@ TEST_CASE("Client notifyRootsListChanged is gated by roots.listChanged", "[clien
   }
 }
 
+TEST_CASE("Client sampling/createMessage validates roles and tool capability", "[client][sampling][validation]")
+{
+  SECTION("sampling/createMessage rejects invalid role")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::SamplingCapability samplingCapability;
+    mcp::ClientInitializeConfiguration configuration;
+    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(configuration));
+
+    client->setSamplingCreateMessageHandler(
+      [](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &) -> std::optional<mcp::jsonrpc::JsonValue>
+      {
+        mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
+        result["role"] = "assistant";
+        result["model"] = "test-model";
+        result["content"] = mcp::jsonrpc::JsonValue::object();
+        result["content"]["type"] = "text";
+        result["content"]["text"] = "ok";
+        return result;
+      });
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    mcp::jsonrpc::Request samplingRequest;
+    samplingRequest.id = std::int64_t {9101};
+    samplingRequest.method = "sampling/createMessage";
+    samplingRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*samplingRequest.params)["maxTokens"] = 64;
+    (*samplingRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+    mcp::jsonrpc::JsonValue message = mcp::jsonrpc::JsonValue::object();
+    message["role"] = "system";
+    message["content"] = mcp::jsonrpc::JsonValue::object();
+    message["content"]["type"] = "text";
+    message["content"]["text"] = "bad role";
+    (*samplingRequest.params)["messages"].push_back(std::move(message));
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, samplingRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+  }
+
+  SECTION("sampling/createMessage rejects tools fields without sampling.tools")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::SamplingCapability samplingCapability;
+    samplingCapability.tools = false;
+    mcp::ClientInitializeConfiguration configuration;
+    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(configuration));
+
+    client->setSamplingCreateMessageHandler(
+      [](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &) -> std::optional<mcp::jsonrpc::JsonValue>
+      {
+        mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
+        result["role"] = "assistant";
+        result["model"] = "test-model";
+        result["content"] = mcp::jsonrpc::JsonValue::object();
+        result["content"]["type"] = "text";
+        result["content"]["text"] = "ok";
+        return result;
+      });
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    mcp::jsonrpc::Request samplingRequest;
+    samplingRequest.id = std::int64_t {9102};
+    samplingRequest.method = "sampling/createMessage";
+    samplingRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*samplingRequest.params)["maxTokens"] = 64;
+    (*samplingRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+    mcp::jsonrpc::JsonValue message = mcp::jsonrpc::JsonValue::object();
+    message["role"] = "user";
+    message["content"] = mcp::jsonrpc::JsonValue::object();
+    message["content"]["type"] = "text";
+    message["content"]["text"] = "hello";
+    (*samplingRequest.params)["messages"].push_back(std::move(message));
+    (*samplingRequest.params)["toolChoice"] = mcp::jsonrpc::JsonValue::object();
+    (*samplingRequest.params)["toolChoice"]["mode"] = "auto";
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, samplingRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+  }
+}
+
+TEST_CASE("Client sampling/createMessage happy path and user rejection", "[client][sampling][handler]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::SamplingCapability samplingCapability;
+  samplingCapability.tools = true;
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  client->setSamplingCreateMessageHandler(
+    [](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &params) -> std::optional<mcp::jsonrpc::JsonValue>
+    {
+      mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
+      result["role"] = "assistant";
+      result["model"] = "test-model";
+      result["content"] = mcp::jsonrpc::JsonValue::object();
+      result["content"]["type"] = "text";
+      result["content"]["text"] = "Echo: " + params["messages"][0]["content"]["text"].as<std::string>();
+      result["stopReason"] = "endTurn";
+      return result;
+    });
+
+  mcp::jsonrpc::Request samplingRequest;
+  samplingRequest.id = std::int64_t {9103};
+  samplingRequest.method = "sampling/createMessage";
+  samplingRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*samplingRequest.params)["maxTokens"] = 64;
+  (*samplingRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+  mcp::jsonrpc::JsonValue message = mcp::jsonrpc::JsonValue::object();
+  message["role"] = "user";
+  message["content"] = mcp::jsonrpc::JsonValue::object();
+  message["content"]["type"] = "text";
+  message["content"]["text"] = "hello";
+  (*samplingRequest.params)["messages"].push_back(std::move(message));
+
+  const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, samplingRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
+  const auto &success = std::get<mcp::jsonrpc::SuccessResponse>(response);
+  REQUIRE(success.result["role"].as<std::string>() == "assistant");
+  REQUIRE(success.result["model"].as<std::string>() == "test-model");
+  REQUIRE(success.result["content"]["type"].as<std::string>() == "text");
+  REQUIRE(success.result["content"]["text"].as<std::string>() == "Echo: hello");
+
+  client->setSamplingCreateMessageHandler([](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &) -> std::optional<mcp::jsonrpc::JsonValue>
+                                          { return std::nullopt; });
+
+  mcp::jsonrpc::Request rejectedRequest = samplingRequest;
+  rejectedRequest.id = std::int64_t {9104};
+  const mcp::jsonrpc::Response rejectedResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, rejectedRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(rejectedResponse));
+  const auto &rejectedError = std::get<mcp::jsonrpc::ErrorResponse>(rejectedResponse);
+  REQUIRE(rejectedError.error.code == -1);
+}
+
 TEST_CASE("Client pagination helpers detect cursor cycles", "[client][pagination][helpers]")
 {
   auto client = mcp::Client::create();

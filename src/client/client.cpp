@@ -19,6 +19,7 @@
 
 #include <mcp/client/client.hpp>
 #include <mcp/client/roots.hpp>
+#include <mcp/client/sampling.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -45,6 +46,7 @@ static constexpr std::string_view kResourcesTemplatesListMethod = "resources/tem
 static constexpr std::string_view kPromptsListMethod = "prompts/list";
 static constexpr std::string_view kPromptsGetMethod = "prompts/get";
 static constexpr std::string_view kRootsListMethod = "roots/list";
+static constexpr std::string_view kSamplingCreateMessageMethod = "sampling/createMessage";
 static constexpr std::string_view kRootsListChangedNotificationMethod = "notifications/roots/list_changed";
 
 static auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>
@@ -420,6 +422,271 @@ static auto makeRootsUnsupportedResponse(const jsonrpc::RequestId &requestId, co
   jsonrpc::JsonValue errorData = jsonrpc::JsonValue::object();
   errorData["reason"] = reason;
   return jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::move(errorData), "Roots not supported"), requestId);
+}
+
+static auto makeSamplingUnsupportedResponse(const jsonrpc::RequestId &requestId, const std::string &reason) -> jsonrpc::Response
+{
+  jsonrpc::JsonValue errorData = jsonrpc::JsonValue::object();
+  errorData["reason"] = reason;
+  return jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::move(errorData), "Sampling not supported"), requestId);
+}
+
+static auto makeSamplingInvalidParamsResponse(const jsonrpc::RequestId &requestId, std::string message) -> jsonrpc::Response
+{
+  return jsonrpc::makeErrorResponse(jsonrpc::makeInvalidParamsError(std::nullopt, std::move(message)), requestId);
+}
+
+static auto contentType(const jsonrpc::JsonValue &contentBlock) -> std::optional<std::string>
+{
+  if (!contentBlock.is_object() || !contentBlock.contains("type") || !contentBlock["type"].is_string())
+  {
+    return std::nullopt;
+  }
+
+  return contentBlock["type"].as<std::string>();
+}
+
+static auto enumerateContentBlocks(const jsonrpc::JsonValue &content, const std::function<void(const jsonrpc::JsonValue &)> &visitor) -> bool
+{
+  if (content.is_object())
+  {
+    visitor(content);
+    return true;
+  }
+
+  if (content.is_array())
+  {
+    for (const auto &contentBlock : content.array_range())
+    {
+      visitor(contentBlock);
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+static auto messageContainsOnlyToolResults(const jsonrpc::JsonValue &message) -> bool
+{
+  if (!message.is_object() || !message.contains("content"))
+  {
+    return false;
+  }
+
+  bool hasAtLeastOneToolResult = false;
+  bool hasNonToolResult = false;
+  const bool contentWasEnumerable = enumerateContentBlocks(message["content"],
+                                                           [&hasAtLeastOneToolResult, &hasNonToolResult](const jsonrpc::JsonValue &contentBlock) -> void
+                                                           {
+                                                             const auto blockType = contentType(contentBlock);
+                                                             if (!blockType.has_value())
+                                                             {
+                                                               hasNonToolResult = true;
+                                                               return;
+                                                             }
+
+                                                             if (*blockType == "tool_result")
+                                                             {
+                                                               hasAtLeastOneToolResult = true;
+                                                             }
+                                                             else
+                                                             {
+                                                               hasNonToolResult = true;
+                                                             }
+                                                           });
+
+  return contentWasEnumerable && hasAtLeastOneToolResult && !hasNonToolResult;
+}
+
+static auto collectToolUseIds(const jsonrpc::JsonValue &message) -> std::vector<std::string>
+{
+  std::vector<std::string> toolUseIds;
+  if (!message.is_object() || !message.contains("content"))
+  {
+    return toolUseIds;
+  }
+
+  static_cast<void>(enumerateContentBlocks(message["content"],
+                                           [&toolUseIds](const jsonrpc::JsonValue &contentBlock) -> void
+                                           {
+                                             const auto blockType = contentType(contentBlock);
+                                             if (!blockType.has_value() || *blockType != "tool_use")
+                                             {
+                                               return;
+                                             }
+
+                                             if (!contentBlock.contains("id") || !contentBlock["id"].is_string())
+                                             {
+                                               toolUseIds.push_back(std::string {});
+                                               return;
+                                             }
+
+                                             toolUseIds.push_back(contentBlock["id"].as<std::string>());
+                                           }));
+
+  return toolUseIds;
+}
+
+static auto collectToolResultIds(const jsonrpc::JsonValue &message) -> std::vector<std::string>
+{
+  std::vector<std::string> toolResultIds;
+  if (!messageContainsOnlyToolResults(message))
+  {
+    return toolResultIds;
+  }
+
+  static_cast<void>(enumerateContentBlocks(message["content"],
+                                           [&toolResultIds](const jsonrpc::JsonValue &contentBlock) -> void
+                                           {
+                                             if (!contentBlock.contains("toolUseId") || !contentBlock["toolUseId"].is_string())
+                                             {
+                                               toolResultIds.push_back(std::string {});
+                                               return;
+                                             }
+
+                                             toolResultIds.push_back(contentBlock["toolUseId"].as<std::string>());
+                                           }));
+
+  return toolResultIds;
+}
+
+static auto hasBalancedToolUseSequence(const jsonrpc::JsonValue &messages) -> bool
+{
+  if (!messages.is_array())
+  {
+    return false;
+  }
+
+  for (std::size_t index = 0; index < messages.size(); ++index)
+  {
+    const auto &message = messages[index];
+    if (!message.is_object() || !message.contains("role") || !message["role"].is_string())
+    {
+      return false;
+    }
+
+    const std::string role = message["role"].as<std::string>();
+    const auto toolUseIds = collectToolUseIds(message);
+    const bool hasToolUses = !toolUseIds.empty();
+    const bool hasToolResults = messageContainsOnlyToolResults(message);
+
+    if (role == "user" && hasToolResults)
+    {
+      if (index == 0)
+      {
+        return false;
+      }
+
+      const auto &previousMessage = messages[index - 1];
+      if (!previousMessage.is_object() || !previousMessage.contains("role") || !previousMessage["role"].is_string() || previousMessage["role"].as<std::string>() != "assistant")
+      {
+        return false;
+      }
+
+      const auto previousToolUseIds = collectToolUseIds(previousMessage);
+      if (previousToolUseIds.empty())
+      {
+        return false;
+      }
+
+      const auto toolResultIds = collectToolResultIds(message);
+      if (toolResultIds.size() != previousToolUseIds.size())
+      {
+        return false;
+      }
+
+      std::vector<std::string> sortedToolUseIds = previousToolUseIds;
+      std::vector<std::string> sortedToolResultIds = toolResultIds;
+      std::sort(sortedToolUseIds.begin(), sortedToolUseIds.end());
+      std::sort(sortedToolResultIds.begin(), sortedToolResultIds.end());
+      if (sortedToolUseIds != sortedToolResultIds)
+      {
+        return false;
+      }
+    }
+
+    if (role == "assistant" && hasToolUses)
+    {
+      if (index + 1 >= messages.size())
+      {
+        return false;
+      }
+
+      const auto &nextMessage = messages[index + 1];
+      if (!nextMessage.is_object() || !nextMessage.contains("role") || !nextMessage["role"].is_string() || nextMessage["role"].as<std::string>() != "user")
+      {
+        return false;
+      }
+
+      if (!messageContainsOnlyToolResults(nextMessage))
+      {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+static auto validateSamplingRequestSemantics(const Client &client, const jsonrpc::JsonValue &params) -> std::optional<std::string>
+{
+  if (!params.is_object())
+  {
+    return "sampling/createMessage requires object params";
+  }
+
+  if (!params.contains("messages") || !params["messages"].is_array())
+  {
+    return "sampling/createMessage requires array params.messages";
+  }
+
+  const auto negotiatedCapabilities = client.negotiatedClientCapabilities();
+  const bool samplingToolsEnabled = negotiatedCapabilities.has_value() && negotiatedCapabilities->sampling().has_value() && negotiatedCapabilities->sampling()->tools;
+  if ((params.contains("tools") || params.contains("toolChoice")) && !samplingToolsEnabled)
+  {
+    return "sampling/createMessage tools and toolChoice require negotiated sampling.tools capability";
+  }
+
+  for (const auto &message : params["messages"].array_range())
+  {
+    if (!message.is_object() || !message.contains("role") || !message["role"].is_string())
+    {
+      return "sampling/createMessage messages must include string role";
+    }
+
+    const std::string role = message["role"].as<std::string>();
+    if (role != "user" && role != "assistant")
+    {
+      return "sampling/createMessage messages must use role 'user' or 'assistant'";
+    }
+
+    if (role == "user" && message.contains("content") && !messageContainsOnlyToolResults(message))
+    {
+      bool hasToolResult = false;
+      static_cast<void>(enumerateContentBlocks(message["content"],
+                                               [&hasToolResult](const jsonrpc::JsonValue &contentBlock) -> void
+                                               {
+                                                 const auto blockType = contentType(contentBlock);
+                                                 if (blockType.has_value() && *blockType == "tool_result")
+                                                 {
+                                                   hasToolResult = true;
+                                                 }
+                                               }));
+
+      if (hasToolResult)
+      {
+        return "sampling/createMessage user messages with tool_result must contain only tool_result blocks";
+      }
+    }
+  }
+
+  if (!hasBalancedToolUseSequence(params["messages"]))
+  {
+    return "sampling/createMessage tool_use and tool_result blocks must be balanced in sequence";
+  }
+
+  return std::nullopt;
 }
 
 static auto isFileUri(std::string_view uri) -> bool
@@ -879,6 +1146,60 @@ Client::Client(std::shared_ptr<Session> session)
       response.result["roots"] = std::move(rootsJson);
       return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
     });
+
+  router_.registerRequestHandler(
+    std::string(kSamplingCreateMessageMethod),
+    [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+    {
+      const auto negotiatedCapabilities = negotiatedClientCapabilities();
+      if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->sampling().has_value())
+      {
+        return makeReadyResponseFuture(makeSamplingUnsupportedResponse(request.id, "Client does not have sampling capability"));
+      }
+
+      std::optional<SamplingCreateMessageHandler> samplingCreateMessageHandler;
+      {
+        const std::scoped_lock lock(mutex_);
+        samplingCreateMessageHandler = samplingCreateMessageHandler_;
+      }
+
+      if (!samplingCreateMessageHandler.has_value())
+      {
+        return makeReadyResponseFuture(makeSamplingUnsupportedResponse(request.id, "Client does not have a registered sampling/createMessage handler"));
+      }
+
+      const jsonrpc::JsonValue params = request.params.has_value() ? *request.params : jsonrpc::JsonValue::object();
+      if (const auto semanticError = validateSamplingRequestSemantics(*this, params); semanticError.has_value())
+      {
+        return makeReadyResponseFuture(makeSamplingInvalidParamsResponse(request.id, *semanticError));
+      }
+
+      std::optional<jsonrpc::JsonValue> result;
+      try
+      {
+        result = (*samplingCreateMessageHandler)(SamplingCreateMessageContext {context}, params);
+      }
+      catch (const std::exception &error)
+      {
+        return makeReadyResponseFuture(
+          jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string("sampling/createMessage failed: ") + error.what()), request.id));
+      }
+
+      if (!result.has_value())
+      {
+        JsonRpcError rejectionError;
+        rejectionError.code = -1;
+        rejectionError.message = "User rejected sampling request";
+        return makeReadyResponseFuture(jsonrpc::makeErrorResponse(std::move(rejectionError), request.id));
+      }
+
+      ensureValidResultSchema(*result, "CreateMessageResult", kSamplingCreateMessageMethod);
+
+      jsonrpc::SuccessResponse response;
+      response.id = request.id;
+      response.result = std::move(*result);
+      return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
+    });
 }
 
 auto Client::session() const noexcept -> const std::shared_ptr<Session> &
@@ -1219,6 +1540,18 @@ auto Client::notifyRootsListChanged() -> bool
 
   sendNotification(std::string(kRootsListChangedNotificationMethod), jsonrpc::JsonValue::object());
   return true;
+}
+
+auto Client::setSamplingCreateMessageHandler(SamplingCreateMessageHandler handler) -> void
+{
+  const std::scoped_lock lock(mutex_);
+  samplingCreateMessageHandler_ = std::move(handler);
+}
+
+auto Client::clearSamplingCreateMessageHandler() -> void
+{
+  const std::scoped_lock lock(mutex_);
+  samplingCreateMessageHandler_.reset();
 }
 
 auto Client::start() -> void
