@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
 
@@ -113,6 +114,9 @@ public:
   auto unregisterResource(std::string_view uri) -> bool;
   auto registerResourceTemplate(ResourceTemplateDefinition definition) -> void;
   auto unregisterResourceTemplate(std::string_view uriTemplate) -> bool;
+  auto registerPrompt(PromptDefinition definition, PromptHandler handler) -> void;
+  auto unregisterPrompt(std::string_view name) -> bool;
+  auto notifyPromptsListChanged(const jsonrpc::RequestContext &context = {}) -> bool;
   auto notifyResourceUpdated(std::string uri, const jsonrpc::RequestContext &context = {}) -> bool;
   auto notifyResourcesListChanged(const jsonrpc::RequestContext &context = {}) -> bool;
   auto emitLogMessage(const jsonrpc::RequestContext &context, LogLevel level, jsonrpc::JsonValue data, std::optional<std::string> logger = std::nullopt) -> bool;
@@ -130,6 +134,8 @@ private:
   auto handleResourceTemplatesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleResourcesSubscribeRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleResourcesUnsubscribeRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handlePromptsGetRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleLoggingSetLevelRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleCompletionCompleteRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
 
@@ -142,11 +148,13 @@ private:
   mutable std::mutex utilityMutex_;
   mutable std::mutex toolsMutex_;
   mutable std::mutex resourcesMutex_;
+  mutable std::mutex promptsMutex_;
   CompletionHandler completionHandler_;
   std::vector<RegisteredTool> tools_;
   std::vector<RegisteredResource> resources_;
   std::vector<ResourceTemplateDefinition> resourceTemplates_;
   std::vector<ResourceSubscription> resourceSubscriptions_;
+  std::vector<RegisteredPrompt> prompts_;
   LogLevel logLevel_ = LogLevel::kDebug;
 };
 

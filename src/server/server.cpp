@@ -47,11 +47,15 @@ constexpr std::string_view kResourcesSubscribeMethod = "resources/subscribe";
 constexpr std::string_view kResourcesUnsubscribeMethod = "resources/unsubscribe";
 constexpr std::string_view kResourcesUpdatedNotificationMethod = "notifications/resources/updated";
 constexpr std::string_view kResourcesListChangedNotificationMethod = "notifications/resources/list_changed";
+constexpr std::string_view kPromptsListMethod = "prompts/list";
+constexpr std::string_view kPromptsGetMethod = "prompts/get";
+constexpr std::string_view kPromptsListChangedNotificationMethod = "notifications/prompts/list_changed";
 constexpr std::string_view kDefaultServerName = "mcp-cpp-sdk";
 constexpr std::string_view kCursorPrefix = "mcp:v1:";
 constexpr std::size_t kToolsPageSize = 50;
 constexpr std::size_t kResourcesPageSize = 50;
 constexpr std::size_t kResourceTemplatesPageSize = 50;
+constexpr std::size_t kPromptsPageSize = 50;
 
 using JsonSchema = jsoncons::jsonschema::json_schema<jsonrpc::JsonValue>;
 using WalkResult = jsoncons::jsonschema::walk_result;
@@ -933,6 +937,95 @@ auto Server::unregisterResourceTemplate(std::string_view uriTemplate) -> bool
   return removed;
 }
 
+auto Server::registerPrompt(PromptDefinition definition, PromptHandler handler) -> void
+{
+  if (handler == nullptr)
+  {
+    throw std::invalid_argument("Prompt handler must not be null");
+  }
+
+  if (definition.name.empty())
+  {
+    throw std::invalid_argument("Prompt name must not be empty");
+  }
+
+  for (const auto &argument : definition.arguments)
+  {
+    if (argument.name.empty())
+    {
+      throw std::invalid_argument("Prompt argument name must not be empty");
+    }
+  }
+
+  {
+    const std::scoped_lock lock(promptsMutex_);
+    const auto existingPrompt = std::find_if(
+      prompts_.begin(), prompts_.end(), [&definition](const RegisteredPrompt &registeredPrompt) -> bool { return registeredPrompt.definition.name == definition.name; });
+    if (existingPrompt != prompts_.end())
+    {
+      throw std::invalid_argument("Prompt already registered: " + definition.name);
+    }
+
+    for (std::size_t argumentIndex = 0; argumentIndex < definition.arguments.size(); ++argumentIndex)
+    {
+      const auto duplicate =
+        std::find_if(definition.arguments.begin() + static_cast<std::ptrdiff_t>(argumentIndex + 1),
+                     definition.arguments.end(),
+                     [&definition, argumentIndex](const PromptArgumentDefinition &argument) -> bool { return argument.name == definition.arguments[argumentIndex].name; });
+      if (duplicate != definition.arguments.end())
+      {
+        throw std::invalid_argument("Prompt argument names must be unique: " + definition.arguments[argumentIndex].name);
+      }
+    }
+
+    prompts_.push_back(RegisteredPrompt {std::move(definition), std::move(handler)});
+  }
+
+  static_cast<void>(notifyPromptsListChanged());
+}
+
+auto Server::unregisterPrompt(std::string_view name) -> bool
+{
+  bool removed = false;
+
+  {
+    const std::scoped_lock lock(promptsMutex_);
+    const auto promptIter =
+      std::find_if(prompts_.begin(), prompts_.end(), [name](const RegisteredPrompt &registeredPrompt) -> bool { return registeredPrompt.definition.name == name; });
+    if (promptIter != prompts_.end())
+    {
+      prompts_.erase(promptIter);
+      removed = true;
+    }
+  }
+
+  if (removed)
+  {
+    static_cast<void>(notifyPromptsListChanged());
+  }
+
+  return removed;
+}
+
+auto Server::notifyPromptsListChanged(const jsonrpc::RequestContext &context) -> bool
+{
+  if (!configuration_.capabilities.prompts().has_value() || !configuration_.capabilities.prompts()->listChanged)
+  {
+    return false;
+  }
+
+  if (!session_->canSendNotification(detail::kPromptsListChangedNotificationMethod))
+  {
+    return false;
+  }
+
+  jsonrpc::Notification notification;
+  notification.method = std::string(detail::kPromptsListChangedNotificationMethod);
+  notification.params = jsonrpc::JsonValue::object();
+  sendNotification(context, std::move(notification));
+  return true;
+}
+
 auto Server::notifyResourceUpdated(std::string uri, const jsonrpc::RequestContext &context) -> bool
 {
   if (!configuration_.capabilities.resources().has_value() || !configuration_.capabilities.resources()->subscribe)
@@ -1114,6 +1207,14 @@ auto Server::registerCoreHandlers() -> void
   router_.registerRequestHandler(std::string(detail::kResourcesUnsubscribeMethod),
                                  [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
                                  { return detail::makeReadyResponseFuture(handleResourcesUnsubscribeRequest(context, request)); });
+
+  router_.registerRequestHandler(std::string(detail::kPromptsListMethod),
+                                 [this](const jsonrpc::RequestContext &, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handlePromptsListRequest(request)); });
+
+  router_.registerRequestHandler(std::string(detail::kPromptsGetMethod),
+                                 [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handlePromptsGetRequest(context, request)); });
 }
 
 auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
@@ -1669,6 +1770,243 @@ auto Server::handleResourcesUnsubscribeRequest(const jsonrpc::RequestContext &co
   jsonrpc::SuccessResponse response;
   response.id = request.id;
   response.result = jsonrpc::JsonValue::object();
+  return response;
+}
+
+auto Server::handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  std::optional<std::string> cursor;
+  if (request.params.has_value())
+  {
+    if (!request.params->is_object())
+    {
+      return detail::makeInvalidParamsResponse(request.id, "prompts/list requires params to be an object when provided");
+    }
+
+    if (request.params->contains("cursor"))
+    {
+      if (!(*request.params)["cursor"].is_string())
+      {
+        return detail::makeInvalidParamsResponse(request.id, "prompts/list requires params.cursor to be a string");
+      }
+
+      cursor = (*request.params)["cursor"].as<std::string>();
+    }
+  }
+
+  std::vector<PromptDefinition> promptDefinitions;
+  {
+    const std::scoped_lock lock(promptsMutex_);
+    promptDefinitions.reserve(prompts_.size());
+    for (const auto &registeredPrompt : prompts_)
+    {
+      promptDefinitions.push_back(registeredPrompt.definition);
+    }
+  }
+
+  PaginationWindow window;
+  try
+  {
+    window = paginateList(ListEndpoint::kPrompts, cursor, promptDefinitions.size(), detail::kPromptsPageSize);
+  }
+  catch (const std::invalid_argument &)
+  {
+    return detail::makeInvalidParamsResponse(request.id, "Invalid prompts/list cursor");
+  }
+
+  jsonrpc::JsonValue promptsJson = jsonrpc::JsonValue::array();
+  for (std::size_t index = window.startIndex; index < window.endIndex; ++index)
+  {
+    const PromptDefinition &definition = promptDefinitions[index];
+    jsonrpc::JsonValue promptJson = jsonrpc::JsonValue::object();
+    promptJson["name"] = definition.name;
+    if (definition.title.has_value())
+    {
+      promptJson["title"] = *definition.title;
+    }
+    if (definition.description.has_value())
+    {
+      promptJson["description"] = *definition.description;
+    }
+    if (definition.icons.has_value())
+    {
+      promptJson["icons"] = *definition.icons;
+    }
+    if (!definition.arguments.empty())
+    {
+      jsonrpc::JsonValue argumentsJson = jsonrpc::JsonValue::array();
+      for (const auto &argument : definition.arguments)
+      {
+        jsonrpc::JsonValue argumentJson = jsonrpc::JsonValue::object();
+        argumentJson["name"] = argument.name;
+        if (argument.title.has_value())
+        {
+          argumentJson["title"] = *argument.title;
+        }
+        if (argument.description.has_value())
+        {
+          argumentJson["description"] = *argument.description;
+        }
+        if (argument.required.has_value())
+        {
+          argumentJson["required"] = *argument.required;
+        }
+        if (argument.metadata.has_value())
+        {
+          argumentJson["_meta"] = *argument.metadata;
+        }
+        argumentsJson.push_back(std::move(argumentJson));
+      }
+
+      promptJson["arguments"] = std::move(argumentsJson);
+    }
+    if (definition.metadata.has_value())
+    {
+      promptJson["_meta"] = *definition.metadata;
+    }
+
+    promptsJson.push_back(std::move(promptJson));
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = request.id;
+  response.result = jsonrpc::JsonValue::object();
+  response.result["prompts"] = std::move(promptsJson);
+  if (window.nextCursor.has_value())
+  {
+    response.result["nextCursor"] = *window.nextCursor;
+  }
+
+  return response;
+}
+
+auto Server::handlePromptsGetRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  if (!request.params.has_value() || !request.params->is_object())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "prompts/get requires params object");
+  }
+
+  const jsonrpc::JsonValue &params = *request.params;
+  if (!params.contains("name") || !params["name"].is_string())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "prompts/get requires string params.name");
+  }
+
+  const std::string promptName = params["name"].as<std::string>();
+
+  jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object();
+  if (params.contains("arguments"))
+  {
+    if (!params["arguments"].is_object())
+    {
+      return detail::makeInvalidParamsResponse(request.id, "prompts/get requires params.arguments to be an object when provided");
+    }
+
+    arguments = params["arguments"];
+    for (const auto &entry : arguments.object_range())
+    {
+      if (!entry.value().is_string())
+      {
+        return detail::makeInvalidParamsResponse(request.id, "prompts/get requires every params.arguments value to be a string");
+      }
+    }
+  }
+
+  std::optional<PromptDefinition> definition;
+  PromptHandler handler;
+  {
+    const std::scoped_lock lock(promptsMutex_);
+    const auto promptIter =
+      std::find_if(prompts_.begin(), prompts_.end(), [&promptName](const RegisteredPrompt &registeredPrompt) -> bool { return registeredPrompt.definition.name == promptName; });
+    if (promptIter == prompts_.end())
+    {
+      return detail::makeInvalidParamsResponse(request.id, "Unknown prompt: " + promptName);
+    }
+
+    definition = promptIter->definition;
+    handler = promptIter->handler;
+  }
+
+  if (!definition.has_value() || handler == nullptr)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Prompt registration is incomplete"), request.id);
+  }
+
+  for (const auto &argumentEntry : arguments.object_range())
+  {
+    const auto knownArgument =
+      std::find_if(definition->arguments.begin(),
+                   definition->arguments.end(),
+                   [&argumentEntry](const PromptArgumentDefinition &argumentDefinition) -> bool { return argumentDefinition.name == argumentEntry.key(); });
+    if (knownArgument == definition->arguments.end())
+    {
+      return detail::makeInvalidParamsResponse(request.id, "prompts/get arguments contains unknown argument: " + argumentEntry.key());
+    }
+  }
+
+  for (const auto &argumentDefinition : definition->arguments)
+  {
+    const bool isRequired = argumentDefinition.required.value_or(false);
+    if (isRequired && !arguments.contains(argumentDefinition.name))
+    {
+      return detail::makeInvalidParamsResponse(request.id, "prompts/get is missing required argument: " + argumentDefinition.name);
+    }
+  }
+
+  PromptGetResult result;
+  try
+  {
+    PromptGetContext getContext;
+    getContext.requestContext = context;
+    getContext.promptName = promptName;
+    getContext.arguments = std::move(arguments);
+    result = handler(getContext);
+  }
+  catch (const std::exception &exception)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string("prompts/get failed: ") + exception.what()), request.id);
+  }
+  catch (...)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "prompts/get failed: unknown error"), request.id);
+  }
+
+  for (const auto &message : result.messages)
+  {
+    if ((message.role != "user" && message.role != "assistant") || !message.content.is_object())
+    {
+      return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Prompt handler returned invalid messages"), request.id);
+    }
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = request.id;
+  response.result = jsonrpc::JsonValue::object();
+  if (result.description.has_value())
+  {
+    response.result["description"] = *result.description;
+  }
+  else if (definition->description.has_value())
+  {
+    response.result["description"] = *definition->description;
+  }
+
+  jsonrpc::JsonValue messagesJson = jsonrpc::JsonValue::array();
+  for (const auto &message : result.messages)
+  {
+    jsonrpc::JsonValue messageJson = jsonrpc::JsonValue::object();
+    messageJson["role"] = message.role;
+    messageJson["content"] = message.content;
+    messagesJson.push_back(std::move(messageJson));
+  }
+  response.result["messages"] = std::move(messagesJson);
+
+  if (result.metadata.has_value())
+  {
+    response.result["_meta"] = *result.metadata;
+  }
+
   return response;
 }
 

@@ -11,6 +11,7 @@
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/server/prompts.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/tools.hpp>
 #include <mcp/version.hpp>
@@ -38,10 +39,16 @@ static constexpr std::int64_t kResourceTemplatesListPaginationRequestId = 130;
 static constexpr std::int64_t kResourcesSubscribeRequestId = 140;
 static constexpr std::int64_t kResourcesUnsubscribeRequestId = 141;
 static constexpr std::int64_t kResourcesSubscribeGatingRequestId = 142;
+static constexpr std::int64_t kPromptsListPaginationRequestId = 150;
+static constexpr std::int64_t kPromptsGetRequestId = 160;
+static constexpr std::int64_t kPromptsGetMissingArgumentRequestId = 161;
+static constexpr std::int64_t kPromptsGetUnknownArgumentRequestId = 162;
+static constexpr std::int64_t kPromptsGetInvalidArgumentTypeRequestId = 163;
 
 static constexpr std::size_t kToolsListPageSize = 50;
 static constexpr std::size_t kResourcesListPageSize = 50;
 static constexpr std::size_t kResourceTemplatesListPageSize = 50;
+static constexpr std::size_t kPromptsListPageSize = 50;
 
 static auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::future<mcp::jsonrpc::Response>
 {
@@ -117,6 +124,21 @@ static auto makeResourceTemplate(std::string uriTemplate, std::string name) -> m
   definition.uriTemplate = std::move(uriTemplate);
   definition.name = std::move(name);
   definition.description = "test template";
+  return definition;
+}
+
+static auto makePromptDefinition(std::string name) -> mcp::PromptDefinition
+{
+  mcp::PromptDefinition definition;
+  definition.name = std::move(name);
+  definition.description = "test prompt";
+
+  mcp::PromptArgumentDefinition argument;
+  argument.name = "topic";
+  argument.description = "Topic to explain";
+  argument.required = true;
+
+  definition.arguments.push_back(std::move(argument));
   return definition;
 }
 
@@ -835,6 +857,200 @@ TEST_CASE("Server resource subscriptions are capability-gated and emit update no
     REQUIRE(updatedNotifications == 1);
     REQUIRE(listChangedNotifications == 1);
   }
+}
+
+TEST_CASE("Server prompts list supports cursor pagination", "[server][prompts][list]")
+{
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, mcp::PromptsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+  for (std::size_t index = 0; index < kPromptsListPageSize + 5; ++index)
+  {
+    server->registerPrompt(makePromptDefinition("prompt-" + std::to_string(index)),
+                           [](const mcp::PromptGetContext &) -> mcp::PromptGetResult
+                           {
+                             mcp::PromptGetResult result;
+                             mcp::PromptMessage message;
+                             message.role = "user";
+                             message.content = mcp::jsonrpc::JsonValue::object();
+                             message.content["type"] = "text";
+                             message.content["text"] = "hello";
+                             result.messages.push_back(std::move(message));
+                             return result;
+                           });
+  }
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request firstPageRequest;
+  firstPageRequest.id = kPromptsListPaginationRequestId;
+  firstPageRequest.method = "prompts/list";
+  firstPageRequest.params = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response firstPageResponse = dispatchRequest(*server, firstPageRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(firstPageResponse));
+  const auto &firstPage = std::get<mcp::jsonrpc::SuccessResponse>(firstPageResponse);
+  REQUIRE(firstPage.result["prompts"].size() == kPromptsListPageSize);
+  REQUIRE(firstPage.result.contains("nextCursor"));
+
+  mcp::jsonrpc::Request secondPageRequest;
+  secondPageRequest.id = kPromptsListPaginationRequestId + 1;
+  secondPageRequest.method = "prompts/list";
+  secondPageRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*secondPageRequest.params)["cursor"] = firstPage.result["nextCursor"];
+
+  const mcp::jsonrpc::Response secondPageResponse = dispatchRequest(*server, secondPageRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(secondPageResponse));
+  const auto &secondPage = std::get<mcp::jsonrpc::SuccessResponse>(secondPageResponse);
+  REQUIRE(secondPage.result["prompts"].size() == 5);
+  REQUIRE_FALSE(secondPage.result.contains("nextCursor"));
+
+  mcp::jsonrpc::Request invalidCursorRequest;
+  invalidCursorRequest.id = kPromptsListPaginationRequestId + 2;
+  invalidCursorRequest.method = "prompts/list";
+  invalidCursorRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*invalidCursorRequest.params)["cursor"] = "not-a-valid-cursor";
+
+  const mcp::jsonrpc::Response invalidCursorResponse = dispatchRequest(*server, invalidCursorRequest);
+  assertErrorCode(invalidCursorResponse, mcp::JsonRpcErrorCode::kInvalidParams);
+}
+
+TEST_CASE("Server prompts/get validates required and unknown arguments", "[server][prompts][get]")
+{
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, mcp::PromptsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  std::size_t invocationCount = 0;
+  server->registerPrompt(makePromptDefinition("explain-topic"),
+                         [&invocationCount](const mcp::PromptGetContext &context) -> mcp::PromptGetResult
+                         {
+                           ++invocationCount;
+
+                           mcp::PromptGetResult result;
+                           result.description = "Explain a topic";
+
+                           mcp::PromptMessage message;
+                           message.role = "user";
+                           message.content = mcp::jsonrpc::JsonValue::object();
+                           message.content["type"] = "text";
+                           message.content["text"] = "Explain: " + context.arguments["topic"].as<std::string>();
+                           result.messages.push_back(std::move(message));
+                           return result;
+                         });
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request missingArgumentRequest;
+  missingArgumentRequest.id = kPromptsGetMissingArgumentRequestId;
+  missingArgumentRequest.method = "prompts/get";
+  missingArgumentRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*missingArgumentRequest.params)["name"] = "explain-topic";
+
+  const mcp::jsonrpc::Response missingArgumentResponse = dispatchRequest(*server, missingArgumentRequest);
+  assertErrorCode(missingArgumentResponse, mcp::JsonRpcErrorCode::kInvalidParams);
+  REQUIRE(invocationCount == 0);
+
+  mcp::jsonrpc::Request unknownArgumentRequest;
+  unknownArgumentRequest.id = kPromptsGetUnknownArgumentRequestId;
+  unknownArgumentRequest.method = "prompts/get";
+  unknownArgumentRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*unknownArgumentRequest.params)["name"] = "explain-topic";
+  (*unknownArgumentRequest.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*unknownArgumentRequest.params)["arguments"]["topic"] = "mcp";
+  (*unknownArgumentRequest.params)["arguments"]["extra"] = "unexpected";
+
+  const mcp::jsonrpc::Response unknownArgumentResponse = dispatchRequest(*server, unknownArgumentRequest);
+  assertErrorCode(unknownArgumentResponse, mcp::JsonRpcErrorCode::kInvalidParams);
+  REQUIRE(invocationCount == 0);
+
+  mcp::jsonrpc::Request invalidArgumentTypeRequest;
+  invalidArgumentTypeRequest.id = kPromptsGetInvalidArgumentTypeRequestId;
+  invalidArgumentTypeRequest.method = "prompts/get";
+  invalidArgumentTypeRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*invalidArgumentTypeRequest.params)["name"] = "explain-topic";
+  (*invalidArgumentTypeRequest.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*invalidArgumentTypeRequest.params)["arguments"]["topic"] = 42;
+
+  const mcp::jsonrpc::Response invalidArgumentTypeResponse = dispatchRequest(*server, invalidArgumentTypeRequest);
+  assertErrorCode(invalidArgumentTypeResponse, mcp::JsonRpcErrorCode::kInvalidParams);
+  REQUIRE(invocationCount == 0);
+
+  mcp::jsonrpc::Request validRequest;
+  validRequest.id = kPromptsGetRequestId;
+  validRequest.method = "prompts/get";
+  validRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*validRequest.params)["name"] = "explain-topic";
+  (*validRequest.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*validRequest.params)["arguments"]["topic"] = "pagination";
+
+  const mcp::jsonrpc::Response validResponse = dispatchRequest(*server, validRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(validResponse));
+  const auto &success = std::get<mcp::jsonrpc::SuccessResponse>(validResponse);
+  REQUIRE(success.result["description"].as<std::string>() == "Explain a topic");
+  REQUIRE(success.result["messages"].size() == 1);
+  REQUIRE(success.result["messages"][0]["role"].as<std::string>() == "user");
+  REQUIRE(success.result["messages"][0]["content"]["type"].as<std::string>() == "text");
+  REQUIRE(success.result["messages"][0]["content"]["text"].as<std::string>() == "Explain: pagination");
+  REQUIRE(invocationCount == 1);
+}
+
+TEST_CASE("Server emits prompts list_changed notifications when enabled", "[server][prompts][notifications]")
+{
+  mcp::PromptsCapability promptsCapability;
+  promptsCapability.listChanged = true;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  std::mutex messagesMutex;
+  std::vector<mcp::jsonrpc::Message> outboundMessages;
+  server->setOutboundMessageSender(
+    [&messagesMutex, &outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+    {
+      const std::scoped_lock lock(messagesMutex);
+      outboundMessages.push_back(std::move(message));
+    });
+
+  completeInitialization(*server);
+
+  server->registerPrompt(makePromptDefinition("notify-prompt"),
+                         [](const mcp::PromptGetContext &) -> mcp::PromptGetResult
+                         {
+                           mcp::PromptGetResult result;
+                           mcp::PromptMessage message;
+                           message.role = "assistant";
+                           message.content = mcp::jsonrpc::JsonValue::object();
+                           message.content["type"] = "text";
+                           message.content["text"] = "ok";
+                           result.messages.push_back(std::move(message));
+                           return result;
+                         });
+  REQUIRE(server->unregisterPrompt("notify-prompt"));
+
+  std::size_t listChangedNotifications = 0;
+  {
+    const std::scoped_lock lock(messagesMutex);
+    for (const auto &message : outboundMessages)
+    {
+      if (!std::holds_alternative<mcp::jsonrpc::Notification>(message))
+      {
+        continue;
+      }
+
+      const auto &notification = std::get<mcp::jsonrpc::Notification>(message);
+      if (notification.method == "notifications/prompts/list_changed")
+      {
+        ++listChangedNotifications;
+      }
+    }
+  }
+
+  REQUIRE(listChangedNotifications == 2);
 }
 
 TEST_CASE("Server returns method not found for unregistered methods", "[server][core][dispatch]")
