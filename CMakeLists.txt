@@ -127,6 +127,7 @@ target_compile_definitions(mcp_sdk
     PUBLIC
         MCP_SDK_ENABLE_TLS=$<BOOL:${MCP_SDK_ENABLE_TLS}>
         MCP_SDK_ENABLE_AUTH=$<BOOL:${MCP_SDK_ENABLE_AUTH}>
+        MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK=$<BOOL:${MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK}>
 )
 
 # Set library properties for shared/static

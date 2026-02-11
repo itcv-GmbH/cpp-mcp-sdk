@@ -559,6 +559,9 @@ struct StreamableHttpClientOptions
   security::RuntimeLimits limits;
   SessionHeaderState sessionState;
   ProtocolVersionHeaderState protocolVersionState;
+  std::optional<bool> enableLegacyHttpSseFallback;
+  std::string legacyFallbackPostPath = "/rpc";
+  std::string legacyFallbackSsePath = "/events";
   std::uint32_t defaultRetryMilliseconds = detail::kDefaultRetryMilliseconds;
   std::function<void(std::uint32_t)> waitBeforeReconnect;
 };
@@ -596,6 +599,9 @@ struct HttpClientOptions
   security::RuntimeLimits limits;
   http::SessionHeaderState sessionState;
   http::ProtocolVersionHeaderState protocolVersionState;
+  std::optional<bool> enableLegacyHttpSseFallback;
+  std::string legacyFallbackPostPath = "/rpc";
+  std::string legacyFallbackSsePath = "/events";
 };
 
 using HttpRequestHandler = std::function<http::ServerResponse(const http::ServerRequest &)>;

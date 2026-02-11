@@ -85,6 +85,15 @@ Additional hardening:
 - strips `Authorization` on cross-origin redirects
 - rejects redirects that can rewrite credential-bearing methods (for example, `POST` to `GET` rewriting classes)
 
+## Legacy HTTP+SSE fallback safeguards
+
+`StreamableHttpClient` optional legacy fallback (`2024-11-05` transport) is disabled by default unless explicitly enabled.
+
+- Fallback is attempted only when the initial Streamable HTTP initialize `POST` returns `400`, `404`, or `405`.
+- Fallback is not attempted for auth failures (`401`/`403`) or server-side failures (`5xx`).
+- If the legacy `endpoint` SSE event provides an absolute URL, it must stay same-origin with the configured server URL.
+- HTTP transport runtime does not auto-follow redirects, so fallback cannot loop through unbounded redirect chains.
+
 ## Runtime limits and backpressure knobs
 
 `mcp::security::RuntimeLimits` (`include/mcp/security/limits.hpp`) defaults:

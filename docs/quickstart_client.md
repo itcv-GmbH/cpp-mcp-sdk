@@ -85,6 +85,27 @@ Important: this example is local-only and relaxes discovery policy checks:
 
 Do not use those relaxed settings in production.
 
+## Legacy 2024-11-05 HTTP+SSE fallback (optional)
+
+The HTTP client can fall back to the deprecated two-endpoint transport when a server does not support modern Streamable HTTP.
+
+- Build default: `MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK=OFF`
+- Runtime default: `HttpClientOptions.enableLegacyHttpSseFallback = std::nullopt` (inherits build default)
+- Fallback trigger: initialize `POST` returns HTTP `400`, `404`, or `405`
+- No fallback trigger: auth and server errors (for example `401`, `403`, `5xx`)
+
+Opt in per client:
+
+```cpp
+mcp::transport::HttpClientOptions options;
+options.endpointUrl = "http://127.0.0.1:8000/mcp";
+options.enableLegacyHttpSseFallback = true;
+options.legacyFallbackSsePath = "/events";
+options.legacyFallbackPostPath = "/rpc";
+```
+
+When fallback activates, the client opens the SSE endpoint and expects an initial `endpoint` event. If present, that event can override the default POST path (`/rpc`).
+
 ## Host responsibility in OAuth login
 
 In production, the host application is responsible for opening the authorization URL in the user agent and waiting for the loopback callback. The SDK provides building blocks (`buildAuthorizationUrl`, `LoopbackRedirectReceiver`, `buildTokenExchangeHttpRequest`) but does not open a browser for you.

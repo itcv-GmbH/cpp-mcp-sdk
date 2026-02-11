@@ -1915,6 +1915,9 @@ auto Client::connectHttp(const transport::HttpClientOptions &options) -> void
   streamableOptions.limits = options.limits;
   streamableOptions.sessionState = options.sessionState;
   streamableOptions.protocolVersionState = options.protocolVersionState;
+  streamableOptions.enableLegacyHttpSseFallback = options.enableLegacyHttpSseFallback;
+  streamableOptions.legacyFallbackPostPath = options.legacyFallbackPostPath;
+  streamableOptions.legacyFallbackSsePath = options.legacyFallbackSsePath;
 
   connectHttp(std::move(streamableOptions), [runtime](const transport::http::ServerRequest &request) -> transport::http::ServerResponse { return runtime->execute(request); });
 }

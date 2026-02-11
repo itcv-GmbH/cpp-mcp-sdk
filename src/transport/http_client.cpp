@@ -14,17 +14,24 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/transport/http.hpp>
 
+#ifndef MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK
+#  define MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK 0
+#endif
+
 namespace mcp::transport::http
 {
 constexpr std::uint16_t kStatusOk = 200;
 constexpr std::uint16_t kStatusAccepted = 202;
 constexpr std::uint16_t kStatusBadRequest = 400;
+constexpr std::uint16_t kStatusNotFound = 404;
 constexpr std::uint16_t kStatusMethodNotAllowed = 405;
 constexpr std::uint32_t kDefaultRetryMilliseconds = 1000;
 constexpr std::string_view kAcceptJsonAndSse = "application/json, text/event-stream";
 constexpr std::string_view kAcceptSseOnly = "text/event-stream";
 constexpr std::string_view kJsonContentType = "application/json";
 constexpr std::string_view kSseContentType = "text/event-stream";
+constexpr std::string_view kLegacyDefaultPostPath = "/rpc";
+constexpr std::string_view kLegacyDefaultSsePath = "/events";
 
 enum class ResponseContentType : std::uint8_t
 {
@@ -61,6 +68,125 @@ static auto responseContentType(const ServerResponse &response) -> ResponseConte
   }
 
   return ResponseContentType::kUnknown;
+}
+
+struct ParsedHttpEndpointUrl
+{
+  std::string scheme;
+  std::string host;
+  std::string port;
+  std::string requestTarget;
+};
+
+static auto normalizeRequestTarget(std::string_view rawTarget) -> std::string
+{
+  std::string normalized(rawTarget);
+  const std::size_t fragmentSeparator = normalized.find('#');
+  if (fragmentSeparator != std::string::npos)
+  {
+    normalized.erase(fragmentSeparator);
+  }
+
+  if (normalized.empty())
+  {
+    return "/";
+  }
+
+  if (normalized.front() == '?')
+  {
+    return "/" + normalized;
+  }
+
+  if (normalized.front() != '/')
+  {
+    normalized.insert(normalized.begin(), '/');
+  }
+
+  return normalized;
+}
+
+static auto parseHttpEndpointUrl(std::string_view endpointUrl) -> std::optional<ParsedHttpEndpointUrl>
+{
+  const std::size_t schemeSeparator = endpointUrl.find("://");
+  if (schemeSeparator == std::string_view::npos)
+  {
+    return std::nullopt;
+  }
+
+  ParsedHttpEndpointUrl parsed;
+  parsed.scheme = detail::toLowerAscii(endpointUrl.substr(0, schemeSeparator));
+  if (parsed.scheme == "http")
+  {
+    parsed.port = "80";
+  }
+  else if (parsed.scheme == "https")
+  {
+    parsed.port = "443";
+  }
+  else
+  {
+    return std::nullopt;
+  }
+
+  const std::size_t authorityBegin = schemeSeparator + 3;
+  const std::size_t targetBegin = endpointUrl.find_first_of("/?#", authorityBegin);
+  const std::string_view authority = targetBegin == std::string_view::npos ? endpointUrl.substr(authorityBegin) : endpointUrl.substr(authorityBegin, targetBegin - authorityBegin);
+  if (authority.empty() || authority.find('@') != std::string_view::npos)
+  {
+    return std::nullopt;
+  }
+
+  parsed.requestTarget = targetBegin == std::string_view::npos ? "/" : normalizeRequestTarget(endpointUrl.substr(targetBegin));
+
+  if (authority.front() == '[')
+  {
+    const std::size_t ipv6End = authority.find(']');
+    if (ipv6End == std::string_view::npos)
+    {
+      return std::nullopt;
+    }
+
+    parsed.host = detail::toLowerAscii(authority.substr(1, ipv6End - 1));
+    if (ipv6End + 1 < authority.size())
+    {
+      if (authority[ipv6End + 1] != ':')
+      {
+        return std::nullopt;
+      }
+
+      parsed.port = std::string(authority.substr(ipv6End + 2));
+    }
+  }
+  else
+  {
+    const std::size_t portSeparator = authority.rfind(':');
+    if (portSeparator == std::string_view::npos)
+    {
+      parsed.host = detail::toLowerAscii(authority);
+    }
+    else
+    {
+      parsed.host = detail::toLowerAscii(authority.substr(0, portSeparator));
+      parsed.port = std::string(authority.substr(portSeparator + 1));
+    }
+  }
+
+  if (parsed.host.empty() || parsed.port.empty())
+  {
+    return std::nullopt;
+  }
+
+  return parsed;
+}
+
+static auto sameOrigin(const ParsedHttpEndpointUrl &left, const ParsedHttpEndpointUrl &right) -> bool
+{
+  return left.scheme == right.scheme && left.host == right.host && left.port == right.port;
+}
+
+static auto isLegacyFallbackStatus(std::uint16_t statusCode) -> bool
+{
+  return statusCode == kStatusBadRequest || statusCode == kStatusNotFound || statusCode == kStatusMethodNotAllowed;
 }
 
 static auto endpointPathFromUrl(std::string_view endpointUrl) -> std::string
@@ -145,6 +271,16 @@ struct ParsedSsePayload
   std::optional<std::uint32_t> retryMilliseconds;
 };
 
+struct ParsedLegacySsePayload
+{
+  std::vector<jsonrpc::Message> messages;
+  std::optional<std::string> endpoint;
+  std::optional<std::string> lastEventId;
+  std::optional<std::uint32_t> retryMilliseconds;
+  bool sawEndpointEvent = false;
+  bool firstEventWasEndpoint = false;
+};
+
 static auto parseSsePayload(std::string_view payload, const std::optional<jsonrpc::RequestId> &awaitedRequestId, std::size_t maxMessageSizeBytes) -> ParsedSsePayload
 {
   ParsedSsePayload parsed;
@@ -190,6 +326,59 @@ static auto parseSsePayload(std::string_view payload, const std::optional<jsonrp
   return parsed;
 }
 
+static auto parseLegacySsePayload(std::string_view payload, std::size_t maxMessageSizeBytes) -> ParsedLegacySsePayload
+{
+  ParsedLegacySsePayload parsed;
+  const std::vector<mcp::http::sse::Event> events = mcp::http::sse::parseEvents(payload);
+  parsed.messages.reserve(events.size());
+
+  for (std::size_t index = 0; index < events.size(); ++index)
+  {
+    const auto &event = events[index];
+
+    if (event.id.has_value())
+    {
+      parsed.lastEventId = event.id;
+    }
+
+    if (event.retryMilliseconds.has_value())
+    {
+      parsed.retryMilliseconds = event.retryMilliseconds;
+    }
+
+    const std::string_view eventName = event.event.has_value() ? std::string_view(*event.event) : std::string_view("message");
+    if (eventName == "endpoint")
+    {
+      parsed.sawEndpointEvent = true;
+      if (index == 0)
+      {
+        parsed.firstEventWasEndpoint = true;
+      }
+
+      if (!parsed.endpoint.has_value())
+      {
+        parsed.endpoint = std::string(detail::trimAsciiWhitespace(event.data));
+      }
+
+      continue;
+    }
+
+    if (eventName != "message" || event.data.empty())
+    {
+      continue;
+    }
+
+    if (event.data.size() > maxMessageSizeBytes)
+    {
+      throw std::runtime_error("Legacy SSE message exceeds configured max message size.");
+    }
+
+    parsed.messages.push_back(jsonrpc::parseMessage(event.data));
+  }
+
+  return parsed;
+}
+
 struct StreamableHttpClient::Impl
 {
   struct SseState
@@ -197,6 +386,15 @@ struct StreamableHttpClient::Impl
     std::optional<std::string> lastEventId;
     std::uint32_t retryMilliseconds = 1000;
     bool active = false;
+  };
+
+  struct LegacyState
+  {
+    std::string postPath;
+    std::string ssePath;
+    std::optional<std::string> lastEventId;
+    std::uint32_t retryMilliseconds = 1000;
+    std::vector<jsonrpc::Message> bufferedMessages;
   };
 
   explicit Impl(StreamableHttpClientOptions options, RequestExecutor requestExecutor)
@@ -222,17 +420,32 @@ struct StreamableHttpClient::Impl
     {
       this->options.defaultRetryMilliseconds = std::min(this->options.defaultRetryMilliseconds, this->options.limits.maxRetryDelayMilliseconds);
     }
+
+    const bool buildDefaultLegacyFallback = MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK != 0;
+    legacyFallbackEnabled = this->options.enableLegacyHttpSseFallback.value_or(buildDefaultLegacyFallback);
+    if (legacyFallbackEnabled)
+    {
+      parsedBaseEndpoint = parseHttpEndpointUrl(this->options.endpointUrl);
+      if (!parsedBaseEndpoint.has_value())
+      {
+        throw std::invalid_argument("Legacy HTTP+SSE fallback requires an absolute http(s) StreamableHttpClientOptions.endpointUrl.");
+      }
+    }
+  }
+
+  auto applyAuthorizationHeader(HeaderList &headers) const -> void
+  {
+    if (options.bearerToken.has_value() && !options.bearerToken->empty())
+    {
+      setHeader(headers, kHeaderAuthorization, "Bearer " + *options.bearerToken);
+    }
   }
 
   auto applyCommonRequestHeaders(HeaderList &headers, bool isInitializeRequest) -> void
   {
     options.sessionState.replayToRequestHeaders(headers);
     options.protocolVersionState.replayToRequestHeaders(headers, isInitializeRequest);
-
-    if (options.bearerToken.has_value() && !options.bearerToken->empty())
-    {
-      setHeader(headers, "Authorization", "Bearer " + *options.bearerToken);
-    }
+    applyAuthorizationHeader(headers);
   }
 
   auto makePostRequest(const jsonrpc::Message &message) -> ServerRequest
@@ -245,6 +458,19 @@ struct StreamableHttpClient::Impl
     setHeader(request.headers, kHeaderAccept, std::string(kAcceptJsonAndSse));
     setHeader(request.headers, kHeaderContentType, std::string(kJsonContentType));
     applyCommonRequestHeaders(request.headers, isInitializeRequest(message));
+    return request;
+  }
+
+  auto makeLegacyPostRequest(const jsonrpc::Message &message, std::string_view targetPath) -> ServerRequest
+  {
+    ServerRequest request;
+    request.method = ServerRequestMethod::kPost;
+    request.path = std::string(targetPath);
+    request.body = jsonrpc::serializeMessage(message);
+
+    setHeader(request.headers, kHeaderAccept, std::string(kJsonContentType));
+    setHeader(request.headers, kHeaderContentType, std::string(kJsonContentType));
+    applyAuthorizationHeader(request.headers);
     return request;
   }
 
@@ -262,6 +488,49 @@ struct StreamableHttpClient::Impl
 
     applyCommonRequestHeaders(request.headers, /*isInitializeRequest=*/false);
     return request;
+  }
+
+  auto makeLegacyGetRequest(const LegacyState &state) -> ServerRequest
+  {
+    ServerRequest request;
+    request.method = ServerRequestMethod::kGet;
+    request.path = state.ssePath;
+
+    setHeader(request.headers, kHeaderAccept, std::string(kAcceptSseOnly));
+    if (state.lastEventId.has_value())
+    {
+      setHeader(request.headers, kHeaderLastEventId, *state.lastEventId);
+    }
+
+    applyAuthorizationHeader(request.headers);
+    return request;
+  }
+
+  auto resolveLegacyPath(std::string_view configuredValue, std::string_view fallbackPath) const -> std::string
+  {
+    const std::string_view trimmed = detail::trimAsciiWhitespace(configuredValue);
+    if (trimmed.empty())
+    {
+      return normalizeRequestTarget(fallbackPath);
+    }
+
+    if (trimmed.front() == '/' || trimmed.front() == '?')
+    {
+      return normalizeRequestTarget(trimmed);
+    }
+
+    const auto absolute = parseHttpEndpointUrl(trimmed);
+    if (!absolute.has_value())
+    {
+      throw std::runtime_error("Legacy endpoint path must be an absolute path or same-origin absolute URL.");
+    }
+
+    if (!parsedBaseEndpoint.has_value() || !sameOrigin(*parsedBaseEndpoint, *absolute))
+    {
+      throw std::runtime_error("Legacy endpoint path must remain same-origin with the configured endpoint URL.");
+    }
+
+    return absolute->requestTarget;
   }
 
   auto captureSessionFromInitializeResponse(const jsonrpc::Message &requestMessage, const ServerResponse &response) -> void
@@ -284,6 +553,27 @@ struct StreamableHttpClient::Impl
     if (options.waitBeforeReconnect)
     {
       options.waitBeforeReconnect(retryMilliseconds);
+    }
+  }
+
+  auto updateLegacyRetry(LegacyState &state, const std::optional<std::uint32_t> &retryMilliseconds) const -> void
+  {
+    const std::uint32_t retryCap = options.limits.maxRetryDelayMilliseconds;
+
+    if (retryMilliseconds.has_value() && *retryMilliseconds > 0)
+    {
+      state.retryMilliseconds = retryCap > 0 ? std::min(*retryMilliseconds, retryCap) : *retryMilliseconds;
+      return;
+    }
+
+    if (state.retryMilliseconds == 0)
+    {
+      state.retryMilliseconds = options.defaultRetryMilliseconds;
+    }
+
+    if (retryCap > 0)
+    {
+      state.retryMilliseconds = std::min(state.retryMilliseconds, retryCap);
     }
   }
 
@@ -337,6 +627,86 @@ struct StreamableHttpClient::Impl
     return parsed;
   }
 
+  auto parseLegacySseResponse(const ServerResponse &response, LegacyState &state) const -> ParsedLegacySsePayload
+  {
+    if (response.statusCode != kStatusOk)
+    {
+      throw std::runtime_error(statusMessage(response.statusCode, "200"));
+    }
+
+    const ResponseContentType contentType = responseContentType(response);
+    if (contentType != ResponseContentType::kSse)
+    {
+      throw std::runtime_error("Expected text/event-stream response while using legacy HTTP+SSE fallback transport.");
+    }
+
+    if (response.body.size() > options.limits.maxMessageSizeBytes)
+    {
+      throw std::runtime_error("Legacy SSE payload exceeds configured max message size.");
+    }
+
+    ParsedLegacySsePayload parsed = parseLegacySsePayload(response.body, options.limits.maxMessageSizeBytes);
+    if (parsed.lastEventId.has_value())
+    {
+      state.lastEventId = parsed.lastEventId;
+    }
+
+    updateLegacyRetry(state, parsed.retryMilliseconds);
+    return parsed;
+  }
+
+  auto appendMessagesAndCaptureResponse(StreamableHttpSendResult &result, std::vector<jsonrpc::Message> messages, const std::optional<jsonrpc::RequestId> &awaitedRequestId) const
+    -> void
+  {
+    for (auto &message : messages)
+    {
+      if (awaitedRequestId.has_value() && !result.response.has_value())
+      {
+        const std::optional<jsonrpc::Response> candidate = asResponse(message);
+        if (candidate.has_value() && responseMatchesRequestId(*candidate, *awaitedRequestId))
+        {
+          result.response = *candidate;
+          continue;
+        }
+      }
+
+      result.messages.push_back(std::move(message));
+    }
+  }
+
+  auto beginLegacyFallback() -> void
+  {
+    if (legacyState.has_value())
+    {
+      return;
+    }
+
+    LegacyState state;
+    state.postPath = resolveLegacyPath(options.legacyFallbackPostPath, kLegacyDefaultPostPath);
+    state.ssePath = resolveLegacyPath(options.legacyFallbackSsePath, kLegacyDefaultSsePath);
+    state.retryMilliseconds = options.defaultRetryMilliseconds;
+
+    const ServerResponse eventsResponse = requestExecutor(makeLegacyGetRequest(state));
+    ParsedLegacySsePayload parsed = parseLegacySseResponse(eventsResponse, state);
+    if (!parsed.firstEventWasEndpoint)
+    {
+      throw std::runtime_error("Legacy fallback expected initial SSE endpoint event.");
+    }
+
+    if (parsed.endpoint.has_value())
+    {
+      state.postPath = resolveLegacyPath(*parsed.endpoint, state.postPath);
+    }
+
+    state.bufferedMessages = std::move(parsed.messages);
+    legacyState = std::move(state);
+  }
+
+  auto shouldAttemptLegacyFallback(const jsonrpc::Message &message, const ServerResponse &response) const -> bool
+  {
+    return legacyFallbackEnabled && !legacyState.has_value() && isInitializeRequest(message) && isLegacyFallbackStatus(response.statusCode);
+  }
+
   auto resumeSseStreamUntilResponse(const jsonrpc::RequestId &requestId, SseState &streamState) -> StreamableHttpSendResult
   {
     StreamableHttpSendResult result;
@@ -369,9 +739,158 @@ struct StreamableHttpClient::Impl
     throw std::runtime_error("Exceeded configured SSE resume retry attempts without receiving a matching response.");
   }
 
+  auto waitForLegacyResponse(const jsonrpc::RequestId &requestId, StreamableHttpSendResult &result) -> void
+  {
+    if (!legacyState.has_value())
+    {
+      throw std::runtime_error("Legacy fallback state was not initialized.");
+    }
+
+    LegacyState &state = legacyState.value();
+    const std::uint32_t maxAttempts = options.limits.maxRetryAttempts;
+    for (std::uint32_t attempt = 0; attempt < maxAttempts; ++attempt)
+    {
+      if (attempt > 0)
+      {
+        waitForReconnect(state.retryMilliseconds);
+      }
+
+      const ServerResponse eventsResponse = requestExecutor(makeLegacyGetRequest(state));
+      result.statusCode = eventsResponse.statusCode;
+
+      ParsedLegacySsePayload parsed = parseLegacySseResponse(eventsResponse, state);
+      if (parsed.endpoint.has_value())
+      {
+        state.postPath = resolveLegacyPath(*parsed.endpoint, state.postPath);
+      }
+
+      appendMessagesAndCaptureResponse(result, std::move(parsed.messages), requestId);
+      if (result.response.has_value())
+      {
+        return;
+      }
+    }
+
+    throw std::runtime_error("Exceeded configured legacy SSE retry attempts without receiving a matching JSON-RPC response.");
+  }
+
+  auto sendLegacy(const jsonrpc::Message &message) -> StreamableHttpSendResult
+  {
+    if (!legacyState.has_value())
+    {
+      throw std::runtime_error("Legacy HTTP+SSE fallback is not initialized.");
+    }
+
+    LegacyState &legacy = legacyState.value();
+
+    StreamableHttpSendResult result;
+    const std::optional<jsonrpc::RequestId> awaitedRequestId = isRequestMessage(message) ? std::optional<jsonrpc::RequestId>(std::get<jsonrpc::Request>(message).id) : std::nullopt;
+
+    appendMessagesAndCaptureResponse(result, std::move(legacy.bufferedMessages), awaitedRequestId);
+    legacy.bufferedMessages.clear();
+
+    if (awaitedRequestId.has_value() && result.response.has_value())
+    {
+      result.statusCode = kStatusOk;
+      return result;
+    }
+
+    const ServerResponse response = requestExecutor(makeLegacyPostRequest(message, legacy.postPath));
+    captureSessionFromInitializeResponse(message, response);
+    result.statusCode = response.statusCode;
+
+    if (isNotificationOrResponse(message))
+    {
+      if (response.statusCode != kStatusAccepted && response.statusCode != kStatusOk)
+      {
+        throw std::runtime_error(statusMessage(response.statusCode, "202 or 200"));
+      }
+
+      if (response.statusCode == kStatusOk && responseContentType(response) == ResponseContentType::kSse)
+      {
+        ParsedLegacySsePayload parsed = parseLegacySseResponse(response, legacy);
+        if (parsed.endpoint.has_value())
+        {
+          legacy.postPath = resolveLegacyPath(*parsed.endpoint, legacy.postPath);
+        }
+
+        appendMessagesAndCaptureResponse(result, std::move(parsed.messages), std::nullopt);
+      }
+
+      return result;
+    }
+
+    if (!isRequestMessage(message))
+    {
+      throw std::runtime_error("Unsupported JSON-RPC message kind for legacy HTTP+SSE send.");
+    }
+
+    const auto requestId = std::get<jsonrpc::Request>(message).id;
+    if (response.statusCode != kStatusAccepted && response.statusCode != kStatusOk)
+    {
+      throw std::runtime_error(statusMessage(response.statusCode, "202 or 200"));
+    }
+
+    if (response.statusCode == kStatusOk)
+    {
+      const ResponseContentType contentType = responseContentType(response);
+      if (contentType == ResponseContentType::kJson)
+      {
+        if (response.body.size() > options.limits.maxMessageSizeBytes)
+        {
+          throw std::runtime_error("JSON response exceeds configured max message size.");
+        }
+
+        const jsonrpc::Message bodyMessage = jsonrpc::parseMessage(response.body);
+        const std::optional<jsonrpc::Response> parsedResponse = asResponse(bodyMessage);
+        if (!parsedResponse.has_value())
+        {
+          throw std::runtime_error("application/json response did not contain a JSON-RPC response object.");
+        }
+
+        result.response = parsedResponse;
+        return result;
+      }
+
+      if (contentType == ResponseContentType::kSse)
+      {
+        ParsedLegacySsePayload parsed = parseLegacySseResponse(response, legacy);
+        if (parsed.endpoint.has_value())
+        {
+          legacy.postPath = resolveLegacyPath(*parsed.endpoint, legacy.postPath);
+        }
+
+        appendMessagesAndCaptureResponse(result, std::move(parsed.messages), requestId);
+        if (result.response.has_value())
+        {
+          return result;
+        }
+      }
+      else if (!response.body.empty())
+      {
+        throw std::runtime_error("Legacy HTTP+SSE request response used an unsupported content type.");
+      }
+    }
+
+    waitForLegacyResponse(requestId, result);
+    return result;
+  }
+
   auto send(const jsonrpc::Message &message) -> StreamableHttpSendResult
   {
+    if (legacyState.has_value())
+    {
+      return sendLegacy(message);
+    }
+
     const ServerResponse response = requestExecutor(makePostRequest(message));
+
+    if (shouldAttemptLegacyFallback(message, response))
+    {
+      beginLegacyFallback();
+      return sendLegacy(message);
+    }
+
     captureSessionFromInitializeResponse(message, response);
 
     StreamableHttpSendResult result;
@@ -442,6 +961,11 @@ struct StreamableHttpClient::Impl
 
   auto openListenStream() -> StreamableHttpListenResult
   {
+    if (legacyState.has_value())
+    {
+      throw std::runtime_error("openListenStream is not supported after legacy HTTP+SSE fallback activation.");
+    }
+
     StreamableHttpListenResult result;
 
     SseState streamState;
@@ -474,6 +998,11 @@ struct StreamableHttpClient::Impl
 
   auto pollListenStream() -> StreamableHttpListenResult
   {
+    if (legacyState.has_value())
+    {
+      throw std::runtime_error("pollListenStream is not supported after legacy HTTP+SSE fallback activation.");
+    }
+
     if (!listenState.has_value())
     {
       throw std::runtime_error("No active GET listen stream to poll.");
@@ -503,6 +1032,9 @@ struct StreamableHttpClient::Impl
 
   StreamableHttpClientOptions options;
   RequestExecutor requestExecutor;
+  bool legacyFallbackEnabled = false;
+  std::optional<ParsedHttpEndpointUrl> parsedBaseEndpoint;
+  std::optional<LegacyState> legacyState;
   std::optional<SseState> listenState;
 };
 

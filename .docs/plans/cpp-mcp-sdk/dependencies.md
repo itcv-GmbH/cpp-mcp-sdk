@@ -59,5 +59,5 @@
 - [x] `task-040`: Runtime Limits + Backpressure Knobs (Depends on: `task-011`, `task-012`, `task-024`)
 
 ## Phase 9: Legacy Interop (Optional Follow-up)
-- [ ] `task-041`: Legacy 2024-11-05 HTTP+SSE Client Fallback (Depends on: `task-012`)
+- [x] `task-041`: Legacy 2024-11-05 HTTP+SSE Client Fallback (Depends on: `task-012`)
 - [ ] `task-042`: Legacy 2024-11-05 HTTP+SSE Server Compatibility (Depends on: `task-011`)
