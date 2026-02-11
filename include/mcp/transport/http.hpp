@@ -4,12 +4,15 @@
 #include <cctype>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include <mcp/http/sse.hpp>
+#include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/transport/transport.hpp>
 #include <mcp/version.hpp>
@@ -404,6 +407,87 @@ struct HttpServerOptions
   };
 };
 
+namespace http
+{
+
+enum class ServerRequestMethod
+{
+  kGet,
+  kPost,
+  kDelete,
+};
+
+struct ServerRequest
+{
+  ServerRequestMethod method = ServerRequestMethod::kPost;
+  std::string path = "/mcp";
+  HeaderList headers;
+  std::string body;
+};
+
+struct SseStreamResponse
+{
+  std::string streamId;
+  std::vector<mcp::http::sse::Event> events;
+  bool terminateStream = false;
+};
+
+struct ServerResponse
+{
+  std::uint16_t statusCode = 200;
+  HeaderList headers;
+  std::string body;
+  std::optional<SseStreamResponse> sse;
+};
+
+struct StreamableRequestResult
+{
+  std::vector<jsonrpc::Message> preResponseMessages;
+  jsonrpc::Response response = jsonrpc::ErrorResponse {};
+  bool useSse = false;
+};
+
+using StreamableRequestHandler = std::function<StreamableRequestResult(const jsonrpc::RequestContext &, const jsonrpc::Request &)>;
+using StreamableNotificationHandler = std::function<bool(const jsonrpc::RequestContext &, const jsonrpc::Notification &)>;
+using StreamableResponseHandler = std::function<bool(const jsonrpc::RequestContext &, const jsonrpc::Response &)>;
+
+struct StreamableHttpServerOptions
+{
+  HttpServerOptions http;
+  bool allowGetSse = true;
+  bool allowDeleteSession = true;
+};
+
+class StreamableHttpServer
+{
+public:
+  explicit StreamableHttpServer(StreamableHttpServerOptions options = {});
+  ~StreamableHttpServer();
+
+  StreamableHttpServer(const StreamableHttpServer &) = delete;
+  auto operator=(const StreamableHttpServer &) -> StreamableHttpServer & = delete;
+  StreamableHttpServer(StreamableHttpServer &&other) noexcept;
+  auto operator=(StreamableHttpServer &&other) noexcept -> StreamableHttpServer &;
+
+  auto setRequestHandler(StreamableRequestHandler handler) -> void;
+  auto setNotificationHandler(StreamableNotificationHandler handler) -> void;
+  auto setResponseHandler(StreamableResponseHandler handler) -> void;
+
+  auto upsertSession(std::string sessionId,
+                     SessionLookupState state = SessionLookupState::kActive,
+                     std::optional<std::string> negotiatedProtocolVersion = std::string(kLatestProtocolVersion)) -> void;
+  auto setSessionState(std::string_view sessionId, SessionLookupState state) -> bool;
+
+  [[nodiscard]] auto handleRequest(const ServerRequest &request) -> ServerResponse;
+  [[nodiscard]] auto enqueueServerMessage(const jsonrpc::Message &message, const std::optional<std::string> &sessionId = std::nullopt) -> bool;
+
+private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+
+}  // namespace http
+
 struct HttpClientOptions
 {
   std::string endpointUrl;
@@ -415,8 +499,8 @@ struct HttpClientOptions
 class HttpTransport final : public Transport
 {
 public:
-  explicit HttpTransport(HttpServerOptions options);
-  explicit HttpTransport(HttpClientOptions options);
+  explicit HttpTransport(const HttpServerOptions &options);
+  explicit HttpTransport(const HttpClientOptions &options);
 
   auto attach(std::weak_ptr<Session> session) -> void override;
   auto start() -> void override;

@@ -42,6 +42,7 @@ target_sources(mcp_sdk
         src/jsonrpc/router.cpp
         src/lifecycle/session.cpp
         src/schema/validator.cpp
+        src/transport/http_server.cpp
         src/transport/stdio.cpp
         src/version.cpp
 )
