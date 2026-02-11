@@ -1316,23 +1316,26 @@ Client::Client(std::shared_ptr<Session> session)
 
   taskReceiver_ = std::make_shared<util::TaskReceiver>(std::make_shared<util::InMemoryTaskStore>());
   taskReceiver_->setStatusObserver(
-    [this](const jsonrpc::RequestContext &context, const util::Task &task) -> void
+    [weakSession = std::weak_ptr<Session>(session_)](const jsonrpc::RequestContext &, const util::Task &task) -> void
     {
-      const auto negotiatedCapabilities = negotiatedClientCapabilities();
-      if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->tasks().has_value())
+      const std::shared_ptr<Session> session = weakSession.lock();
+      if (!session)
       {
         return;
       }
 
-      if (!session_->canSendNotification(kTasksStatusNotificationMethod))
+      const auto negotiatedParameters = session->negotiatedParameters();
+      if (!negotiatedParameters.has_value() || !negotiatedParameters->clientCapabilities().tasks().has_value())
       {
         return;
       }
 
-      jsonrpc::Notification notification;
-      notification.method = std::string(kTasksStatusNotificationMethod);
-      notification.params = util::taskToJson(task);
-      router_.sendNotification(context, std::move(notification));
+      if (!session->canSendNotification(kTasksStatusNotificationMethod))
+      {
+        return;
+      }
+
+      session->sendNotification(std::string(kTasksStatusNotificationMethod), util::taskToJson(task));
     });
 
   router_.registerRequestHandler(std::string(kPingMethod),

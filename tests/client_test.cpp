@@ -1237,6 +1237,9 @@ TEST_CASE("Client teardown is safe with in-flight task-augmented elicitation wor
   REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
   static_cast<void>(initializeFuture.get());
 
+  const std::size_t messageCountBeforeTask = transport->messages().size();
+  std::shared_ptr<mcp::Session> retainedSession = client->session();
+
   mcp::jsonrpc::Request request;
   request.id = std::int64_t {9312};
   request.method = "elicitation/create";
@@ -1252,12 +1255,48 @@ TEST_CASE("Client teardown is safe with in-flight task-augmented elicitation wor
 
   const mcp::jsonrpc::Response taskCreateResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, request).get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(taskCreateResponse));
+  const auto &taskCreate = std::get<mcp::jsonrpc::SuccessResponse>(taskCreateResponse);
+  REQUIRE(taskCreate.result.contains("task"));
+  const std::string taskId = taskCreate.result["task"]["taskId"].as<std::string>();
   REQUIRE(handlerEnteredFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
 
   client.reset();
 
   releaseHandlerPromise.set_value();
   REQUIRE(handlerFinishedFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+
+  REQUIRE(transport->waitForMessageCount(messageCountBeforeTask + 1U, std::chrono::milliseconds {1000}));
+
+  const auto messagesAfterCompletion = transport->messages();
+  bool observedTaskStatusCompletion = false;
+  for (std::size_t index = messageCountBeforeTask; index < messagesAfterCompletion.size(); ++index)
+  {
+    if (!std::holds_alternative<mcp::jsonrpc::Notification>(messagesAfterCompletion[index]))
+    {
+      continue;
+    }
+
+    const auto &notification = std::get<mcp::jsonrpc::Notification>(messagesAfterCompletion[index]);
+    if (notification.method != "notifications/tasks/status" || !notification.params.has_value() || !notification.params->is_object())
+    {
+      continue;
+    }
+
+    const auto &statusPayload = *notification.params;
+    if (!statusPayload.contains("taskId") || !statusPayload["taskId"].is_string() || statusPayload["taskId"].as<std::string>() != taskId)
+    {
+      continue;
+    }
+
+    if (statusPayload.contains("status") && statusPayload["status"].is_string() && statusPayload["status"].as<std::string>() == "completed")
+    {
+      observedTaskStatusCompletion = true;
+      break;
+    }
+  }
+
+  REQUIRE(observedTaskStatusCompletion);
+  retainedSession.reset();
 }
 
 TEST_CASE("Client tasks/list and tasks/cancel are gated by negotiated sub-capabilities", "[client][tasks][capabilities]")
