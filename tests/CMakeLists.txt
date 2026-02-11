@@ -80,3 +80,13 @@ target_compile_definitions(mcp_sdk_test_transport_stdio_subprocess
 )
 
 add_test(NAME mcp_sdk_transport_stdio_subprocess_test COMMAND mcp_sdk_test_transport_stdio_subprocess)
+
+add_executable(mcp_sdk_test_transport_http_common transport_http_common_test.cpp)
+
+target_link_libraries(mcp_sdk_test_transport_http_common
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_transport_http_common_test COMMAND mcp_sdk_test_transport_http_common)

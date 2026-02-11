@@ -9,6 +9,7 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/security/origin_policy.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
@@ -19,7 +20,7 @@ auto main() -> int
 {
   const std::size_t apiSurfaceSanity = sizeof(mcp::auth::AuthProvider *) + sizeof(mcp::Client *) + sizeof(mcp::JsonRpcError) + sizeof(mcp::jsonrpc::Message)
     + sizeof(mcp::jsonrpc::Router) + sizeof(mcp::Session *) + sizeof(mcp::Server *) + sizeof(mcp::transport::HttpTransport *) + sizeof(mcp::transport::StdioTransport *)
-    + sizeof(mcp::transport::Transport *);
+    + sizeof(mcp::transport::Transport *) + sizeof(mcp::security::OriginPolicy);
 
   if (apiSurfaceSanity == 0)
   {
