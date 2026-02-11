@@ -102,6 +102,22 @@ def run_cpp_client(command: list[str]) -> tuple[int, str]:
     return completed.returncode, combined_output
 
 
+def assert_unauthorized_initialize_http(endpoint: str) -> None:
+    response = httpx.post(endpoint, json=initialize_probe_payload(), timeout=5.0)
+    if response.status_code != 401:
+        raise RuntimeError(
+            "Expected unauthenticated initialize probe to return 401. "
+            f"status={response.status_code} body={response.text!r}"
+        )
+
+    challenge = response.headers.get("WWW-Authenticate", "")
+    if "bearer" not in challenge.lower():
+        raise RuntimeError(
+            "Expected WWW-Authenticate Bearer challenge on 401 response. "
+            f"header={challenge!r}"
+        )
+
+
 def run() -> int:
     args = parse_args()
     cpp_client = str(Path(args.cpp_client).resolve())
@@ -133,6 +149,7 @@ def run() -> int:
 
     try:
         wait_for_server_ready(endpoint, server_process)
+        assert_unauthorized_initialize_http(endpoint)
 
         unauthorized_command = [
             cpp_client,

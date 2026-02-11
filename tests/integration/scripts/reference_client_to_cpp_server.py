@@ -12,8 +12,14 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from mcp import ClientSession
+from mcp import ClientSession, types
 from mcp.client.streamable_http import streamable_http_client
+
+
+EXPECTED_CPP_SERVER_SAMPLING_PROMPT = "cpp-server-sampling-check"
+EXPECTED_CPP_SERVER_ELICITATION_MESSAGE = "cpp-server-elicitation-check"
+EXPECTED_REFERENCE_CLIENT_SAMPLING_RESPONSE = "reference-client-sampling-response"
+EXPECTED_REFERENCE_CLIENT_ELICITATION_REASON = "reference-client-confirmed"
 
 
 def parse_args() -> argparse.Namespace:
@@ -155,16 +161,79 @@ def prompt_messages_to_texts(prompt_result: Any) -> list[str]:
     return texts
 
 
+def extract_sampling_prompt_text(params: Any) -> str:
+    messages = getattr(params, "messages", [])
+    if not messages:
+        return ""
+
+    content = getattr(messages[-1], "content", None)
+    if content is None:
+        return ""
+
+    text_value = getattr(content, "text", None)
+    if text_value is not None:
+        return str(text_value)
+
+    if isinstance(content, dict) and "text" in content:
+        return str(content["text"])
+
+    return str(content)
+
+
 async def run_authenticated_flow(endpoint: str, token: str) -> None:
     headers = {"Authorization": f"Bearer {token}"}
     timeout = httpx.Timeout(10.0, read=10.0)
+    sampling_request_observed = asyncio.Event()
+    elicitation_request_observed = asyncio.Event()
+
+    async def handle_sampling(
+        _context: Any, params: types.CreateMessageRequestParams
+    ) -> types.CreateMessageResult:
+        prompt_text = extract_sampling_prompt_text(params)
+        if EXPECTED_CPP_SERVER_SAMPLING_PROMPT not in prompt_text:
+            raise AssertionError(
+                f"Unexpected sampling prompt from C++ server: {prompt_text!r}"
+            )
+
+        sampling_request_observed.set()
+        return types.CreateMessageResult(
+            role="assistant",
+            model="reference-client-model",
+            content=types.TextContent(
+                type="text",
+                text=EXPECTED_REFERENCE_CLIENT_SAMPLING_RESPONSE,
+            ),
+            stop_reason="endTurn",
+        )
+
+    async def handle_elicitation(
+        _context: Any, params: types.ElicitRequestParams
+    ) -> types.ElicitResult:
+        if params.message != EXPECTED_CPP_SERVER_ELICITATION_MESSAGE:
+            raise AssertionError(
+                f"Unexpected elicitation message from C++ server: {params.message!r}"
+            )
+
+        elicitation_request_observed.set()
+        return types.ElicitResult(
+            action="accept",
+            content={
+                "approved": True,
+                "reason": EXPECTED_REFERENCE_CLIENT_ELICITATION_REASON,
+            },
+        )
 
     async with httpx.AsyncClient(headers=headers, timeout=timeout) as http_client:
         async with streamable_http_client(
             endpoint, http_client=http_client
         ) as stream_context_value:
             read_stream, write_stream = unpack_streams(stream_context_value)
-            async with ClientSession(read_stream, write_stream) as session:
+            async with ClientSession(
+                read_stream,
+                write_stream,
+                sampling_callback=handle_sampling,
+                elicitation_callback=handle_elicitation,
+            ) as session:
                 await session.initialize()
 
                 tools_result = await session.list_tools()
@@ -221,6 +290,11 @@ async def run_authenticated_flow(endpoint: str, token: str) -> None:
                     raise AssertionError(
                         f"Prompt response did not include expected topic. messages={prompt_texts}"
                     )
+
+                await asyncio.wait_for(sampling_request_observed.wait(), timeout=10.0)
+                await asyncio.wait_for(
+                    elicitation_request_observed.wait(), timeout=10.0
+                )
 
 
 async def expect_unauthorized_initialize(endpoint: str) -> None:

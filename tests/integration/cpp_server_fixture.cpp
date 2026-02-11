@@ -1,14 +1,20 @@
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <future>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <mcp/auth/oauth_server.hpp>
@@ -29,6 +35,23 @@ struct Options
   std::uint16_t port = 0;
   std::string path = "/mcp";
   std::string bearerToken = "integration-token";
+};
+
+constexpr std::chrono::seconds kOutboundRequestTimeout {10};
+constexpr std::int64_t kSamplingRequestId = 4101;
+constexpr std::int64_t kElicitationRequestId = 4102;
+constexpr std::string_view kExpectedSamplingResponseText = "reference-client-sampling-response";
+constexpr std::string_view kExpectedElicitationReason = "reference-client-confirmed";
+constexpr std::string_view kIntegrationSessionId = "cpp-integration-session";
+
+struct OutboundAssertionsState
+{
+  std::atomic<bool> started {false};
+  std::atomic<bool> completed {false};
+  std::atomic<bool> passed {false};
+  std::mutex mutex;
+  std::optional<std::string> failureReason;
+  std::thread worker;
 };
 
 class StaticTokenVerifier final : public mcp::auth::OAuthTokenVerifier
@@ -135,6 +158,150 @@ auto makeTextContent(std::string text) -> mcp::jsonrpc::JsonValue
   return content;
 }
 
+auto throwIfErrorResponse(const mcp::jsonrpc::Response &response, std::string_view methodName) -> void
+{
+  if (!std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response))
+  {
+    return;
+  }
+
+  const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response).error;
+  throw std::runtime_error(std::string(methodName) + " failed: " + error.message);
+}
+
+auto awaitResponse(std::future<mcp::jsonrpc::Response> &future, std::string_view methodName) -> mcp::jsonrpc::Response
+{
+  if (future.wait_for(kOutboundRequestTimeout) != std::future_status::ready)
+  {
+    throw std::runtime_error(std::string(methodName) + " did not complete within timeout");
+  }
+
+  return future.get();
+}
+
+auto runOutboundAssertions(mcp::Server &server, const mcp::jsonrpc::RequestContext &context) -> void
+{
+  mcp::jsonrpc::Request samplingRequest;
+  samplingRequest.id = std::int64_t {kSamplingRequestId};
+  samplingRequest.method = "sampling/createMessage";
+  samplingRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*samplingRequest.params)["maxTokens"] = std::int64_t {64};
+  (*samplingRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+
+  mcp::jsonrpc::JsonValue samplingMessage = mcp::jsonrpc::JsonValue::object();
+  samplingMessage["role"] = "user";
+  samplingMessage["content"] = mcp::jsonrpc::JsonValue::object();
+  samplingMessage["content"]["type"] = "text";
+  samplingMessage["content"]["text"] = "cpp-server-sampling-check";
+  (*samplingRequest.params)["messages"].push_back(std::move(samplingMessage));
+
+  std::future<mcp::jsonrpc::Response> samplingFuture = server.sendRequest(context, std::move(samplingRequest));
+  const mcp::jsonrpc::Response samplingResponse = awaitResponse(samplingFuture, "sampling/createMessage");
+  throwIfErrorResponse(samplingResponse, "sampling/createMessage");
+  if (!std::holds_alternative<mcp::jsonrpc::SuccessResponse>(samplingResponse))
+  {
+    throw std::runtime_error("sampling/createMessage did not return a success response");
+  }
+
+  const auto &samplingResult = std::get<mcp::jsonrpc::SuccessResponse>(samplingResponse).result;
+  if (!samplingResult.is_object() || !samplingResult.contains("content") || !samplingResult["content"].is_object() || !samplingResult["content"].contains("text")
+      || !samplingResult["content"]["text"].is_string())
+  {
+    throw std::runtime_error("sampling/createMessage response did not include content.text");
+  }
+
+  const std::string samplingText = samplingResult["content"]["text"].as<std::string>();
+  if (samplingText != kExpectedSamplingResponseText)
+  {
+    throw std::runtime_error("sampling/createMessage returned unexpected text: " + samplingText);
+  }
+
+  mcp::jsonrpc::Request elicitationRequest;
+  elicitationRequest.id = std::int64_t {kElicitationRequestId};
+  elicitationRequest.method = "elicitation/create";
+  elicitationRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*elicitationRequest.params)["mode"] = "form";
+  (*elicitationRequest.params)["message"] = "cpp-server-elicitation-check";
+  (*elicitationRequest.params)["requestedSchema"] = mcp::jsonrpc::JsonValue::object();
+  (*elicitationRequest.params)["requestedSchema"]["type"] = "object";
+  (*elicitationRequest.params)["requestedSchema"]["properties"] = mcp::jsonrpc::JsonValue::object();
+  (*elicitationRequest.params)["requestedSchema"]["properties"]["approved"] = mcp::jsonrpc::JsonValue::object();
+  (*elicitationRequest.params)["requestedSchema"]["properties"]["approved"]["type"] = "boolean";
+  (*elicitationRequest.params)["requestedSchema"]["properties"]["reason"] = mcp::jsonrpc::JsonValue::object();
+  (*elicitationRequest.params)["requestedSchema"]["properties"]["reason"]["type"] = "string";
+  (*elicitationRequest.params)["requestedSchema"]["required"] = mcp::jsonrpc::JsonValue::array();
+  (*elicitationRequest.params)["requestedSchema"]["required"].push_back("approved");
+  (*elicitationRequest.params)["requestedSchema"]["required"].push_back("reason");
+
+  std::future<mcp::jsonrpc::Response> elicitationFuture = server.sendRequest(context, std::move(elicitationRequest));
+  const mcp::jsonrpc::Response elicitationResponse = awaitResponse(elicitationFuture, "elicitation/create");
+  throwIfErrorResponse(elicitationResponse, "elicitation/create");
+  if (!std::holds_alternative<mcp::jsonrpc::SuccessResponse>(elicitationResponse))
+  {
+    throw std::runtime_error("elicitation/create did not return a success response");
+  }
+
+  const auto &elicitationResult = std::get<mcp::jsonrpc::SuccessResponse>(elicitationResponse).result;
+  if (!elicitationResult.is_object() || !elicitationResult.contains("action") || !elicitationResult["action"].is_string())
+  {
+    throw std::runtime_error("elicitation/create response did not include action");
+  }
+
+  const std::string action = elicitationResult["action"].as<std::string>();
+  if (action != "accept")
+  {
+    throw std::runtime_error("elicitation/create returned unexpected action: " + action);
+  }
+
+  if (!elicitationResult.contains("content") || !elicitationResult["content"].is_object())
+  {
+    throw std::runtime_error("elicitation/create response did not include content object");
+  }
+
+  const auto &content = elicitationResult["content"];
+  if (!content.contains("approved") || !content["approved"].is_bool() || !content["approved"].as<bool>())
+  {
+    throw std::runtime_error("elicitation/create content.approved was not true");
+  }
+
+  if (!content.contains("reason") || !content["reason"].is_string())
+  {
+    throw std::runtime_error("elicitation/create content.reason was missing");
+  }
+
+  const std::string reason = content["reason"].as<std::string>();
+  if (reason != kExpectedElicitationReason)
+  {
+    throw std::runtime_error("elicitation/create content.reason was unexpected: " + reason);
+  }
+
+  std::cout << "cpp integration server outbound sampling/elicitation assertions passed" << '\n';
+  std::cout.flush();
+}
+
+auto isInitializeRequest(const mcp::transport::http::ServerRequest &request) -> bool
+{
+  if (request.method != mcp::transport::http::ServerRequestMethod::kPost)
+  {
+    return false;
+  }
+
+  try
+  {
+    const mcp::jsonrpc::Message message = mcp::jsonrpc::parseMessage(request.body);
+    if (!std::holds_alternative<mcp::jsonrpc::Request>(message))
+    {
+      return false;
+    }
+
+    return std::get<mcp::jsonrpc::Request>(message).method == "initialize";
+  }
+  catch (...)
+  {
+    return false;
+  }
+}
+
 }  // namespace
 
 auto main(int argc, char **argv) -> int
@@ -232,6 +399,7 @@ auto main(int argc, char **argv) -> int
     };
 
     mcp::transport::http::StreamableHttpServer streamableServer(streamableOptions);
+    OutboundAssertionsState outboundAssertions;
 
     streamableServer.setRequestHandler(
       [&server](const mcp::jsonrpc::RequestContext &context, const mcp::jsonrpc::Request &request) -> mcp::transport::http::StreamableRequestResult
@@ -242,9 +410,40 @@ auto main(int argc, char **argv) -> int
       });
 
     streamableServer.setNotificationHandler(
-      [&server](const mcp::jsonrpc::RequestContext &context, const mcp::jsonrpc::Notification &notification) -> bool
+      [&server, &outboundAssertions](const mcp::jsonrpc::RequestContext &context, const mcp::jsonrpc::Notification &notification) -> bool
       {
         server->handleNotification(context, notification);
+
+        if (notification.method == "notifications/initialized")
+        {
+          bool expected = false;
+          if (outboundAssertions.started.compare_exchange_strong(expected, true))
+          {
+            const mcp::jsonrpc::RequestContext requestContext = context;
+            outboundAssertions.worker = std::thread(
+              [server, &outboundAssertions, requestContext]() -> void
+              {
+                try
+                {
+                  runOutboundAssertions(*server, requestContext);
+                  outboundAssertions.passed.store(true);
+                }
+                catch (const std::exception &error)
+                {
+                  std::scoped_lock lock(outboundAssertions.mutex);
+                  outboundAssertions.failureReason = error.what();
+                }
+                catch (...)
+                {
+                  std::scoped_lock lock(outboundAssertions.mutex);
+                  outboundAssertions.failureReason = "unknown outbound assertion failure";
+                }
+
+                outboundAssertions.completed.store(true);
+              });
+          }
+        }
+
         return true;
       });
 
@@ -256,8 +455,18 @@ auto main(int argc, char **argv) -> int
 
     mcp::transport::HttpServerOptions runtimeOptions = streamableOptions.http;
     mcp::transport::HttpServerRuntime runtime(std::move(runtimeOptions));
-    runtime.setRequestHandler([&streamableServer](const mcp::transport::http::ServerRequest &request) -> mcp::transport::http::ServerResponse
-                              { return streamableServer.handleRequest(request); });
+    runtime.setRequestHandler(
+      [&streamableServer](const mcp::transport::http::ServerRequest &request) -> mcp::transport::http::ServerResponse
+      {
+        mcp::transport::http::ServerResponse response = streamableServer.handleRequest(request);
+        if (response.statusCode == 200 && isInitializeRequest(request))
+        {
+          mcp::transport::http::setHeader(response.headers, mcp::transport::http::kHeaderMcpSessionId, std::string(kIntegrationSessionId));
+          streamableServer.upsertSession(std::string(kIntegrationSessionId));
+        }
+
+        return response;
+      });
     runtime.start();
 
     std::cout << "cpp integration server listening on http://" << options.bindAddress << ":" << runtime.localPort() << options.path << '\n';
@@ -266,6 +475,37 @@ auto main(int argc, char **argv) -> int
     std::string ignoredLine;
     while (std::getline(std::cin, ignoredLine))
     {
+    }
+
+    if (outboundAssertions.worker.joinable())
+    {
+      outboundAssertions.worker.join();
+    }
+
+    if (!outboundAssertions.started.load())
+    {
+      std::cerr << "cpp_server_fixture failed: outbound sampling/elicitation assertions never started" << '\n';
+      runtime.stop();
+      return 2;
+    }
+
+    if (!outboundAssertions.completed.load() || !outboundAssertions.passed.load())
+    {
+      std::optional<std::string> failureReason;
+      {
+        std::scoped_lock lock(outboundAssertions.mutex);
+        failureReason = outboundAssertions.failureReason;
+      }
+
+      std::cerr << "cpp_server_fixture failed: outbound sampling/elicitation assertions failed";
+      if (failureReason.has_value())
+      {
+        std::cerr << " (" << *failureReason << ')';
+      }
+      std::cerr << '\n';
+
+      runtime.stop();
+      return 3;
     }
 
     runtime.stop();

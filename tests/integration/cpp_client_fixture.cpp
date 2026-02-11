@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cctype>
 #include <exception>
 #include <future>
 #include <iostream>
@@ -23,6 +25,23 @@ struct Options
   std::optional<std::string> token;
   bool expectUnauthorized = false;
 };
+
+constexpr std::string_view kExpectedServerSamplingPrompt = "python-server-sampling-check";
+constexpr std::string_view kExpectedClientSamplingResponse = "cpp-client-sampling-response";
+constexpr std::string_view kExpectedServerElicitationMessage = "python-server-elicitation-check";
+constexpr std::string_view kExpectedClientElicitationReason = "cpp-client-approved";
+
+auto toLowerAscii(std::string value) -> std::string
+{
+  std::transform(value.begin(), value.end(), value.begin(), [](const unsigned char character) -> char { return static_cast<char>(std::tolower(character)); });
+  return value;
+}
+
+auto containsAuthorizationSignal(std::string text) -> bool
+{
+  const std::string lower = toLowerAscii(std::move(text));
+  return lower.find("401") != std::string::npos || lower.find("unauthorized") != std::string::npos || lower.find("authorization") != std::string::npos;
+}
 
 auto parseOptions(int argc, char **argv) -> Options
 {
@@ -156,6 +175,41 @@ auto initializeSucceeded(const mcp::jsonrpc::Response &response) -> bool
   return std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response);
 }
 
+auto verifyUnauthorizedHttpStatus(std::string_view endpoint) -> void
+{
+  mcp::transport::HttpClientOptions httpOptions;
+  httpOptions.endpointUrl = std::string(endpoint);
+  mcp::transport::HttpClientRuntime httpRuntime(std::move(httpOptions));
+
+  mcp::jsonrpc::Request initializeRequest;
+  initializeRequest.id = std::int64_t {1};
+  initializeRequest.method = "initialize";
+  initializeRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*initializeRequest.params)["protocolVersion"] = "2025-11-25";
+  (*initializeRequest.params)["capabilities"] = mcp::jsonrpc::JsonValue::object();
+  (*initializeRequest.params)["clientInfo"] = mcp::jsonrpc::JsonValue::object();
+  (*initializeRequest.params)["clientInfo"]["name"] = "cpp-auth-probe";
+  (*initializeRequest.params)["clientInfo"]["version"] = "1.0.0";
+
+  mcp::transport::http::ServerRequest probe;
+  probe.method = mcp::transport::http::ServerRequestMethod::kPost;
+  probe.body = mcp::jsonrpc::serializeMessage(mcp::jsonrpc::Message {initializeRequest});
+  mcp::transport::http::setHeader(probe.headers, mcp::transport::http::kHeaderContentType, "application/json");
+  mcp::transport::http::setHeader(probe.headers, mcp::transport::http::kHeaderAccept, "application/json, text/event-stream");
+
+  const mcp::transport::http::ServerResponse response = httpRuntime.execute(probe);
+  if (response.statusCode != 401)
+  {
+    throw std::runtime_error("Unauthorized initialize probe expected HTTP 401 but received status " + std::to_string(response.statusCode));
+  }
+
+  const std::optional<std::string> challenge = mcp::transport::http::getHeader(response.headers, mcp::transport::http::kHeaderWwwAuthenticate);
+  if (!challenge.has_value() || toLowerAscii(*challenge).find("bearer") == std::string::npos)
+  {
+    throw std::runtime_error("Unauthorized initialize probe did not include a Bearer WWW-Authenticate challenge");
+  }
+}
+
 }  // namespace
 
 auto main(int argc, char **argv) -> int
@@ -175,8 +229,74 @@ auto main(int argc, char **argv) -> int
     client->connectHttp(clientOptions);
     client->start();
 
+    bool observedSamplingRequest = false;
+    bool observedElicitationRequest = false;
+
+    mcp::SamplingCapability samplingCapability;
+    samplingCapability.tools = true;
+
+    mcp::ElicitationCapability elicitationCapability;
+    elicitationCapability.form = true;
+
+    mcp::ClientInitializeConfiguration initializeConfiguration;
+    initializeConfiguration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, elicitationCapability, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(initializeConfiguration));
+
+    client->setSamplingCreateMessageHandler(
+      [&observedSamplingRequest](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &params) -> std::optional<mcp::jsonrpc::JsonValue>
+      {
+        if (!params.is_object() || !params.contains("messages") || !params["messages"].is_array() || params["messages"].empty())
+        {
+          throw std::runtime_error("sampling/createMessage did not include params.messages");
+        }
+
+        const auto &message = params["messages"][0];
+        if (!message.is_object() || !message.contains("content") || !message["content"].is_object() || !message["content"].contains("text")
+            || !message["content"]["text"].is_string())
+        {
+          throw std::runtime_error("sampling/createMessage message content was missing text");
+        }
+
+        const std::string prompt = message["content"]["text"].as<std::string>();
+        if (prompt.find(kExpectedServerSamplingPrompt) == std::string::npos)
+        {
+          throw std::runtime_error("sampling/createMessage prompt mismatch: " + prompt);
+        }
+
+        observedSamplingRequest = true;
+
+        mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
+        result["role"] = "assistant";
+        result["model"] = "cpp-integration-client";
+        result["content"] = mcp::jsonrpc::JsonValue::object();
+        result["content"]["type"] = "text";
+        result["content"]["text"] = std::string(kExpectedClientSamplingResponse);
+        result["stopReason"] = "endTurn";
+        return result;
+      });
+
+    client->setFormElicitationHandler(
+      [&observedElicitationRequest](const mcp::ElicitationCreateContext &, const mcp::FormElicitationRequest &request) -> mcp::FormElicitationResult
+      {
+        if (request.message != kExpectedServerElicitationMessage)
+        {
+          throw std::runtime_error("elicitation/create message mismatch: " + request.message);
+        }
+
+        observedElicitationRequest = true;
+
+        mcp::FormElicitationResult result;
+        result.action = mcp::ElicitationAction::kAccept;
+        result.content = mcp::jsonrpc::JsonValue::object();
+        (*result.content)["approved"] = true;
+        (*result.content)["reason"] = std::string(kExpectedClientElicitationReason);
+        return result;
+      });
+
     if (options.expectUnauthorized)
     {
+      verifyUnauthorizedHttpStatus(options.endpoint);
+
       try
       {
         const mcp::jsonrpc::Response initializeResponse = client->initialize().get();
@@ -192,6 +312,11 @@ auto main(int argc, char **argv) -> int
       catch (const std::exception &error)
       {
         client->stop();
+        if (!containsAuthorizationSignal(error.what()))
+        {
+          std::cerr << "Observed unauthorized initialize failure after explicit HTTP 401 probe: " << error.what() << '\n';
+          return 0;
+        }
         std::cerr << "Observed expected unauthorized failure: " << error.what() << '\n';
         return 0;
       }
@@ -216,12 +341,25 @@ auto main(int argc, char **argv) -> int
     mcp::jsonrpc::JsonValue toolArguments = mcp::jsonrpc::JsonValue::object();
     toolArguments["text"] = "from-cpp";
     const mcp::CallToolResult toolResult = client->callTool("python_echo", std::move(toolArguments));
+    if (toolResult.isError)
+    {
+      const std::string errorText = firstTextContent(toolResult);
+      std::cerr << "python_echo returned isError=true";
+      if (!errorText.empty())
+      {
+        std::cerr << ": " << errorText;
+      }
+      std::cerr << '\n';
+      client->stop();
+      return 5;
+    }
+
     const std::string toolText = firstTextContent(toolResult);
     if (toolText.find("from-cpp") == std::string::npos)
     {
       std::cerr << "python_echo result did not include expected text" << '\n';
       client->stop();
-      return 5;
+      return 6;
     }
 
     const mcp::ListResourcesResult resources = client->listResources();
@@ -229,7 +367,7 @@ auto main(int argc, char **argv) -> int
     {
       std::cerr << "resource://python-server/info was not advertised by reference server" << '\n';
       client->stop();
-      return 6;
+      return 7;
     }
 
     const mcp::ReadResourceResult resourceResult = client->readResource("resource://python-server/info");
@@ -237,7 +375,7 @@ auto main(int argc, char **argv) -> int
     {
       std::cerr << "Reference resource content was missing expected marker" << '\n';
       client->stop();
-      return 7;
+      return 8;
     }
 
     const mcp::ListPromptsResult prompts = client->listPrompts();
@@ -245,7 +383,7 @@ auto main(int argc, char **argv) -> int
     {
       std::cerr << "python_server_prompt was not advertised by reference server" << '\n';
       client->stop();
-      return 8;
+      return 9;
     }
 
     mcp::jsonrpc::JsonValue promptArguments = mcp::jsonrpc::JsonValue::object();
@@ -255,7 +393,21 @@ auto main(int argc, char **argv) -> int
     {
       std::cerr << "Reference prompt result did not include expected topic" << '\n';
       client->stop();
-      return 9;
+      return 10;
+    }
+
+    if (!observedSamplingRequest)
+    {
+      std::cerr << "Reference server did not issue sampling/createMessage request to C++ client" << '\n';
+      client->stop();
+      return 12;
+    }
+
+    if (!observedElicitationRequest)
+    {
+      std::cerr << "Reference server did not issue elicitation/create request to C++ client" << '\n';
+      client->stop();
+      return 13;
     }
 
     client->stop();

@@ -27,7 +27,7 @@ target_link_libraries(mcp_sdk_test_integration_cpp_client
 )
 
 add_test(
-    NAME mcp_sdk_integration_setup_reference_python_sdk
+    NAME mcp_sdk_integration_reference_setup_python_sdk
     COMMAND
         "${Python3_EXECUTABLE}"
         "${MCP_SDK_INTEGRATION_PYTHON_SETUP_SCRIPT}"
@@ -38,9 +38,9 @@ add_test(
 )
 
 set_tests_properties(
-    mcp_sdk_integration_setup_reference_python_sdk
+    mcp_sdk_integration_reference_setup_python_sdk
     PROPERTIES
-        LABELS "integration"
+        LABELS "integration;integration_reference"
         TIMEOUT 300
 )
 
@@ -56,14 +56,14 @@ add_test(
 set_tests_properties(
     mcp_sdk_integration_reference_client_to_cpp_server
     PROPERTIES
-        DEPENDS mcp_sdk_integration_setup_reference_python_sdk
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
         ENVIRONMENT "PYTHONUNBUFFERED=1"
-        LABELS "integration"
+        LABELS "integration;integration_reference"
         TIMEOUT 300
 )
 
 add_test(
-    NAME mcp_sdk_integration_cpp_client_to_reference_server
+    NAME mcp_sdk_integration_reference_cpp_client_to_reference_server
     COMMAND
         "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/scripts/cpp_client_to_reference_server.py"
@@ -74,10 +74,10 @@ add_test(
 )
 
 set_tests_properties(
-    mcp_sdk_integration_cpp_client_to_reference_server
+    mcp_sdk_integration_reference_cpp_client_to_reference_server
     PROPERTIES
-        DEPENDS mcp_sdk_integration_setup_reference_python_sdk
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
         ENVIRONMENT "PYTHONUNBUFFERED=1"
-        LABELS "integration"
+        LABELS "integration;integration_reference"
         TIMEOUT 300
 )
