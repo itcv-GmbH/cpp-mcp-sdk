@@ -8,7 +8,7 @@ This document captures security-relevant defaults and knobs in the current SDK.
 
 - `validateOrigin = true`
 - `allowRequestsWithoutOrigin = true`
-- `allowedHosts = localhost, 127.0.0.1, ::1`
+- `allowedHosts = localhost, 127.0.0.1, ::1, [::1]`
 
 Effect:
 

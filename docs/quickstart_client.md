@@ -34,10 +34,25 @@ stdioOptions.executablePath = "./build/vcpkg-unix-release/examples/stdio_server/
 client->connectStdio(stdioOptions);
 client->start();
 static_cast<void>(client->initialize().get());
+// initialize() completes the handshake and sends notifications/initialized.
 
 const auto tools = client->listTools();
 client->stop();
 ```
+
+Lifecycle ordering reminder for request-based APIs:
+
+1. `initialize`
+2. `notifications/initialized`
+3. normal requests (for example `tools/list`)
+
+If you bypass `Client::initialize()` and send lifecycle messages manually, use:
+
+```cpp
+client->sendNotification("notifications/initialized");
+```
+
+before calling request methods such as `listTools()`.
 
 ## HTTP auth + loopback receiver example
 
