@@ -90,3 +90,13 @@ target_link_libraries(mcp_sdk_test_transport_http_common
 )
 
 add_test(NAME mcp_sdk_transport_http_common_test COMMAND mcp_sdk_test_transport_http_common)
+
+add_executable(mcp_sdk_test_transport_http_common_integration transport_http_common_integration_test.cpp)
+
+target_link_libraries(mcp_sdk_test_transport_http_common_integration
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_transport_http_common_integration_test COMMAND mcp_sdk_test_transport_http_common_integration)
