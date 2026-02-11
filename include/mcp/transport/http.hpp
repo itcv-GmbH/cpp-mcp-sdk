@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -39,6 +40,31 @@ struct Header
 };
 
 using HeaderList = std::vector<Header>;
+
+enum class TlsClientAuthenticationMode
+{
+  kNone,
+  kOptional,
+  kRequired,
+};
+
+struct ServerTlsConfiguration
+{
+  std::string certificateChainFile;
+  std::string privateKeyFile;
+  std::optional<std::string> privateKeyPassphrase;
+  TlsClientAuthenticationMode clientAuthenticationMode = TlsClientAuthenticationMode::kNone;
+  std::optional<std::string> clientCaCertificateFile;
+  std::optional<std::string> clientCaCertificatePath;
+};
+
+struct ClientTlsConfiguration
+{
+  bool verifyPeer = true;
+  std::optional<std::string> caCertificateFile;
+  std::optional<std::string> caCertificatePath;
+  std::optional<std::string> serverNameIndication;
+};
 
 namespace detail
 {
@@ -398,6 +424,7 @@ struct HttpEndpointConfig
 struct HttpServerOptions
 {
   HttpEndpointConfig endpoint;
+  std::optional<http::ServerTlsConfiguration> tls;
   security::OriginPolicy originPolicy;
   bool requireSessionId = false;
   std::vector<std::string> supportedProtocolVersions = {
@@ -508,6 +535,7 @@ struct StreamableHttpClientOptions
 {
   std::string endpointUrl;
   std::optional<std::string> bearerToken;
+  ClientTlsConfiguration tls;
   SessionHeaderState sessionState;
   ProtocolVersionHeaderState protocolVersionState;
   std::uint32_t defaultRetryMilliseconds = 1000;
@@ -543,8 +571,51 @@ struct HttpClientOptions
 {
   std::string endpointUrl;
   std::optional<std::string> bearerToken;
+  http::ClientTlsConfiguration tls;
   http::SessionHeaderState sessionState;
   http::ProtocolVersionHeaderState protocolVersionState;
+};
+
+using HttpRequestHandler = std::function<http::ServerResponse(const http::ServerRequest &)>;
+
+class HttpServerRuntime
+{
+public:
+  explicit HttpServerRuntime(HttpServerOptions options = {});
+  ~HttpServerRuntime();
+
+  HttpServerRuntime(const HttpServerRuntime &) = delete;
+  auto operator=(const HttpServerRuntime &) -> HttpServerRuntime & = delete;
+  HttpServerRuntime(HttpServerRuntime &&other) noexcept;
+  auto operator=(HttpServerRuntime &&other) noexcept -> HttpServerRuntime &;
+
+  auto setRequestHandler(HttpRequestHandler handler) -> void;
+  auto start() -> void;
+  auto stop() noexcept -> void;
+  [[nodiscard]] auto isRunning() const noexcept -> bool;
+  [[nodiscard]] auto localPort() const noexcept -> std::uint16_t;
+
+private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+
+class HttpClientRuntime
+{
+public:
+  explicit HttpClientRuntime(HttpClientOptions options);
+  ~HttpClientRuntime();
+
+  HttpClientRuntime(const HttpClientRuntime &) = delete;
+  auto operator=(const HttpClientRuntime &) -> HttpClientRuntime & = delete;
+  HttpClientRuntime(HttpClientRuntime &&other) noexcept;
+  auto operator=(HttpClientRuntime &&other) noexcept -> HttpClientRuntime &;
+
+  [[nodiscard]] auto execute(const http::ServerRequest &request) const -> http::ServerResponse;
+
+private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 class HttpTransport final : public Transport

@@ -43,6 +43,7 @@ target_sources(mcp_sdk
         src/lifecycle/session.cpp
         src/schema/validator.cpp
         src/transport/http_client.cpp
+        src/transport/http_runtime.cpp
         src/transport/http_server.cpp
         src/transport/stdio.cpp
         src/version.cpp
@@ -68,6 +69,8 @@ target_sources(mcp_sdk
 target_link_libraries(mcp_sdk
     PUBLIC
         Boost::asio
+        OpenSSL::Crypto
+        OpenSSL::SSL
         jsoncons
 )
 

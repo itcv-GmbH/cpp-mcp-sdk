@@ -120,3 +120,18 @@ target_link_libraries(mcp_sdk_test_transport_http_client
 )
 
 add_test(NAME mcp_sdk_transport_http_client_test COMMAND mcp_sdk_test_transport_http_client)
+
+add_executable(mcp_sdk_test_transport_http_tls transport_http_tls_test.cpp)
+
+target_link_libraries(mcp_sdk_test_transport_http_tls
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+target_compile_definitions(mcp_sdk_test_transport_http_tls
+    PRIVATE
+        MCP_TEST_TLS_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+
+add_test(NAME mcp_sdk_transport_http_tls_test COMMAND mcp_sdk_test_transport_http_tls)
