@@ -32,6 +32,7 @@ static constexpr std::uint16_t kStatusAccepted = 202;
 static constexpr std::uint16_t kStatusBadRequest = 400;
 static constexpr std::uint16_t kStatusNotFound = 404;
 static constexpr std::uint16_t kStatusMethodNotAllowed = 405;
+static constexpr std::uint16_t kStatusInternalServerError = 500;
 static constexpr bool kTerminateStream = true;
 static constexpr bool kKeepStreamOpen = false;
 
@@ -67,6 +68,19 @@ static auto makeEvent(std::string eventId, std::string data) -> mcp::http::sse::
   event.id = std::move(eventId);
   event.data = std::move(data);
   return event;
+}
+
+static auto makeRetryGuidanceEvent(std::uint32_t retryMilliseconds) -> mcp::http::sse::Event
+{
+  mcp::http::sse::Event event;
+  event.retryMilliseconds = retryMilliseconds;
+  event.data = "";
+  return event;
+}
+
+static auto isResponseMessage(const jsonrpc::Message &message) -> bool
+{
+  return std::holds_alternative<jsonrpc::SuccessResponse>(message) || std::holds_alternative<jsonrpc::ErrorResponse>(message);
 }
 
 static auto isInitializeRequest(const jsonrpc::Message &message) -> bool
@@ -156,8 +170,11 @@ struct StreamableHttpServer::Impl
     return replay;
   }
 
-  auto chooseTargetStream(const std::optional<std::string> &sessionId) -> StreamState *
+  auto chooseTargetStream(const std::optional<std::string> &sessionId, const jsonrpc::Message &message) -> StreamState *
   {
+    const bool routeToPostStream = isResponseMessage(message);
+
+    StreamState *postFallback = nullptr;
     for (const std::string &streamId : streamOrder)
     {
       auto streamIt = streams.find(streamId);
@@ -177,7 +194,30 @@ struct StreamableHttpServer::Impl
         continue;
       }
 
-      return &stream;
+      if (routeToPostStream)
+      {
+        if (stream.kind == StreamKind::Post)
+        {
+          return &stream;
+        }
+
+        continue;
+      }
+
+      if (stream.kind == StreamKind::Get)
+      {
+        return &stream;
+      }
+
+      if (postFallback == nullptr)
+      {
+        postFallback = &stream;
+      }
+    }
+
+    if (!routeToPostStream)
+    {
+      return postFallback;
     }
 
     return nullptr;
@@ -298,13 +338,18 @@ struct StreamableHttpServer::Impl
     }
     else
     {
-      requestResult.response = jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(), typedRequest.id);
+      requestResult.response = jsonrpc::Response {jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(), typedRequest.id)};
     }
 
     const bool shouldUseSse = requestResult.useSse || !requestResult.preResponseMessages.empty();
     if (!shouldUseSse)
     {
-      const jsonrpc::Message responseMessage = std::visit([](const auto &typedResponse) -> jsonrpc::Message { return jsonrpc::Message {typedResponse}; }, requestResult.response);
+      if (!requestResult.response.has_value())
+      {
+        return jsonResponse(kStatusInternalServerError, makeJsonRpcErrorBody("Request handler did not return a response"));
+      }
+
+      const jsonrpc::Message responseMessage = std::visit([](const auto &typedResponse) -> jsonrpc::Message { return jsonrpc::Message {typedResponse}; }, *requestResult.response);
       return jsonResponse(kStatusOk, jsonrpc::serializeMessage(responseMessage));
     }
 
@@ -314,11 +359,23 @@ struct StreamableHttpServer::Impl
       appendMessageEvent(stream, preResponse);
     }
 
-    const jsonrpc::Message responseMessage = std::visit([](const auto &typedResponse) -> jsonrpc::Message { return jsonrpc::Message {typedResponse}; }, requestResult.response);
-    appendMessageEvent(stream, responseMessage);
-    stream.terminated = true;
+    if (requestResult.response.has_value())
+    {
+      const jsonrpc::Message responseMessage = std::visit([](const auto &typedResponse) -> jsonrpc::Message { return jsonrpc::Message {typedResponse}; }, *requestResult.response);
+      appendMessageEvent(stream, responseMessage);
+      if (requestResult.terminateSseAfterResponse)
+      {
+        stream.terminated = true;
+      }
+    }
 
-    return sseResponse(stream, replayFromCursor(stream, 0), kTerminateStream);
+    std::vector<mcp::http::sse::Event> outboundEvents = replayFromCursor(stream, 0);
+    if (requestResult.closeSseConnection && !stream.terminated && requestResult.retryMilliseconds.has_value())
+    {
+      outboundEvents.push_back(makeRetryGuidanceEvent(*requestResult.retryMilliseconds));
+    }
+
+    return sseResponse(stream, std::move(outboundEvents), stream.terminated ? kTerminateStream : kKeepStreamOpen);
   }
 
   auto handleGet(const ServerRequest &request) -> ServerResponse
@@ -339,7 +396,14 @@ struct StreamableHttpServer::Impl
     {
       StreamState &stream = createStream(validation.sessionId, StreamKind::Get);
       emitPendingMessages(stream);
-      return sseResponse(stream, replayFromCursor(stream, 0), kKeepStreamOpen);
+
+      std::vector<mcp::http::sse::Event> outboundEvents = replayFromCursor(stream, 0);
+      if (!stream.terminated && options.defaultSseRetryMilliseconds.has_value())
+      {
+        outboundEvents.push_back(makeRetryGuidanceEvent(*options.defaultSseRetryMilliseconds));
+      }
+
+      return sseResponse(stream, std::move(outboundEvents), kKeepStreamOpen);
     }
 
     const auto eventCursor = mcp::http::sse::parseEventId(*lastEventId);
@@ -360,7 +424,13 @@ struct StreamableHttpServer::Impl
       return statusResponse(kStatusNotFound);
     }
 
-    return sseResponse(stream, replayFromCursor(stream, eventCursor->cursor), stream.terminated);
+    std::vector<mcp::http::sse::Event> outboundEvents = replayFromCursor(stream, eventCursor->cursor);
+    if (!stream.terminated && options.defaultSseRetryMilliseconds.has_value())
+    {
+      outboundEvents.push_back(makeRetryGuidanceEvent(*options.defaultSseRetryMilliseconds));
+    }
+
+    return sseResponse(stream, std::move(outboundEvents), stream.terminated);
   }
 
   auto handleDelete(const ServerRequest &request) -> ServerResponse
@@ -424,10 +494,16 @@ struct StreamableHttpServer::Impl
 
   auto enqueueServerMessage(const jsonrpc::Message &message, const std::optional<std::string> &sessionId) -> bool
   {
-    StreamState *stream = chooseTargetStream(sessionId);
+    StreamState *stream = chooseTargetStream(sessionId, message);
     if (stream != nullptr)
     {
       appendMessageEvent(*stream, message);
+
+      if (isResponseMessage(message) && stream->kind == StreamKind::Post)
+      {
+        stream->terminated = true;
+      }
+
       return true;
     }
 

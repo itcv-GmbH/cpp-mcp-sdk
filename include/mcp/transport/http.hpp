@@ -443,8 +443,11 @@ struct ServerResponse
 struct StreamableRequestResult
 {
   std::vector<jsonrpc::Message> preResponseMessages;
-  jsonrpc::Response response = jsonrpc::ErrorResponse {};
+  std::optional<jsonrpc::Response> response;
   bool useSse = false;
+  bool terminateSseAfterResponse = true;
+  bool closeSseConnection = false;
+  std::optional<std::uint32_t> retryMilliseconds;
 };
 
 using StreamableRequestHandler = std::function<StreamableRequestResult(const jsonrpc::RequestContext &, const jsonrpc::Request &)>;
@@ -456,6 +459,7 @@ struct StreamableHttpServerOptions
   HttpServerOptions http;
   bool allowGetSse = true;
   bool allowDeleteSession = true;
+  std::optional<std::uint32_t> defaultSseRetryMilliseconds;
 };
 
 class StreamableHttpServer

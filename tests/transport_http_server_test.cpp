@@ -65,6 +65,19 @@ auto messageFromSseEvent(const mcp::http::sse::Event &event) -> mcp::jsonrpc::Me
   return mcp::jsonrpc::parseMessage(event.data);
 }
 
+auto lastEventId(const std::vector<mcp::http::sse::Event> &events) -> std::optional<std::string>
+{
+  for (auto it = events.rbegin(); it != events.rend(); ++it)
+  {
+    if (it->id.has_value())
+    {
+      return it->id;
+    }
+  }
+
+  return std::nullopt;
+}
+
 }  // namespace
 
 TEST_CASE("HTTP server handles POST request with JSON response", "[transport][http][server]")
@@ -266,6 +279,82 @@ TEST_CASE("HTTP server session termination and expiry return 404", "[transport][
     const mcp_http::ServerResponse afterTerminate = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, "session-live"));
     REQUIRE(afterTerminate.statusCode == 404);
   }
+}
+
+TEST_CASE("HTTP server returns 405 when GET SSE is disabled", "[transport][http][server]")
+{
+  mcp_http::StreamableHttpServerOptions options;
+  options.allowGetSse = false;
+
+  mcp_http::StreamableHttpServer server(options);
+  const mcp_http::ServerResponse response = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp"));
+
+  REQUIRE(response.statusCode == 405);
+}
+
+TEST_CASE("HTTP server rejects POST bodies that are not a single JSON-RPC message", "[transport][http][server]")
+{
+  mcp_http::StreamableHttpServer server;
+
+  SECTION("JSON-RPC batch array is rejected")
+  {
+    const mcp_http::ServerResponse response =
+      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", R"([{"jsonrpc":"2.0","id":1,"method":"ping"}])"));
+    REQUIRE(response.statusCode == 400);
+  }
+
+  SECTION("Multiple JSON objects in one POST body are rejected")
+  {
+    const char *body = R"({"jsonrpc":"2.0","id":1,"method":"ping"}{"jsonrpc":"2.0","id":2,"method":"ping"})";
+    const mcp_http::ServerResponse response = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", body));
+    REQUIRE(response.statusCode == 400);
+  }
+}
+
+TEST_CASE("HTTP server supports disconnect and resume without cancelling request", "[transport][http][server]")
+{
+  mcp_http::StreamableHttpServer server;
+  server.setRequestHandler(
+    [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &) -> mcp_http::StreamableRequestResult
+    {
+      mcp_http::StreamableRequestResult result;
+      result.useSse = true;
+      result.closeSseConnection = true;
+      result.retryMilliseconds = 250;
+
+      mcp::jsonrpc::Notification inFlight;
+      inFlight.method = "notifications/initialized";
+      result.preResponseMessages.push_back(mcp::jsonrpc::Message {inFlight});
+      return result;
+    });
+
+  const std::string requestBody = makeRequestBody(91, "delayed");
+  const mcp_http::ServerResponse firstChunk = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", requestBody));
+
+  REQUIRE(firstChunk.statusCode == 200);
+  REQUIRE(firstChunk.sse.has_value());
+  REQUIRE_FALSE(firstChunk.sse->terminateStream);
+  REQUIRE(firstChunk.body.find("retry: 250") != std::string::npos);
+
+  const std::optional<std::string> cursor = lastEventId(firstChunk.sse->events);
+  REQUIRE(cursor.has_value());
+
+  mcp::jsonrpc::SuccessResponse lateResponse;
+  lateResponse.id = std::int64_t {91};
+  lateResponse.result = mcp::jsonrpc::JsonValue::object();
+  lateResponse.result["completed"] = true;
+  REQUIRE(server.enqueueServerMessage(mcp::jsonrpc::Message {lateResponse}));
+
+  const mcp_http::ServerResponse resumed = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, std::nullopt, *cursor));
+
+  REQUIRE(resumed.statusCode == 200);
+  REQUIRE(resumed.sse.has_value());
+  REQUIRE(resumed.sse->terminateStream);
+  REQUIRE(resumed.sse->events.size() == 1);
+
+  const mcp::jsonrpc::Message responseMessage = messageFromSseEvent(resumed.sse->events.front());
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(responseMessage));
+  REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(responseMessage).id == mcp::jsonrpc::RequestId {std::int64_t {91}});
 }
 
 // NOLINTEND(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
