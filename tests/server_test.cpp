@@ -1,9 +1,11 @@
 #include <cstdint>
 #include <future>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/errors.hpp>
@@ -21,6 +23,8 @@ static constexpr std::int64_t kLoggingSetLevelId = 5;
 static constexpr std::int64_t kToolsListBeforeInitializedId = 6;
 static constexpr std::int64_t kCapabilityGatingRequestId = 7;
 static constexpr std::int64_t kUnknownMethodRequestId = 8;
+static constexpr std::int64_t kCompletionRequestId = 9;
+static constexpr std::int64_t kSetLevelRequestId = 10;
 
 static auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::future<mcp::jsonrpc::Response>
 {
@@ -114,15 +118,6 @@ TEST_CASE("Server enforces pre-initialization lifecycle rules", "[server][core][
 
   auto server = mcp::Server::create(std::move(configuration));
 
-  server->registerRequestHandler("logging/setLevel",
-                                 [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
-                                 {
-                                   mcp::jsonrpc::SuccessResponse success;
-                                   success.id = request.id;
-                                   success.result = mcp::jsonrpc::JsonValue::object();
-                                   return makeReadyResponseFuture(mcp::jsonrpc::Response {success});
-                                 });
-
   server->registerRequestHandler("tools/list",
                                  [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
                                  {
@@ -170,6 +165,126 @@ TEST_CASE("Server enforces pre-initialization lifecycle rules", "[server][core][
 
   const mcp::jsonrpc::Response toolsListOperatingResponse = dispatchRequest(*server, toolsListBeforeInitialized);
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(toolsListOperatingResponse));
+}
+
+TEST_CASE("Server completion enforces a maximum of 100 values", "[server][utilities][completion]")
+{
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, mcp::CompletionsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+  server->setCompletionHandler(
+    [](const mcp::CompletionRequest &) -> mcp::CompletionResult
+    {
+      mcp::CompletionResult result;
+      result.values.reserve(120);
+      for (std::size_t index = 0; index < 120; ++index)
+      {
+        result.values.push_back("value-" + std::to_string(index));
+      }
+      result.total = 120;
+      result.hasMore = false;
+      return result;
+    });
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request request;
+  request.id = kCompletionRequestId;
+  request.method = "completion/complete";
+  request.params = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["ref"] = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["ref"]["type"] = "ref/prompt";
+  (*request.params)["ref"]["name"] = "prompt-a";
+  (*request.params)["argument"] = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["argument"]["name"] = "language";
+  (*request.params)["argument"]["value"] = "c";
+
+  const mcp::jsonrpc::Response response = dispatchRequest(*server, request);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
+  const auto &success = std::get<mcp::jsonrpc::SuccessResponse>(response);
+  REQUIRE(success.result.contains("completion"));
+  REQUIRE(success.result["completion"]["values"].size() == 100);
+  REQUIRE(success.result["completion"]["values"][0].as<std::string>() == "value-0");
+  REQUIRE(success.result["completion"]["values"][99].as<std::string>() == "value-99");
+  REQUIRE(success.result["completion"]["total"].as<std::size_t>() == 120);
+  REQUIRE(success.result["completion"]["hasMore"].as<bool>());
+}
+
+TEST_CASE("Server pagination cursors are opaque and endpoint-scoped", "[server][utilities][pagination]")
+{
+  const mcp::PaginationWindow firstPage = mcp::Server::paginateList(mcp::ListEndpoint::kTools, std::nullopt, 11, 4);
+  REQUIRE(firstPage.startIndex == 0);
+  REQUIRE(firstPage.endIndex == 4);
+  REQUIRE(firstPage.nextCursor.has_value());
+  if (firstPage.nextCursor.has_value())
+  {
+    REQUIRE(*firstPage.nextCursor != "4");
+  }
+
+  const mcp::PaginationWindow secondPage = mcp::Server::paginateList(mcp::ListEndpoint::kTools, firstPage.nextCursor, 11, 4);
+  REQUIRE(secondPage.startIndex == 4);
+  REQUIRE(secondPage.endIndex == 8);
+  REQUIRE(secondPage.nextCursor.has_value());
+
+  REQUIRE_THROWS_AS(mcp::Server::paginateList(mcp::ListEndpoint::kResources, firstPage.nextCursor, 11, 4), std::invalid_argument);
+  REQUIRE_THROWS_AS(mcp::Server::paginateList(mcp::ListEndpoint::kPrompts, std::optional<std::string> {"invalid-cursor"}, 11, 4), std::invalid_argument);
+}
+
+TEST_CASE("Server logging level updates and filters outbound notifications", "[server][utilities][logging]")
+{
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(mcp::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  std::mutex messagesMutex;
+  std::vector<mcp::jsonrpc::Message> outboundMessages;
+  server->setOutboundMessageSender(
+    [&messagesMutex, &outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+    {
+      const std::scoped_lock lock(messagesMutex);
+      outboundMessages.push_back(std::move(message));
+    });
+
+  completeInitialization(*server);
+
+  REQUIRE(server->emitLogMessage(mcp::jsonrpc::RequestContext {}, mcp::LogLevel::kInfo, mcp::jsonrpc::JsonValue("first"), std::string("test")));
+
+  mcp::jsonrpc::Request setLevel;
+  setLevel.id = kSetLevelRequestId;
+  setLevel.method = "logging/setLevel";
+  setLevel.params = mcp::jsonrpc::JsonValue::object();
+  (*setLevel.params)["level"] = "error";
+  const mcp::jsonrpc::Response setLevelResponse = dispatchRequest(*server, setLevel);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(setLevelResponse));
+  REQUIRE(server->logLevel() == mcp::LogLevel::kError);
+
+  REQUIRE_FALSE(server->emitLogMessage(mcp::jsonrpc::RequestContext {}, mcp::LogLevel::kWarning, mcp::jsonrpc::JsonValue("filtered")));
+  REQUIRE(server->emitLogMessage(mcp::jsonrpc::RequestContext {}, mcp::LogLevel::kCritical, mcp::jsonrpc::JsonValue::object()));
+
+  std::vector<mcp::jsonrpc::Notification> logNotifications;
+  {
+    const std::scoped_lock lock(messagesMutex);
+    for (const auto &message : outboundMessages)
+    {
+      if (std::holds_alternative<mcp::jsonrpc::Notification>(message))
+      {
+        const auto &notification = std::get<mcp::jsonrpc::Notification>(message);
+        if (notification.method == "notifications/message")
+        {
+          logNotifications.push_back(notification);
+        }
+      }
+    }
+  }
+
+  REQUIRE(logNotifications.size() == 2);
+  REQUIRE(logNotifications[0].params.has_value());
+  REQUIRE((*logNotifications[0].params)["level"].as<std::string>() == "info");
+  REQUIRE((*logNotifications[0].params)["logger"].as<std::string>() == "test");
+  REQUIRE(logNotifications[1].params.has_value());
+  REQUIRE((*logNotifications[1].params)["level"].as<std::string>() == "critical");
 }
 
 TEST_CASE("Server returns method not found when a feature capability is not declared", "[server][core][capabilities]")

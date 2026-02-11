@@ -24,7 +24,7 @@
 - [ ] `task-015`: Tools (list/call + schemas + list_changed) (Depends on: `task-014`)
 - [ ] `task-016`: Resources (list/read/templates/subscribe + updated/list_changed) (Depends on: `task-014`)
 - [ ] `task-017`: Prompts (list/get + list_changed) (Depends on: `task-014`)
-- [ ] `task-018`: Server Utilities (logging, completion, pagination helpers) (Depends on: `task-014`)
+- [x] `task-018`: Server Utilities (logging, completion, pagination helpers) (Depends on: `task-014`)
 
 ## Phase 5: Client Features (Blocked by Phase 3)
 - [ ] `task-019`: Client Core (connect, initialize/initialized, base RPC calls) (Depends on: `task-006`, `task-007`, `task-012`)
