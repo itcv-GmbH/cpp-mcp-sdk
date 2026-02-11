@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iosfwd>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -49,18 +48,6 @@ public:
   static auto routeIncomingLine(jsonrpc::Router &router, std::string_view line, std::ostream &output, std::ostream *stderrOutput, StdioAttachOptions options = {}) -> bool;
 
 private:
-  enum class Mode
-  {
-    kServer,
-    kClient,
-  };
-
-  auto stderrStream() -> std::ostream *;
-
-  StdioServerOptions serverOptions_;
-  StdioClientOptions clientOptions_;
-  Mode mode_ = Mode::kServer;
-  std::weak_ptr<Session> session_;
   bool running_ = false;
 };
 
