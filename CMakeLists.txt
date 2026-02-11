@@ -69,6 +69,10 @@ target_link_libraries(mcp_sdk
         jsoncons
 )
 
+if(TARGET Boost::process)
+    target_link_libraries(mcp_sdk PUBLIC Boost::process)
+endif()
+
 target_include_directories(mcp_sdk
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

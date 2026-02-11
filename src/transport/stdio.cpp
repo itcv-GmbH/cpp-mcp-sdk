@@ -1,17 +1,33 @@
 #include <algorithm>
+#include <cerrno>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <iostream>
 #include <istream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <thread>
 #include <utility>
 #include <variant>
+
+#include <boost/process/v1/args.hpp>
+#include <boost/process/v1/child.hpp>
+#include <boost/process/v1/env.hpp>
+#include <boost/process/v1/environment.hpp>
+#include <boost/process/v1/io.hpp>
+#include <boost/process/v1/start_dir.hpp>
+
+#if !defined(_WIN32)
+#  include <signal.h>
+#endif
 
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
@@ -248,6 +264,331 @@ static auto routeFramedInput(jsonrpc::Router &router, std::istream &input, std::
 
 }  // namespace detail
 
+namespace
+{
+
+namespace bp = boost::process::v1;
+
+static auto sanitizeTimeout(std::chrono::milliseconds timeout) -> std::chrono::milliseconds
+{
+  if (timeout < std::chrono::milliseconds::zero())
+  {
+    return std::chrono::milliseconds::zero();
+  }
+
+  return timeout;
+}
+
+static auto buildSubprocessEnvironment(const std::vector<std::string> &envOverrides) -> bp::environment
+{
+  bp::environment environment = boost::this_process::environment();
+  for (const std::string &entry : envOverrides)
+  {
+    const std::size_t separatorIndex = entry.find('=');
+    if (separatorIndex == std::string::npos || separatorIndex == 0)
+    {
+      throw std::invalid_argument("Environment overrides must use KEY=VALUE format.");
+    }
+
+    const std::string key = entry.substr(0, separatorIndex);
+    const std::string value = entry.substr(separatorIndex + 1);
+    environment[key] = value;
+  }
+
+  return environment;
+}
+
+struct SpawnCommand
+{
+  std::string executable;
+  std::vector<std::string> arguments;
+};
+
+static auto buildSpawnCommand(const StdioSubprocessSpawnOptions &options) -> SpawnCommand
+{
+  if (options.argv.empty())
+  {
+    throw std::invalid_argument("Subprocess argv must include at least the executable path.");
+  }
+
+  SpawnCommand command;
+  command.executable = options.argv.front();
+  if (options.argv.size() > 1)
+  {
+    command.arguments.assign(options.argv.begin() + 1, options.argv.end());
+  }
+
+  return command;
+}
+
+#if !defined(_WIN32)
+static auto signalProcess(bp::child &process, int signalNumber) -> void
+{
+  if (!process.valid())
+  {
+    return;
+  }
+
+  if (::kill(process.id(), signalNumber) != 0 && errno != ESRCH)
+  {
+    throw std::system_error(errno, std::system_category(), "Failed to signal child process.");
+  }
+}
+#endif
+
+}  // namespace
+
+struct StdioSubprocess::Impl
+{
+  bp::child process;
+  bp::opstream stdinPipe;
+  bp::ipstream stdoutPipe;
+  bp::ipstream stderrPipe;
+  StdioClientStderrMode stderrMode = StdioClientStderrMode::kCapture;
+  bool stdinClosed = false;
+  std::optional<int> exitCode;
+  std::thread stderrReader;
+  mutable std::mutex stderrMutex;
+  std::string capturedStderr;
+
+  auto startStderrCapture() -> void
+  {
+    if (stderrMode != StdioClientStderrMode::kCapture)
+    {
+      return;
+    }
+
+    stderrReader = std::thread(
+      [this]() -> void
+      {
+        std::string line;
+        while (std::getline(stderrPipe, line))
+        {
+          std::lock_guard<std::mutex> lock(stderrMutex);
+          capturedStderr.append(line);
+          capturedStderr.push_back('\n');
+        }
+      });
+  }
+
+  auto joinStderrCapture() noexcept -> void
+  {
+    if (stderrReader.joinable())
+    {
+      stderrReader.join();
+    }
+  }
+
+  auto closeStdinPipe() noexcept -> void
+  {
+    if (stdinClosed)
+    {
+      return;
+    }
+
+    try
+    {
+      stdinPipe.flush();
+      stdinPipe.pipe().close();
+    }
+    catch (...)
+    {
+    }
+
+    stdinClosed = true;
+  }
+
+  auto markExited() -> void
+  {
+    exitCode = process.exit_code();
+    joinStderrCapture();
+  }
+};
+
+StdioSubprocess::StdioSubprocess() = default;
+
+StdioSubprocess::StdioSubprocess(std::unique_ptr<Impl> impl)
+  : impl_(std::move(impl))
+{
+}
+
+StdioSubprocess::~StdioSubprocess()
+{
+  static_cast<void>(shutdown());
+}
+
+StdioSubprocess::StdioSubprocess(StdioSubprocess &&other) noexcept = default;
+
+auto StdioSubprocess::operator=(StdioSubprocess &&other) noexcept -> StdioSubprocess & = default;
+
+auto StdioSubprocess::valid() const noexcept -> bool
+{
+  return impl_ != nullptr && impl_->process.valid();
+}
+
+auto StdioSubprocess::writeLine(std::string_view line) -> void
+{
+  if (!valid())
+  {
+    throw std::runtime_error("Cannot write to an invalid subprocess.");
+  }
+
+  if (impl_->stdinClosed)
+  {
+    throw std::runtime_error("Cannot write to subprocess after stdin was closed.");
+  }
+
+  if (detail::containsFramingNewline(line))
+  {
+    throw std::invalid_argument("Subprocess writeLine expects a single line without framing newlines.");
+  }
+
+  impl_->stdinPipe << line << '\n';
+  impl_->stdinPipe.flush();
+  if (!impl_->stdinPipe.good())
+  {
+    throw std::runtime_error("Failed writing to subprocess stdin.");
+  }
+}
+
+auto StdioSubprocess::readLine(std::string &line) -> bool
+{
+  if (!valid())
+  {
+    throw std::runtime_error("Cannot read from an invalid subprocess.");
+  }
+
+  return static_cast<bool>(std::getline(impl_->stdoutPipe, line));
+}
+
+auto StdioSubprocess::closeStdin() noexcept -> void
+{
+  if (impl_ == nullptr)
+  {
+    return;
+  }
+
+  impl_->closeStdinPipe();
+}
+
+auto StdioSubprocess::waitForExit(std::chrono::milliseconds timeout) -> bool
+{
+  if (!valid())
+  {
+    return true;
+  }
+
+  const auto boundedTimeout = sanitizeTimeout(timeout);
+  if (!impl_->process.wait_for(boundedTimeout))
+  {
+    return false;
+  }
+
+  impl_->markExited();
+  return true;
+}
+
+auto StdioSubprocess::shutdown(StdioSubprocessShutdownOptions options) noexcept -> bool
+{
+  if (impl_ == nullptr)
+  {
+    return true;
+  }
+
+  try
+  {
+    impl_->closeStdinPipe();
+
+    if (waitForExit(options.waitForExitTimeout))
+    {
+      return true;
+    }
+
+#if defined(_WIN32)
+    std::error_code terminateError;
+    impl_->process.terminate(terminateError);
+    static_cast<void>(terminateError);
+
+    if (waitForExit(options.waitAfterTerminateTimeout))
+    {
+      return true;
+    }
+
+    impl_->process.terminate(terminateError);
+    static_cast<void>(terminateError);
+#else
+    signalProcess(impl_->process, SIGTERM);
+    if (waitForExit(options.waitAfterTerminateTimeout))
+    {
+      return true;
+    }
+
+    signalProcess(impl_->process, SIGKILL);
+#endif
+
+    if (!waitForExit(std::chrono::milliseconds {500}))
+    {
+      std::error_code waitError;
+      impl_->process.wait(waitError);
+      if (waitError)
+      {
+        return false;
+      }
+
+      impl_->markExited();
+    }
+
+    return true;
+  }
+  catch (...)
+  {
+    return false;
+  }
+}
+
+auto StdioSubprocess::isRunning() -> bool
+{
+  if (!valid())
+  {
+    return false;
+  }
+
+  std::error_code runningError;
+  const bool running = impl_->process.running(runningError);
+  if (runningError)
+  {
+    throw std::system_error(runningError, "Failed to query subprocess state.");
+  }
+
+  if (!running)
+  {
+    impl_->markExited();
+  }
+
+  return running;
+}
+
+auto StdioSubprocess::exitCode() const -> std::optional<int>
+{
+  if (impl_ == nullptr)
+  {
+    return std::nullopt;
+  }
+
+  return impl_->exitCode;
+}
+
+auto StdioSubprocess::capturedStderr() const -> std::string
+{
+  if (impl_ == nullptr)
+  {
+    return {};
+  }
+
+  std::lock_guard<std::mutex> lock(impl_->stderrMutex);
+  return impl_->capturedStderr;
+}
+
 StdioTransport::StdioTransport(StdioServerOptions options)
 {
   static_cast<void>(options);
@@ -311,6 +652,68 @@ auto StdioTransport::attach(jsonrpc::Router &router, std::istream &serverStdout,
 auto StdioTransport::routeIncomingLine(jsonrpc::Router &router, std::string_view line, std::ostream &output, std::ostream *stderrOutput, StdioAttachOptions options) -> bool
 {
   return detail::routeLine(router, line, output, stderrOutput, options);
+}
+
+auto StdioTransport::spawnSubprocess(StdioSubprocessSpawnOptions options) -> StdioSubprocess
+{
+  const SpawnCommand command = buildSpawnCommand(options);
+  const bp::environment environment = buildSubprocessEnvironment(options.envOverrides);
+
+  auto impl = std::make_unique<StdioSubprocess::Impl>();
+  impl->stderrMode = options.stderrMode;
+
+  const bool useStartDir = !options.cwd.empty();
+  switch (options.stderrMode)
+  {
+    case StdioClientStderrMode::kCapture:
+      if (useStartDir)
+      {
+        impl->process = bp::child(command.executable,
+                                  bp::args(command.arguments),
+                                  bp::env(environment),
+                                  bp::start_dir(options.cwd),
+                                  bp::std_in = impl->stdinPipe,
+                                  bp::std_out = impl->stdoutPipe,
+                                  bp::std_err = impl->stderrPipe);
+      }
+      else
+      {
+        impl->process = bp::child(
+          command.executable, bp::args(command.arguments), bp::env(environment), bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe, bp::std_err = impl->stderrPipe);
+      }
+      impl->startStderrCapture();
+      break;
+    case StdioClientStderrMode::kForward:
+      if (useStartDir)
+      {
+        impl->process = bp::child(
+          command.executable, bp::args(command.arguments), bp::env(environment), bp::start_dir(options.cwd), bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe);
+      }
+      else
+      {
+        impl->process = bp::child(command.executable, bp::args(command.arguments), bp::env(environment), bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe);
+      }
+      break;
+    case StdioClientStderrMode::kIgnore:
+      if (useStartDir)
+      {
+        impl->process = bp::child(command.executable,
+                                  bp::args(command.arguments),
+                                  bp::env(environment),
+                                  bp::start_dir(options.cwd),
+                                  bp::std_in = impl->stdinPipe,
+                                  bp::std_out = impl->stdoutPipe,
+                                  bp::std_err = bp::null);
+      }
+      else
+      {
+        impl->process =
+          bp::child(command.executable, bp::args(command.arguments), bp::env(environment), bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe, bp::std_err = bp::null);
+      }
+      break;
+  }
+
+  return StdioSubprocess(std::move(impl));
 }
 
 }  // namespace mcp::transport

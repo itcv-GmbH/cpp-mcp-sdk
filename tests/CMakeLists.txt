@@ -58,3 +58,25 @@ target_link_libraries(mcp_sdk_test_transport_stdio
 )
 
 add_test(NAME mcp_sdk_transport_stdio_test COMMAND mcp_sdk_test_transport_stdio)
+
+add_executable(mcp_sdk_test_stdio_subprocess_server transport_stdio_subprocess_server.cpp)
+
+target_link_libraries(mcp_sdk_test_stdio_subprocess_server
+    PRIVATE
+        mcp::sdk
+)
+
+add_executable(mcp_sdk_test_transport_stdio_subprocess transport_stdio_subprocess_test.cpp)
+
+target_link_libraries(mcp_sdk_test_transport_stdio_subprocess
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+target_compile_definitions(mcp_sdk_test_transport_stdio_subprocess
+    PRIVATE
+        MCP_TEST_STDIO_SUBPROCESS_HELPER_PATH="$<TARGET_FILE:mcp_sdk_test_stdio_subprocess_server>"
+)
+
+add_test(NAME mcp_sdk_transport_stdio_subprocess_test COMMAND mcp_sdk_test_transport_stdio_subprocess)

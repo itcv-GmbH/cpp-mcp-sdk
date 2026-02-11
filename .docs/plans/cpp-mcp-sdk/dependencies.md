@@ -13,7 +13,7 @@
 
 ## Phase 3: Transports (Blocked by Phase 2)
 - [x] `task-008`: Implement stdio Transport (Server + Client I/O) (Depends on: `task-006`)
-- [ ] `task-009`: Implement Subprocess stdio Client (Cross-Platform) (Depends on: `task-008`)
+- [x] `task-009`: Implement Subprocess stdio Client (Cross-Platform) (Depends on: `task-008`)
 - [ ] `task-010`: Implement Streamable HTTP Common (Headers, Session, Origin Policy) (Depends on: `task-006`)
 - [ ] `task-011`: Implement Streamable HTTP Server (POST + GET SSE, resumability) (Depends on: `task-010`)
 - [ ] `task-012`: Implement Streamable HTTP Client (POST + GET SSE, resumability) (Depends on: `task-010`)
