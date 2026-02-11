@@ -102,6 +102,16 @@ target_link_libraries(mcp_sdk_test_auth_client_registration
 
 add_test(NAME mcp_sdk_auth_client_registration_test_authorization COMMAND mcp_sdk_test_auth_client_registration)
 
+add_executable(mcp_sdk_test_auth_oauth_client auth_oauth_client_test.cpp)
+
+target_link_libraries(mcp_sdk_test_auth_oauth_client
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_auth_oauth_client_test_authorization COMMAND mcp_sdk_test_auth_oauth_client)
+
 add_executable(mcp_sdk_test_transport_stdio transport_stdio_test.cpp)
 
 target_link_libraries(mcp_sdk_test_transport_stdio
