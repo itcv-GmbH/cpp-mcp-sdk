@@ -255,10 +255,11 @@ static auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> C
   std::optional<ElicitationCapability> elicitation;
   if (capabilitiesJson.contains("elicitation") && capabilitiesJson["elicitation"].is_object())
   {
+    const auto &elicitationJson = capabilitiesJson["elicitation"];
     ElicitationCapability elicitationCapability;
-    elicitationCapability.form = capabilitiesJson["elicitation"].contains("form") && capabilitiesJson["elicitation"]["form"].is_object();
-    elicitationCapability.url = capabilitiesJson["elicitation"].contains("url") && capabilitiesJson["elicitation"]["url"].is_object();
-    if (!elicitationCapability.form && !elicitationCapability.url)
+    elicitationCapability.form = elicitationJson.contains("form") && elicitationJson["form"].is_object();
+    elicitationCapability.url = elicitationJson.contains("url") && elicitationJson["url"].is_object();
+    if (!elicitationCapability.form && !elicitationCapability.url && elicitationJson.empty())
     {
       elicitationCapability.form = true;
     }

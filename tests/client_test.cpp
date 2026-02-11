@@ -1251,6 +1251,75 @@ TEST_CASE("Client elicitation/create enforces flat primitive form schema restric
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(primitiveResponse));
 }
 
+TEST_CASE("Client elicitation/create URL mode rejects malformed absolute URLs", "[client][elicitation][validation]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::ElicitationCapability elicitationCapability;
+  elicitationCapability.url = true;
+
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setUrlElicitationHandler(
+    [](const mcp::ElicitationCreateContext &, const mcp::UrlElicitationRequest &) -> mcp::UrlElicitationResult
+    {
+      mcp::UrlElicitationResult result;
+      result.action = mcp::ElicitationAction::kCancel;
+      return result;
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  auto makeUrlRequest = [](std::int64_t id, std::string url) -> mcp::jsonrpc::Request
+  {
+    mcp::jsonrpc::Request request;
+    request.id = id;
+    request.method = "elicitation/create";
+    request.params = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["mode"] = "url";
+    (*request.params)["elicitationId"] = "elic-url";
+    (*request.params)["message"] = "Open consent page";
+    (*request.params)["url"] = std::move(url);
+    return request;
+  };
+
+  std::vector<std::string> invalidUrls = {
+    "ht*tp://example.com/connect",
+    "https://",
+    "https://example .com/connect",
+    "https://example.com/connect\nnext",
+    "https://[::1/connect",
+    "https://[::1]bad/connect",
+    "https://example.com:/connect",
+    "https://example.com:70000/connect",
+    "https://[::1]:abc/connect",
+  };
+
+  std::int64_t requestId = 9250;
+  for (const std::string &invalidUrl : invalidUrls)
+  {
+    const auto response = client->handleRequest(mcp::jsonrpc::RequestContext {}, makeUrlRequest(requestId, invalidUrl)).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+    REQUIRE(error.error.message == "elicitation/create url mode requires a valid absolute URL");
+    ++requestId;
+  }
+
+  const auto validResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, makeUrlRequest(requestId, "https://[2001:db8::1]:8443/connect")).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(validResponse));
+}
+
 TEST_CASE("Client tracks URL elicitation completion notifications and ignores unknown IDs", "[client][elicitation][notifications]")
 {
   auto client = mcp::Client::create();

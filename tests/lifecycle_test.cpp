@@ -363,6 +363,61 @@ TEST_CASE("Capability negotiation preserves experimental capabilities", "[lifecy
   REQUIRE(clientSession.checkCapability("experimental"));
 }
 
+TEST_CASE("Elicitation fallback parsing only enables form for explicit empty object", "[lifecycle][capabilities][elicitation]")
+{
+  auto negotiateClientElicitation = [](const jsoncons::json &elicitationCapabilities) -> ElicitationCapability
+  {
+    Session session;
+    session.setRole(SessionRole::kServer);
+
+    jsonrpc::Request initializeRequest;
+    initializeRequest.id = std::int64_t {1};
+    initializeRequest.method = "initialize";
+    initializeRequest.params = jsoncons::json::object();
+    (*initializeRequest.params)["protocolVersion"] = std::string(kLatestProtocolVersion);
+    (*initializeRequest.params)["capabilities"] = jsoncons::json::object();
+    (*initializeRequest.params)["capabilities"]["elicitation"] = elicitationCapabilities;
+    (*initializeRequest.params)["clientInfo"] = jsoncons::json::object();
+    (*initializeRequest.params)["clientInfo"]["name"] = "test-client";
+    (*initializeRequest.params)["clientInfo"]["version"] = "1.0.0";
+
+    const auto response = session.handleInitializeRequest(initializeRequest);
+    REQUIRE(std::holds_alternative<jsonrpc::SuccessResponse>(response));
+    REQUIRE(session.negotiatedParameters().has_value());
+
+    const auto clientElicitation = session.negotiatedParameters()->clientCapabilities().elicitation();
+    REQUIRE(clientElicitation.has_value());
+    return *clientElicitation;
+  };
+
+  SECTION("empty elicitation object maps to legacy form support")
+  {
+    const ElicitationCapability capability = negotiateClientElicitation(jsoncons::json::object());
+    REQUIRE(capability.form);
+    REQUIRE_FALSE(capability.url);
+  }
+
+  SECTION("unknown elicitation object shape does not enable form fallback")
+  {
+    jsoncons::json elicitation = jsoncons::json::object();
+    elicitation["legacy"] = jsoncons::json::object();
+
+    const ElicitationCapability capability = negotiateClientElicitation(elicitation);
+    REQUIRE_FALSE(capability.form);
+    REQUIRE_FALSE(capability.url);
+  }
+
+  SECTION("malformed form declaration does not enable form fallback")
+  {
+    jsoncons::json elicitation = jsoncons::json::object();
+    elicitation["form"] = true;
+
+    const ElicitationCapability capability = negotiateClientElicitation(elicitation);
+    REQUIRE_FALSE(capability.form);
+    REQUIRE_FALSE(capability.url);
+  }
+}
+
 TEST_CASE("Server allows logging notifications in initialized state", "[lifecycle][server][enforcement]")
 {
   Session session;

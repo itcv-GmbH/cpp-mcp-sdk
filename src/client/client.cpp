@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -535,6 +536,136 @@ static auto validateFormResultContent(const jsonrpc::JsonValue &content) -> bool
   }
 
   return std::all_of(content.object_range().begin(), content.object_range().end(), [](const auto &property) -> bool { return validateFormContentValue(property.value()); });
+}
+
+static auto containsAsciiWhitespaceOrControl(std::string_view value) -> bool
+{
+  return std::any_of(value.begin(),
+                     value.end(),
+                     [](char character) -> bool
+                     {
+                       const auto unsignedCharacter = static_cast<unsigned char>(character);
+                       return std::isspace(unsignedCharacter) != 0 || std::iscntrl(unsignedCharacter) != 0;
+                     });
+}
+
+static auto isValidPort(std::string_view portText) -> bool
+{
+  if (portText.empty())
+  {
+    return false;
+  }
+
+  std::uint32_t port = 0;
+  for (const char character : portText)
+  {
+    const auto unsignedCharacter = static_cast<unsigned char>(character);
+    if (std::isdigit(unsignedCharacter) == 0)
+    {
+      return false;
+    }
+
+    port = (port * 10U) + static_cast<std::uint32_t>(character - '0');
+    if (port > 65535U)
+    {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static auto isValidAbsoluteUrlForElicitation(std::string_view url) -> bool
+{
+  if (url.empty() || containsAsciiWhitespaceOrControl(url))
+  {
+    return false;
+  }
+
+  const std::size_t schemeSeparator = url.find("://");
+  if (schemeSeparator == std::string_view::npos || schemeSeparator == 0)
+  {
+    return false;
+  }
+
+  const std::string_view scheme = url.substr(0, schemeSeparator);
+  if (std::isalpha(static_cast<unsigned char>(scheme.front())) == 0)
+  {
+    return false;
+  }
+
+  const bool schemeValid = std::all_of(scheme.begin(),
+                                       scheme.end(),
+                                       [](char character) -> bool
+                                       {
+                                         const auto unsignedCharacter = static_cast<unsigned char>(character);
+                                         return std::isalnum(unsignedCharacter) != 0 || character == '+' || character == '-' || character == '.';
+                                       });
+  if (!schemeValid)
+  {
+    return false;
+  }
+
+  const std::size_t authorityStart = schemeSeparator + 3;
+  std::size_t authorityEnd = url.find_first_of("/?#", authorityStart);
+  if (authorityEnd == std::string_view::npos)
+  {
+    authorityEnd = url.size();
+  }
+
+  const std::string_view authority = url.substr(authorityStart, authorityEnd - authorityStart);
+  if (authority.empty() || authority.find('@') != std::string_view::npos)
+  {
+    return false;
+  }
+
+  if (authority.front() == '[')
+  {
+    const std::size_t closingBracket = authority.find(']');
+    if (closingBracket == std::string_view::npos || closingBracket <= 1)
+    {
+      return false;
+    }
+
+    const std::string_view remainder = authority.substr(closingBracket + 1);
+    if (remainder.empty())
+    {
+      return true;
+    }
+
+    if (remainder.front() != ':')
+    {
+      return false;
+    }
+
+    return isValidPort(remainder.substr(1));
+  }
+
+  if (authority.find('[') != std::string_view::npos || authority.find(']') != std::string_view::npos)
+  {
+    return false;
+  }
+
+  const std::size_t firstColon = authority.find(':');
+  const std::size_t lastColon = authority.rfind(':');
+  if (firstColon == std::string_view::npos)
+  {
+    return !authority.empty();
+  }
+
+  if (firstColon != lastColon)
+  {
+    return false;
+  }
+
+  const std::string_view host = authority.substr(0, firstColon);
+  const std::string_view port = authority.substr(firstColon + 1);
+  if (host.empty())
+  {
+    return false;
+  }
+
+  return isValidPort(port);
 }
 
 static auto contentType(const jsonrpc::JsonValue &contentBlock) -> std::optional<std::string>
@@ -1433,7 +1564,7 @@ Client::Client(std::shared_ptr<Session> session)
         }
 
         const std::string url = params["url"].as<std::string>();
-        if (!formatUrlForConsent(url).has_value())
+        if (!isValidAbsoluteUrlForElicitation(url))
         {
           return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create url mode requires a valid absolute URL"));
         }
