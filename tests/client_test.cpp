@@ -1,4 +1,3 @@
-#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -62,6 +61,7 @@ public:
     }
 
     messages_.push_back(std::move(message));
+    messagesCv_.notify_all();
   }
 
   [[nodiscard]] auto messages() const -> std::vector<mcp::jsonrpc::Message>
@@ -70,8 +70,15 @@ public:
     return messages_;
   }
 
+  [[nodiscard]] auto waitForMessageCount(std::size_t count, std::chrono::milliseconds timeout) const -> bool
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return messagesCv_.wait_for(lock, timeout, [&]() -> bool { return messages_.size() >= count; });
+  }
+
 private:
   mutable std::mutex mutex_;
+  mutable std::condition_variable messagesCv_;
   bool running_ = false;
   std::weak_ptr<mcp::Session> attachedSession_;
   std::vector<mcp::jsonrpc::Message> messages_;
@@ -476,50 +483,36 @@ TEST_CASE("Client sendRequestAsync is non-blocking and invokes callback asynchro
   client->attachTransport(transport);
   client->start();
 
-  std::atomic<bool> sendRequestAsyncReturned = false;
-  std::promise<std::thread::id> callerThreadIdPromise;
-  auto callerThreadIdFuture = callerThreadIdPromise.get_future();
+  std::promise<void> sendRequestAsyncReturnedPromise;
+  auto sendRequestAsyncReturnedFuture = sendRequestAsyncReturnedPromise.get_future();
 
   std::mutex callbackMutex;
-  std::condition_variable callbackCv;
-  bool callbackInvoked = false;
   std::thread::id callbackThreadId;
-  std::optional<mcp::jsonrpc::Response> callbackResponse;
+  std::promise<mcp::jsonrpc::Response> callbackResponsePromise;
+  auto callbackResponseFuture = callbackResponsePromise.get_future();
 
-  std::thread caller(
-    [&]() -> void
-    {
-      callerThreadIdPromise.set_value(std::this_thread::get_id());
-      client->sendRequestAsync("initialize",
-                               mcp::jsonrpc::JsonValue::object(),
-                               [&](const mcp::jsonrpc::Response &response) -> void
-                               {
+  auto callerFuture = std::async(std::launch::async,
+                                 [&]() -> std::thread::id
                                  {
-                                   const std::scoped_lock lock(callbackMutex);
-                                   callbackInvoked = true;
-                                   callbackThreadId = std::this_thread::get_id();
-                                   callbackResponse = response;
-                                 }
-                                 callbackCv.notify_one();
-                               });
-      sendRequestAsyncReturned.store(true, std::memory_order_release);
-    });
+                                   client->sendRequestAsync("initialize",
+                                                            mcp::jsonrpc::JsonValue::object(),
+                                                            [&](const mcp::jsonrpc::Response &response) -> void
+                                                            {
+                                                              {
+                                                                const std::scoped_lock lock(callbackMutex);
+                                                                callbackThreadId = std::this_thread::get_id();
+                                                              }
+                                                              callbackResponsePromise.set_value(response);
+                                                            });
+                                   sendRequestAsyncReturnedPromise.set_value();
+                                   return std::this_thread::get_id();
+                                 });
 
-  const auto callerThreadId = callerThreadIdFuture.get();
+  REQUIRE(transport->waitForMessageCount(1, std::chrono::milliseconds {500}));
+  REQUIRE(sendRequestAsyncReturnedFuture.wait_for(std::chrono::milliseconds {500}) == std::future_status::ready);
+  REQUIRE(callbackResponseFuture.wait_for(std::chrono::milliseconds {0}) == std::future_status::timeout);
 
-  const auto waitDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds {500};
-  while (transport->messages().empty() && std::chrono::steady_clock::now() < waitDeadline)
-  {
-    std::this_thread::sleep_for(std::chrono::milliseconds {1});
-  }
-
-  REQUIRE(!transport->messages().empty());
-  REQUIRE(sendRequestAsyncReturned.load(std::memory_order_acquire));
-
-  {
-    const std::scoped_lock lock(callbackMutex);
-    REQUIRE(!callbackInvoked);
-  }
+  const auto callerThreadId = callerFuture.get();
 
   const auto outboundMessages = transport->messages();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(outboundMessages.front()));
@@ -527,17 +520,14 @@ TEST_CASE("Client sendRequestAsync is non-blocking and invokes callback asynchro
 
   REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
 
-  {
-    std::unique_lock<std::mutex> lock(callbackMutex);
-    REQUIRE(callbackCv.wait_for(lock, std::chrono::milliseconds {500}, [&]() -> bool { return callbackInvoked; }));
-  }
-
-  REQUIRE(callbackResponse.has_value());
-  const auto callbackResult = callbackResponse.value_or(mcp::jsonrpc::Response {mcp::jsonrpc::ErrorResponse {}});
+  REQUIRE(callbackResponseFuture.wait_for(std::chrono::milliseconds {500}) == std::future_status::ready);
+  const auto callbackResult = callbackResponseFuture.get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(callbackResult));
-  REQUIRE(callbackThreadId != callerThreadId);
 
-  caller.join();
+  {
+    const std::scoped_lock lock(callbackMutex);
+    REQUIRE(callbackThreadId != callerThreadId);
+  }
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -601,6 +591,76 @@ TEST_CASE("Client convenience APIs enforce negotiated capability gating", "[clie
   REQUIRE_THROWS_AS(client->listResourceTemplates(), mcp::CapabilityError);
   REQUIRE_THROWS_AS(client->listPrompts(), mcp::CapabilityError);
   REQUIRE_THROWS_AS(client->getPrompt("example", mcp::jsonrpc::JsonValue::object()), mcp::CapabilityError);
+}
+
+TEST_CASE("Client pagination helpers detect cursor cycles", "[client][pagination][helpers]")
+{
+  auto client = mcp::Client::create();
+
+  std::size_t fetchCount = 0;
+  auto fetchPage = [&fetchCount](const std::optional<std::string> &cursor) -> mcp::ListToolsResult
+  {
+    ++fetchCount;
+
+    mcp::ListToolsResult page;
+    if (!cursor.has_value())
+    {
+      page.nextCursor = "repeat-cursor";
+      return page;
+    }
+
+    page.nextCursor = "repeat-cursor";
+    return page;
+  };
+
+  try
+  {
+    client->forEachPage(fetchPage, [](const mcp::ListToolsResult &) -> void {});
+    FAIL("Expected cursor cycle detection failure");
+  }
+  catch (const std::runtime_error &error)
+  {
+    REQUIRE(std::string(error.what()) == "Pagination cursor cycle detected");
+  }
+  REQUIRE(fetchCount == 2);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("Client pagination helpers enforce max page limit", "[client][pagination][helpers]")
+{
+  auto client = mcp::Client::create();
+
+  std::size_t fetchCount = 0;
+  auto fetchPage = [&fetchCount](const std::optional<std::string> &cursor) -> mcp::ListResourcesResult
+  {
+    ++fetchCount;
+
+    mcp::ListResourcesResult page;
+    page.nextCursor = cursor.has_value() ? *cursor + "-next" : "cursor-1";
+    return page;
+  };
+
+  try
+  {
+    client->forEachPage(fetchPage, [](const mcp::ListResourcesResult &) -> void {}, std::nullopt, 2);
+    FAIL("Expected max page limit failure in forEachPage");
+  }
+  catch (const std::runtime_error &error)
+  {
+    REQUIRE(std::string(error.what()) == "Pagination exceeded maximum page limit");
+  }
+  REQUIRE(fetchCount == 2);
+
+  try
+  {
+    static_cast<void>(client->collectAllPages<mcp::ResourceDefinition>(
+      fetchPage, [](const mcp::ListResourcesResult &page) -> const std::vector<mcp::ResourceDefinition> & { return page.resources; }, std::nullopt, 1));
+    FAIL("Expected max page limit failure in collectAllPages");
+  }
+  catch (const std::runtime_error &error)
+  {
+    REQUIRE(std::string(error.what()) == "Pagination exceeded maximum page limit");
+  }
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

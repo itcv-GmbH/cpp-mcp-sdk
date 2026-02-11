@@ -6,8 +6,10 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -86,11 +88,29 @@ public:
   auto getPrompt(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), RequestOptions options = {}) -> PromptGetResult;
 
   template<typename FetchPage, typename ConsumePage>
-  auto forEachPage(FetchPage fetchPage, ConsumePage consumePage, std::optional<std::string> cursor = std::nullopt) -> void
+  auto forEachPage(FetchPage fetchPage, ConsumePage consumePage, std::optional<std::string> cursor = std::nullopt, std::size_t maxPages = 1024) -> void
   {
+    std::unordered_set<std::string> seenCursors;
+    std::size_t fetchedPages = 0;
+
     while (true)
     {
+      if (cursor.has_value())
+      {
+        const auto insertResult = seenCursors.insert(*cursor);
+        if (!insertResult.second)
+        {
+          throw std::runtime_error("Pagination cursor cycle detected");
+        }
+      }
+
+      if (fetchedPages >= maxPages)
+      {
+        throw std::runtime_error("Pagination exceeded maximum page limit");
+      }
+
       const auto page = fetchPage(cursor);
+      ++fetchedPages;
       consumePage(page);
 
       if (!page.nextCursor.has_value())
@@ -103,7 +123,7 @@ public:
   }
 
   template<typename ItemType, typename FetchPage, typename ExtractItems>
-  auto collectAllPages(FetchPage fetchPage, ExtractItems extractItems, std::optional<std::string> cursor = std::nullopt) -> std::vector<ItemType>
+  auto collectAllPages(FetchPage fetchPage, ExtractItems extractItems, std::optional<std::string> cursor = std::nullopt, std::size_t maxPages = 1024) -> std::vector<ItemType>
   {
     std::vector<ItemType> allItems;
 
@@ -114,7 +134,8 @@ public:
         const auto &pageItems = extractItems(page);
         allItems.insert(allItems.end(), pageItems.begin(), pageItems.end());
       },
-      std::move(cursor));
+      std::move(cursor),
+      maxPages);
 
     return allItems;
   }
