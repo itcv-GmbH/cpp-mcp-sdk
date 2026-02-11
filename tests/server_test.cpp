@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cstdint>
 #include <future>
 #include <mutex>
@@ -671,6 +672,83 @@ TEST_CASE("Server tools/call task augmentation returns deferred result and enfor
   }
 
   REQUIRE(sawStatusNotification);
+}
+
+TEST_CASE("Server teardown is safe with in-flight task-augmented tools worker", "[server][tasks][tools][teardown]")
+{
+  mcp::ToolsCapability toolsCapability;
+
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.toolsCall = true;
+
+  auto taskStore = std::make_shared<mcp::util::InMemoryTaskStore>();
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
+  configuration.emitTaskStatusNotifications = true;
+  configuration.taskStore = taskStore;
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  mcp::ToolDefinition toolDefinition = makeToolDefinition("teardown-task-tool");
+  toolDefinition.execution = mcp::jsonrpc::JsonValue::object();
+  (*toolDefinition.execution)["taskSupport"] = "optional";
+
+  std::promise<void> handlerEnteredPromise;
+  auto handlerEnteredFuture = handlerEnteredPromise.get_future();
+  std::promise<void> releaseHandlerPromise;
+  auto releaseHandlerFuture = releaseHandlerPromise.get_future();
+  std::promise<void> handlerFinishedPromise;
+  auto handlerFinishedFuture = handlerFinishedPromise.get_future();
+
+  server->registerTool(toolDefinition,
+                       [&handlerEnteredPromise, &releaseHandlerFuture, &handlerFinishedPromise](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       {
+                         handlerEnteredPromise.set_value();
+                         releaseHandlerFuture.wait();
+
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
+                         content["type"] = "text";
+                         content["text"] = "done";
+                         result.content.push_back(std::move(content));
+
+                         handlerFinishedPromise.set_value();
+                         return result;
+                       });
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request createRequest;
+  createRequest.id = std::int64_t {9201};
+  createRequest.method = "tools/call";
+  createRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*createRequest.params)["name"] = "teardown-task-tool";
+  (*createRequest.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*createRequest.params)["arguments"]["value"] = "payload";
+  (*createRequest.params)["task"] = mcp::jsonrpc::JsonValue::object();
+  (*createRequest.params)["task"]["ttl"] = std::int64_t {2000};
+
+  const mcp::jsonrpc::Response createResponse = dispatchRequest(*server, createRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(createResponse));
+  const auto &createSuccess = std::get<mcp::jsonrpc::SuccessResponse>(createResponse);
+  REQUIRE(createSuccess.result.contains("task"));
+  const std::string taskId = createSuccess.result["task"]["taskId"].as<std::string>();
+  REQUIRE_FALSE(taskId.empty());
+
+  REQUIRE(handlerEnteredFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+
+  server.reset();
+
+  releaseHandlerPromise.set_value();
+  REQUIRE(handlerFinishedFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+
+  const mcp::util::TaskTerminalResult terminalResult = taskStore->waitForTaskTerminal(taskId, std::nullopt);
+  REQUIRE(terminalResult.error == mcp::util::TaskStoreError::kNone);
+  REQUIRE(terminalResult.task.taskId == taskId);
+  REQUIRE(terminalResult.task.status == mcp::util::TaskStatus::kCompleted);
+  REQUIRE(terminalResult.result.has_value());
 }
 
 TEST_CASE("Server tools/call enforces tool-level task support negotiation", "[server][tasks][negotiation]")

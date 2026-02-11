@@ -708,6 +708,14 @@ auto capabilityForMethod(std::string_view method) -> std::optional<std::string_v
 
 }  // namespace detail
 
+struct Server::TaskStatusObserverState
+{
+  std::weak_ptr<Session> session;
+  bool emitTaskStatusNotifications = false;
+  mutable std::mutex mutex;
+  jsonrpc::OutboundMessageSender outboundMessageSender;
+};
+
 auto ResourceContent::text(std::string uri,
                            std::string text,
                            std::optional<std::string> mimeType,
@@ -789,11 +797,33 @@ Server::Server(std::shared_ptr<Session> session, ServerConfiguration configurati
     configuration_.taskStore = std::make_shared<util::InMemoryTaskStore>();
   }
 
+  taskStatusObserverState_ = std::make_shared<TaskStatusObserverState>();
+  taskStatusObserverState_->session = session_;
+  taskStatusObserverState_->emitTaskStatusNotifications = configuration_.emitTaskStatusNotifications;
+
   taskReceiver_ = std::make_shared<util::TaskReceiver>(configuration_.taskStore, configuration_.defaultTaskPollInterval, detail::kTasksPageSize);
   taskReceiver_->setStatusObserver(
-    [this](const jsonrpc::RequestContext &context, const util::Task &task) -> void
+    [weakObserverState = std::weak_ptr<TaskStatusObserverState>(taskStatusObserverState_)](const jsonrpc::RequestContext &context, const util::Task &task) -> void
     {
-      if (!configuration_.emitTaskStatusNotifications || !session_->canSendNotification(detail::kTasksStatusNotificationMethod))
+      const std::shared_ptr<TaskStatusObserverState> observerState = weakObserverState.lock();
+      if (!observerState || !observerState->emitTaskStatusNotifications)
+      {
+        return;
+      }
+
+      const std::shared_ptr<Session> session = observerState->session.lock();
+      if (!session || !session->canSendNotification(detail::kTasksStatusNotificationMethod))
+      {
+        return;
+      }
+
+      jsonrpc::OutboundMessageSender outboundMessageSender;
+      {
+        const std::scoped_lock lock(observerState->mutex);
+        outboundMessageSender = observerState->outboundMessageSender;
+      }
+
+      if (!outboundMessageSender)
       {
         return;
       }
@@ -801,7 +831,15 @@ Server::Server(std::shared_ptr<Session> session, ServerConfiguration configurati
       jsonrpc::Notification notification;
       notification.method = std::string(detail::kTasksStatusNotificationMethod);
       notification.params = util::taskToJson(task);
-      sendNotification(context, std::move(notification));
+
+      try
+      {
+        outboundMessageSender(context, jsonrpc::Message {std::move(notification)});
+      }
+      catch (...)
+      {
+        return;
+      }
     });
 
   configureSessionInitialization();
@@ -873,6 +911,12 @@ auto Server::registerNotificationHandler(std::string method, jsonrpc::Notificati
 
 auto Server::setOutboundMessageSender(jsonrpc::OutboundMessageSender sender) -> void
 {
+  if (taskStatusObserverState_)
+  {
+    const std::scoped_lock lock(taskStatusObserverState_->mutex);
+    taskStatusObserverState_->outboundMessageSender = sender;
+  }
+
   router_.setOutboundMessageSender(std::move(sender));
 }
 

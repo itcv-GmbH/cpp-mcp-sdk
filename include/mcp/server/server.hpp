@@ -129,6 +129,8 @@ public:
   static auto paginateList(ListEndpoint endpoint, const std::optional<std::string> &cursor, std::size_t totalItems, std::size_t pageSize) -> PaginationWindow;
 
 private:
+  struct TaskStatusObserverState;
+
   auto configureSessionInitialization() -> void;
   auto registerCoreHandlers() -> void;
   auto handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
@@ -163,6 +165,7 @@ private:
   std::vector<ResourceTemplateDefinition> resourceTemplates_;
   std::vector<ResourceSubscription> resourceSubscriptions_;
   std::vector<RegisteredPrompt> prompts_;
+  std::shared_ptr<TaskStatusObserverState> taskStatusObserverState_;
   std::shared_ptr<util::TaskReceiver> taskReceiver_;
   LogLevel logLevel_ = LogLevel::kDebug;
 };
