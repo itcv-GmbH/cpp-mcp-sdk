@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.target }} / ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+        include:
+          - target: linux-x86_64
+            os: ubuntu-24.04
+            triplet: x64-linux
+            cmake_preset: vcpkg-unix-release
+          - target: macos-arm64
+            os: macos-14
+            triplet: arm64-osx
+            cmake_preset: vcpkg-unix-release
+          - target: windows-x86_64
+            os: windows-2022
+            triplet: x64-windows
+            cmake_preset: vcpkg-windows-release
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_INSTALLED_DIR: ${{ github.workspace }}/vcpkg_installed
+      VCPKG_COMMIT_ID: 120deac3062162151622ca4860575a33844ba10b
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Validate pinned vcpkg baseline
+        run: |
+          $baseline = (Get-Content -Raw vcpkg.json | ConvertFrom-Json)."builtin-baseline"
+          if ($baseline -ne $env:VCPKG_COMMIT_ID)
+          {
+            throw "vcpkg baseline mismatch. Expected '$($env:VCPKG_COMMIT_ID)', found '$baseline'."
+          }
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_ROOT }}/downloads
+            ${{ env.VCPKG_INSTALLED_DIR }}
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT_ID }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT_ID }}-
+
+      - name: Bootstrap pinned vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          git -C $env:VCPKG_ROOT checkout $env:VCPKG_COMMIT_ID
+
+          if ($IsWindows)
+          {
+            & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          }
+          else
+          {
+            & "$env:VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          }
+
+      - name: Install dependencies (manifest mode)
+        run: |
+          $vcpkgExe = if ($IsWindows) { "$env:VCPKG_ROOT\vcpkg.exe" } else { "$env:VCPKG_ROOT/vcpkg" }
+          & $vcpkgExe install --triplet "${{ matrix.triplet }}" --x-manifest-root "$env:GITHUB_WORKSPACE" --x-install-root "$env:VCPKG_INSTALLED_DIR"
+
+      - name: Configure
+        run: |
+          cmake --preset "${{ matrix.cmake_preset }}" `
+            -B "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" `
+            -D CMAKE_BUILD_TYPE="${{ matrix.build_type }}" `
+            -D VCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" `
+            -D VCPKG_INSTALLED_DIR="$env:VCPKG_INSTALLED_DIR" `
+            -D MCP_SDK_BUILD_TESTS=ON `
+            -D MCP_SDK_BUILD_EXAMPLES=OFF
+
+      - name: Build
+        run: cmake --build "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --parallel
+
+      - name: Test (ctest)
+        run: ctest --test-dir "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --output-on-failure
