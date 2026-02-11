@@ -155,6 +155,16 @@ target_link_libraries(mcp_sdk_test_tasks
 
 add_test(NAME mcp_sdk_tasks_test COMMAND mcp_sdk_test_tasks)
 
+add_executable(mcp_sdk_test_runtime_limits runtime_limits_test.cpp)
+
+target_link_libraries(mcp_sdk_test_runtime_limits
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_runtime_limits_test COMMAND mcp_sdk_test_runtime_limits)
+
 add_executable(mcp_sdk_test_auth_protected_resource_metadata auth_protected_resource_metadata_test.cpp)
 
 target_link_libraries(mcp_sdk_test_auth_protected_resource_metadata

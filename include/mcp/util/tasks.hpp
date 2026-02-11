@@ -11,6 +11,7 @@
 
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/security/limits.hpp>
 
 namespace mcp::util
 {
@@ -68,11 +69,13 @@ enum class TaskStoreError : std::uint8_t
   kAccessDenied,
   kInvalidTransition,
   kTerminalImmutable,
+  kLimitExceeded,
 };
 
 struct TaskRecordResult
 {
   TaskStoreError error = TaskStoreError::kNone;
+  std::optional<std::string> errorMessage;
   Task task;
 };
 
@@ -90,6 +93,12 @@ struct TaskCreateOptions
   std::optional<std::int64_t> pollInterval;
   std::optional<std::string> statusMessage;
   std::optional<std::string> authContext;
+};
+
+struct InMemoryTaskStoreOptions
+{
+  std::int64_t maxTaskTtlMilliseconds = static_cast<std::int64_t>(security::kDefaultMaxTaskTtlMilliseconds);
+  std::size_t maxActiveTasksPerAuthContext = security::kDefaultMaxConcurrentTasksPerAuthContext;
 };
 
 class TaskStore
@@ -125,7 +134,7 @@ public:
 class InMemoryTaskStore final : public TaskStore
 {
 public:
-  InMemoryTaskStore();
+  explicit InMemoryTaskStore(InMemoryTaskStoreOptions options = {});
   ~InMemoryTaskStore() override;
 
   InMemoryTaskStore(const InMemoryTaskStore &) = delete;

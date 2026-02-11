@@ -15,6 +15,7 @@
 #include <mcp/auth/oauth_server.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/security/limits.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/transport/transport.hpp>
 #include <mcp/version.hpp>
@@ -443,6 +444,7 @@ struct HttpServerOptions
   HttpEndpointConfig endpoint;
   std::optional<http::ServerTlsConfiguration> tls;
   security::OriginPolicy originPolicy;
+  security::RuntimeLimits limits;
   std::optional<auth::OAuthServerAuthorizationOptions> authorization;
   bool requireSessionId = false;
   std::vector<std::string> supportedProtocolVersions = {
@@ -554,6 +556,7 @@ struct StreamableHttpClientOptions
   std::string endpointUrl;
   std::optional<std::string> bearerToken;
   ClientTlsConfiguration tls;
+  security::RuntimeLimits limits;
   SessionHeaderState sessionState;
   ProtocolVersionHeaderState protocolVersionState;
   std::uint32_t defaultRetryMilliseconds = detail::kDefaultRetryMilliseconds;
@@ -590,6 +593,7 @@ struct HttpClientOptions
   std::string endpointUrl;
   std::optional<std::string> bearerToken;
   http::ClientTlsConfiguration tls;
+  security::RuntimeLimits limits;
   http::SessionHeaderState sessionState;
   http::ProtocolVersionHeaderState protocolVersionState;
 };

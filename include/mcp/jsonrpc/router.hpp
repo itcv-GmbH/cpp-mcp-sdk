@@ -16,6 +16,7 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/security/limits.hpp>
 
 namespace mcp::jsonrpc
 {
@@ -23,6 +24,11 @@ namespace mcp::jsonrpc
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;
 using OutboundMessageSender = std::function<void(const RequestContext &, Message)>;
+
+struct RouterOptions
+{
+  std::size_t maxConcurrentInFlightRequests = security::kDefaultMaxConcurrentInFlightRequests;
+};
 
 struct ProgressUpdate
 {
@@ -45,7 +51,7 @@ struct OutboundRequestOptions
 class Router
 {
 public:
-  Router();
+  explicit Router(RouterOptions options = {});
   ~Router() noexcept;
 
   Router(const Router &) = delete;
@@ -121,6 +127,13 @@ private:
   using RequestIdByProgressTokenMap = std::unordered_map<RequestId, RequestId, RequestIdHash, RequestIdEqual>;
   using PendingTaskCancellationMap = std::unordered_map<RequestId, RequestContext, RequestIdHash, RequestIdEqual>;
 
+  enum class InboundRequestActivationResult : std::uint8_t
+  {
+    kAccepted,
+    kDuplicateProgressToken,
+    kLimitExceeded,
+  };
+
   auto addInFlightRequest(const std::shared_ptr<InFlightRequestState> &inFlightRequest) -> std::optional<Response>;
   auto popInFlightRequest(const RequestId &requestId, MarkIgnoredResponseId markIgnoredResponseId) -> std::shared_ptr<InFlightRequestState>;
   auto armRequestTimeout(const std::shared_ptr<InFlightRequestState> &inFlightRequest, std::chrono::milliseconds timeout) -> void;
@@ -129,7 +142,7 @@ private:
   auto markInboundWorkerFinished() -> void;
   auto waitForInboundWorkers() -> void;
 
-  auto markInboundRequestActive(const RequestContext &context, const Request &request) -> bool;
+  auto markInboundRequestActive(const RequestContext &context, const Request &request) -> InboundRequestActivationResult;
   auto completeInboundRequest(const RequestContext &context, const RequestId &requestId) -> void;
 
   auto dispatchOutboundMessage(const RequestContext &context, Message message) const -> bool;
@@ -151,6 +164,8 @@ private:
   std::condition_variable inboundWorkersDone_;
   std::size_t activeInboundWorkers_ = 0;
   bool shuttingDown_ = false;
+
+  RouterOptions options_;
 
   std::unique_ptr<boost::asio::thread_pool> timeoutPool_;
 };

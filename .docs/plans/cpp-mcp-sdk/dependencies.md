@@ -56,7 +56,7 @@
 - [ ] `task-038`: CI Matrix (Linux/macOS/Windows) (Depends on: `task-031`, `task-032`, `task-034`)
 - [ ] `task-039`: Packaging (CMake config package; static/shared options) (Depends on: `task-001`, `task-037`)
 - [ ] `task-043`: vcpkg Port Readiness (Overlay Port + Consumer Verification) (Depends on: `task-039`)
-- [ ] `task-040`: Runtime Limits + Backpressure Knobs (Depends on: `task-011`, `task-012`, `task-024`)
+- [x] `task-040`: Runtime Limits + Backpressure Knobs (Depends on: `task-011`, `task-012`, `task-024`)
 
 ## Phase 9: Legacy Interop (Optional Follow-up)
 - [ ] `task-041`: Legacy 2024-11-05 HTTP+SSE Client Fallback (Depends on: `task-012`)

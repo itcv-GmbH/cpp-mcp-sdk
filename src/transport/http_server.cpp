@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <memory>
@@ -36,6 +38,7 @@ static constexpr std::uint16_t kStatusUnauthorized = 401;
 static constexpr std::uint16_t kStatusForbidden = 403;
 static constexpr std::uint16_t kStatusNotFound = 404;
 static constexpr std::uint16_t kStatusMethodNotAllowed = 405;
+static constexpr std::uint16_t kStatusConflict = 409;
 static constexpr std::uint16_t kStatusInternalServerError = 500;
 static constexpr bool kTerminateStream = true;
 static constexpr bool kKeepStreamOpen = false;
@@ -330,6 +333,7 @@ struct StreamState
   std::optional<std::string> sessionId;
   StreamKind kind = StreamKind::kGet;
   std::uint64_t nextCursor = 1;
+  std::chrono::steady_clock::time_point openedAt = std::chrono::steady_clock::now();
   bool terminated = false;
   std::vector<StreamEventRecord> events;
 };
@@ -603,18 +607,56 @@ struct StreamableHttpServer::Impl
     return session->second;
   }
 
-  static auto appendPrimingEvent(StreamState &stream) -> void
+  [[nodiscard]] auto isStreamExpired(const StreamState &stream) const -> bool
+  {
+    if (options.http.limits.maxSseStreamDuration.count() <= 0)
+    {
+      return false;
+    }
+
+    const auto elapsed = std::chrono::steady_clock::now() - stream.openedAt;
+    return elapsed > options.http.limits.maxSseStreamDuration;
+  }
+
+  auto applySseBufferLimit(StreamState &stream) const -> void
+  {
+    const std::size_t maxBufferedMessages = options.http.limits.maxSseBufferedMessages;
+    if (maxBufferedMessages == 0)
+    {
+      stream.events.clear();
+      return;
+    }
+
+    if (stream.events.size() <= maxBufferedMessages)
+    {
+      return;
+    }
+
+    const std::size_t overflow = stream.events.size() - maxBufferedMessages;
+    stream.events.erase(stream.events.begin(), stream.events.begin() + static_cast<std::ptrdiff_t>(overflow));
+  }
+
+  auto appendPrimingEvent(StreamState &stream) const -> void
   {
     const std::uint64_t cursor = stream.nextCursor++;
     std::string eventId = mcp::http::sse::makeEventId(stream.streamId, cursor);
     stream.events.push_back(StreamEventRecord {cursor, makeEvent(std::move(eventId), "")});
+    applySseBufferLimit(stream);
   }
 
-  static auto appendMessageEvent(StreamState &stream, const jsonrpc::Message &message) -> void
+  auto appendMessageEvent(StreamState &stream, const jsonrpc::Message &message) const -> bool
   {
+    const std::string serializedMessage = jsonrpc::serializeMessage(message);
+    if (serializedMessage.size() > options.http.limits.maxMessageSizeBytes)
+    {
+      return false;
+    }
+
     const std::uint64_t cursor = stream.nextCursor++;
     std::string eventId = mcp::http::sse::makeEventId(stream.streamId, cursor);
-    stream.events.push_back(StreamEventRecord {cursor, makeEvent(std::move(eventId), jsonrpc::serializeMessage(message))});
+    stream.events.push_back(StreamEventRecord {cursor, makeEvent(std::move(eventId), serializedMessage)});
+    applySseBufferLimit(stream);
+    return true;
   }
 
   auto createStream(std::optional<std::string> sessionId, StreamKind kind) -> StreamState &
@@ -661,6 +703,11 @@ struct StreamableHttpServer::Impl
       }
 
       StreamState &stream = streamIt->second;
+      if (isStreamExpired(stream))
+      {
+        stream.terminated = true;
+      }
+
       if (stream.terminated)
       {
         continue;
@@ -711,7 +758,7 @@ struct StreamableHttpServer::Impl
 
     for (const jsonrpc::Message &message : pending->second)
     {
-      appendMessageEvent(stream, message);
+      static_cast<void>(appendMessageEvent(stream, message));
     }
 
     pendingMessagesBySession.erase(pending);
@@ -773,6 +820,11 @@ struct StreamableHttpServer::Impl
   // NOLINTNEXTLINE(readability-function-cognitive-complexity)
   auto handlePost(const ServerRequest &request) -> ServerResponse
   {
+    if (request.body.size() > options.http.limits.maxMessageSizeBytes)
+    {
+      return jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("Request body exceeds configured max message size."));
+    }
+
     jsonrpc::Message message;
     try
     {
@@ -840,13 +892,21 @@ struct StreamableHttpServer::Impl
     StreamState &stream = createStream(validation.sessionId, StreamKind::kPost);
     for (const jsonrpc::Message &preResponse : requestResult.preResponseMessages)
     {
-      appendMessageEvent(stream, preResponse);
+      if (!appendMessageEvent(stream, preResponse))
+      {
+        stream.terminated = true;
+        return jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("SSE message exceeds configured max message size."));
+      }
     }
 
     if (requestResult.response.has_value())
     {
       const jsonrpc::Message responseMessage = std::visit([](const auto &typedResponse) -> jsonrpc::Message { return jsonrpc::Message {typedResponse}; }, *requestResult.response);
-      appendMessageEvent(stream, responseMessage);
+      if (!appendMessageEvent(stream, responseMessage))
+      {
+        stream.terminated = true;
+        return jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("SSE response exceeds configured max message size."));
+      }
       if (requestResult.terminateSseAfterResponse)
       {
         stream.terminated = true;
@@ -909,9 +969,24 @@ struct StreamableHttpServer::Impl
     }
 
     StreamState &stream = streamIt->second;
+    if (isStreamExpired(stream))
+    {
+      stream.terminated = true;
+      return statusResponse(kStatusNotFound);
+    }
+
     if (stream.sessionId != validation.sessionId)
     {
       return statusResponse(kStatusNotFound);
+    }
+
+    if (!stream.events.empty())
+    {
+      const std::uint64_t oldestRetainedCursor = stream.events.front().cursor;
+      if (eventCursor->cursor + 1 < oldestRetainedCursor)
+      {
+        return jsonResponse(kStatusConflict, makeJsonRpcErrorBody("Last-Event-ID is outside the retained SSE buffer window."));
+      }
     }
 
     std::vector<mcp::http::sse::Event> outboundEvents = replayFromCursor(stream, eventCursor->cursor);
@@ -999,7 +1074,10 @@ struct StreamableHttpServer::Impl
     StreamState *stream = chooseTargetStream(sessionId, message);
     if (stream != nullptr)
     {
-      appendMessageEvent(*stream, message);
+      if (!appendMessageEvent(*stream, message))
+      {
+        return false;
+      }
 
       if (isResponseMessage(message) && stream->kind == StreamKind::kPost)
       {
@@ -1009,7 +1087,13 @@ struct StreamableHttpServer::Impl
       return true;
     }
 
-    pendingMessagesBySession[sessionKey(sessionId)].push_back(message);
+    auto &pendingMessages = pendingMessagesBySession[sessionKey(sessionId)];
+    if (pendingMessages.size() >= options.http.limits.maxSseBufferedMessages)
+    {
+      return false;
+    }
+
+    pendingMessages.push_back(message);
     return true;
   }
 

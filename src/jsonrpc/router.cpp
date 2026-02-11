@@ -128,8 +128,9 @@ auto Router::RequestIdEqual::operator()(const RequestId &left, const RequestId &
   return left == right;
 }
 
-Router::Router()
-  : timeoutPool_(std::make_unique<boost::asio::thread_pool>(1))
+Router::Router(RouterOptions options)
+  : options_(options)
+  , timeoutPool_(std::make_unique<boost::asio::thread_pool>(1))
 {
 }
 
@@ -225,9 +226,16 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
     handler = requestHandlerIt->second;
   }
 
-  if (!markInboundRequestActive(context, request))
+  const InboundRequestActivationResult inboundActivation = markInboundRequestActive(context, request);
+  if (inboundActivation != InboundRequestActivationResult::kAccepted)
   {
-    return detail::makeReadyFuture(Response {makeErrorResponse(makeInvalidRequestError(std::nullopt, "Duplicate progress token for active inbound request."), request.id)});
+    if (inboundActivation == InboundRequestActivationResult::kDuplicateProgressToken)
+    {
+      return detail::makeReadyFuture(Response {makeErrorResponse(makeInvalidRequestError(std::nullopt, "Duplicate progress token for active inbound request."), request.id)});
+    }
+
+    return detail::makeReadyFuture(
+      Response {makeErrorResponse(makeInvalidRequestError(std::nullopt, "Exceeded configured max concurrent in-flight inbound requests."), request.id)});
   }
 
   auto responsePromise = std::make_shared<std::promise<Response>>();
@@ -335,6 +343,11 @@ auto Router::dispatchNotification(const RequestContext &context, const Notificat
 auto Router::addInFlightRequest(const std::shared_ptr<InFlightRequestState> &inFlightRequest) -> std::optional<Response>
 {
   const std::scoped_lock lock(mutex_);
+
+  if (inFlightRequests_.size() >= options_.maxConcurrentInFlightRequests)
+  {
+    return Response {makeErrorResponse(makeInvalidRequestError(std::nullopt, "Exceeded configured max concurrent in-flight outbound requests."), inFlightRequest->request.id)};
+  }
 
   if (seenOutboundRequestIds_.find(inFlightRequest->request.id) != seenOutboundRequestIds_.end())
   {
@@ -601,10 +614,21 @@ auto Router::emitProgress(const RequestContext &context, const RequestId &progre
   return dispatchOutboundMessage(context, Message {std::move(progressNotification)});
 }
 
-auto Router::markInboundRequestActive(const RequestContext &context, const Request &request) -> bool
+auto Router::markInboundRequestActive(const RequestContext &context, const Request &request) -> InboundRequestActivationResult
 {
   const std::scoped_lock lock(mutex_);
   const std::string sender = detail::senderKey(context);
+
+  std::size_t activeInboundRequests = 0;
+  for (const auto &entry : inboundRequestsBySender_)
+  {
+    activeInboundRequests += entry.second.size();
+  }
+
+  if (activeInboundRequests >= options_.maxConcurrentInFlightRequests)
+  {
+    return InboundRequestActivationResult::kLimitExceeded;
+  }
 
   InboundRequestState requestState;
   requestState.method = request.method;
@@ -620,13 +644,13 @@ auto Router::markInboundRequestActive(const RequestContext &context, const Reque
     if (requestIdsByToken.find(*requestState.progressToken) != requestIdsByToken.end())
     {
       senderRequests.erase(request.id);
-      return false;
+      return InboundRequestActivationResult::kDuplicateProgressToken;
     }
 
     requestIdsByToken[*requestState.progressToken] = request.id;
   }
 
-  return true;
+  return InboundRequestActivationResult::kAccepted;
 }
 
 auto Router::markInboundWorkerStarted() -> bool

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <mcp/jsonrpc/router.hpp>
+#include <mcp/security/limits.hpp>
 #include <mcp/transport/transport.hpp>
 
 namespace mcp::transport
@@ -20,6 +21,7 @@ inline constexpr std::int64_t kDefaultStdioShutdownTimeoutMilliseconds = 1500;
 struct StdioServerOptions
 {
   bool allowStderrLogs = true;
+  security::RuntimeLimits limits;
 };
 
 struct StdioClientOptions
@@ -27,6 +29,7 @@ struct StdioClientOptions
   std::string executablePath;
   std::vector<std::string> arguments;
   std::vector<std::string> environment;
+  security::RuntimeLimits limits;
 };
 
 enum class StdioClientStderrMode : std::uint8_t
@@ -83,6 +86,7 @@ struct StdioAttachOptions
 {
   bool allowStderrLogs = true;
   bool emitParseErrors = false;
+  security::RuntimeLimits limits;
 };
 
 class StdioTransport final : public Transport

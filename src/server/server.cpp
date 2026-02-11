@@ -1632,7 +1632,15 @@ auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, cons
     return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Task receiver is unavailable"), request.id);
   }
 
-  const util::CreateTaskResult createTaskResult = taskReceiver_->createTask(context, taskAugmentation, std::string("The operation is now in progress."));
+  util::CreateTaskResult createTaskResult;
+  try
+  {
+    createTaskResult = taskReceiver_->createTask(context, taskAugmentation, std::string("The operation is now in progress."));
+  }
+  catch (const std::exception &error)
+  {
+    return detail::makeInvalidParamsResponse(request.id, std::string("Task creation rejected: ") + error.what());
+  }
 
   std::string taskId = createTaskResult.task.taskId;
   ToolDefinition definitionCopy = *definition;

@@ -223,6 +223,28 @@ static auto routeLine(jsonrpc::Router &router, std::string_view line, std::ostre
     return false;
   }
 
+  if (normalizedLine.size() > options.limits.maxMessageSizeBytes)
+  {
+    logDiagnostic(stderrOutput,
+                  options.allowStderrLogs,
+                  "stdio transport rejected message exceeding max message size limit (" + std::to_string(options.limits.maxMessageSizeBytes) + " bytes).");
+
+    if (options.emitParseErrors)
+    {
+      try
+      {
+        const jsonrpc::ErrorResponse parseError = jsonrpc::makeUnknownIdErrorResponse(jsonrpc::makeParseError(std::nullopt, "Message exceeds configured max message size."));
+        writeFramedMessage(output, jsonrpc::Message {parseError});
+      }
+      catch (const std::exception &writeError)
+      {
+        logDiagnostic(stderrOutput, options.allowStderrLogs, std::string("stdio transport failed writing oversize parse error: ") + writeError.what());
+      }
+    }
+
+    return false;
+  }
+
   try
   {
     const jsonrpc::Message message = jsonrpc::parseMessage(normalizedLine);
@@ -662,6 +684,7 @@ auto StdioTransport::run(jsonrpc::Router &router, StdioServerOptions options) ->
   StdioAttachOptions attachOptions;
   attachOptions.allowStderrLogs = options.allowStderrLogs;
   attachOptions.emitParseErrors = true;
+  attachOptions.limits = options.limits;
 
   router.setOutboundMessageSender([](const jsonrpc::RequestContext &, const jsonrpc::Message &outboundMessage) -> void { detail::writeFramedMessage(std::cout, outboundMessage); });
 

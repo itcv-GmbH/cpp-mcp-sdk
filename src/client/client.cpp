@@ -1273,6 +1273,11 @@ private:
         continue;
       }
 
+      if (line.size() > options_.limits.maxMessageSizeBytes)
+      {
+        continue;
+      }
+
       try
       {
         const jsonrpc::Message inboundMessage = jsonrpc::parseMessage(line);
@@ -1454,7 +1459,16 @@ Client::Client(std::shared_ptr<Session> session)
 
       if (samplingTaskSupported && taskAugmentation.requested)
       {
-        const util::CreateTaskResult createTaskResult = taskReceiver_->createTask(context, taskAugmentation);
+        util::CreateTaskResult createTaskResult;
+        try
+        {
+          createTaskResult = taskReceiver_->createTask(context, taskAugmentation);
+        }
+        catch (const std::exception &error)
+        {
+          return makeReadyResponseFuture(makeSamplingInvalidParamsResponse(request.id, std::string("Task creation rejected: ") + error.what()));
+        }
+
         const std::string taskId = createTaskResult.task.taskId;
         const SamplingCreateMessageHandler taskHandler = *samplingCreateMessageHandler;
         const jsonrpc::RequestContext taskContext = context;
@@ -1562,7 +1576,16 @@ Client::Client(std::shared_ptr<Session> session)
 
         if (taskAugmentation.requested)
         {
-          const util::CreateTaskResult createTaskResult = taskReceiver_->createTask(context, taskAugmentation);
+          util::CreateTaskResult createTaskResult;
+          try
+          {
+            createTaskResult = taskReceiver_->createTask(context, taskAugmentation);
+          }
+          catch (const std::exception &error)
+          {
+            return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, std::string("Task creation rejected: ") + error.what()));
+          }
+
           const std::string taskId = createTaskResult.task.taskId;
 
           jsonrpc::Request internalRequest = request;
@@ -1889,6 +1912,7 @@ auto Client::connectHttp(const transport::HttpClientOptions &options) -> void
   streamableOptions.endpointUrl = options.endpointUrl;
   streamableOptions.bearerToken = options.bearerToken;
   streamableOptions.tls = options.tls;
+  streamableOptions.limits = options.limits;
   streamableOptions.sessionState = options.sessionState;
   streamableOptions.protocolVersionState = options.protocolVersionState;
 

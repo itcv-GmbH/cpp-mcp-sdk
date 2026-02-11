@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -20,7 +21,6 @@ constexpr std::uint16_t kStatusAccepted = 202;
 constexpr std::uint16_t kStatusBadRequest = 400;
 constexpr std::uint16_t kStatusMethodNotAllowed = 405;
 constexpr std::uint32_t kDefaultRetryMilliseconds = 1000;
-constexpr std::uint32_t kMaxResumeAttempts = 64;
 constexpr std::string_view kAcceptJsonAndSse = "application/json, text/event-stream";
 constexpr std::string_view kAcceptSseOnly = "text/event-stream";
 constexpr std::string_view kJsonContentType = "application/json";
@@ -145,7 +145,7 @@ struct ParsedSsePayload
   std::optional<std::uint32_t> retryMilliseconds;
 };
 
-static auto parseSsePayload(std::string_view payload, const std::optional<jsonrpc::RequestId> &awaitedRequestId) -> ParsedSsePayload
+static auto parseSsePayload(std::string_view payload, const std::optional<jsonrpc::RequestId> &awaitedRequestId, std::size_t maxMessageSizeBytes) -> ParsedSsePayload
 {
   ParsedSsePayload parsed;
   const std::vector<mcp::http::sse::Event> events = mcp::http::sse::parseEvents(payload);
@@ -166,6 +166,11 @@ static auto parseSsePayload(std::string_view payload, const std::optional<jsonrp
     if (event.data.empty())
     {
       continue;
+    }
+
+    if (event.data.size() > maxMessageSizeBytes)
+    {
+      throw std::runtime_error("SSE message exceeds configured max message size.");
     }
 
     const jsonrpc::Message message = jsonrpc::parseMessage(event.data);
@@ -211,6 +216,11 @@ struct StreamableHttpClient::Impl
     if (this->options.defaultRetryMilliseconds == 0)
     {
       this->options.defaultRetryMilliseconds = kDefaultRetryMilliseconds;
+    }
+
+    if (this->options.limits.maxRetryDelayMilliseconds > 0)
+    {
+      this->options.defaultRetryMilliseconds = std::min(this->options.defaultRetryMilliseconds, this->options.limits.maxRetryDelayMilliseconds);
     }
   }
 
@@ -279,15 +289,22 @@ struct StreamableHttpClient::Impl
 
   auto updateRetry(SseState &state, const std::optional<std::uint32_t> &retryMilliseconds) const -> void
   {
+    const std::uint32_t retryCap = options.limits.maxRetryDelayMilliseconds;
+
     if (retryMilliseconds.has_value() && *retryMilliseconds > 0)
     {
-      state.retryMilliseconds = *retryMilliseconds;
+      state.retryMilliseconds = retryCap > 0 ? std::min(*retryMilliseconds, retryCap) : *retryMilliseconds;
       return;
     }
 
     if (state.retryMilliseconds == 0)
     {
       state.retryMilliseconds = options.defaultRetryMilliseconds;
+    }
+
+    if (retryCap > 0)
+    {
+      state.retryMilliseconds = std::min(state.retryMilliseconds, retryCap);
     }
   }
 
@@ -304,7 +321,12 @@ struct StreamableHttpClient::Impl
       throw std::runtime_error("Expected text/event-stream response while processing SSE stream.");
     }
 
-    ParsedSsePayload parsed = parseSsePayload(response.body, awaitedRequestId);
+    if (response.body.size() > options.limits.maxMessageSizeBytes)
+    {
+      throw std::runtime_error("SSE payload exceeds configured max message size.");
+    }
+
+    ParsedSsePayload parsed = parseSsePayload(response.body, awaitedRequestId, options.limits.maxMessageSizeBytes);
     if (parsed.lastEventId.has_value())
     {
       streamState.lastEventId = parsed.lastEventId;
@@ -318,7 +340,8 @@ struct StreamableHttpClient::Impl
   auto resumeSseStreamUntilResponse(const jsonrpc::RequestId &requestId, SseState &streamState) -> StreamableHttpSendResult
   {
     StreamableHttpSendResult result;
-    for (std::uint32_t attempt = 0; attempt < kMaxResumeAttempts; ++attempt)
+    const std::uint32_t maxAttempts = options.limits.maxRetryAttempts;
+    for (std::uint32_t attempt = 0; attempt < maxAttempts; ++attempt)
     {
       if (!streamState.active)
       {
@@ -343,7 +366,7 @@ struct StreamableHttpClient::Impl
       }
     }
 
-    throw std::runtime_error("Exceeded SSE resume attempts without receiving a matching response.");
+    throw std::runtime_error("Exceeded configured SSE resume retry attempts without receiving a matching response.");
   }
 
   auto send(const jsonrpc::Message &message) -> StreamableHttpSendResult
@@ -377,6 +400,11 @@ struct StreamableHttpClient::Impl
     const ResponseContentType contentType = responseContentType(response);
     if (contentType == ResponseContentType::kJson)
     {
+      if (response.body.size() > options.limits.maxMessageSizeBytes)
+      {
+        throw std::runtime_error("JSON response exceeds configured max message size.");
+      }
+
       const jsonrpc::Message bodyMessage = jsonrpc::parseMessage(response.body);
       const std::optional<jsonrpc::Response> parsedResponse = asResponse(bodyMessage);
       if (!parsedResponse.has_value())

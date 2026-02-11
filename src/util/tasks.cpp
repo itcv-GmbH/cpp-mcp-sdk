@@ -32,6 +32,7 @@ constexpr std::string_view kTaskGetMethod = "tasks/get";
 constexpr std::string_view kTaskResultMethod = "tasks/result";
 constexpr std::string_view kTaskListMethod = "tasks/list";
 constexpr std::string_view kTaskCancelMethod = "tasks/cancel";
+constexpr std::string_view kUnboundAuthContextKey = "__mcp_unbound_auth_context__";
 
 constexpr std::uint32_t kBase64Shift18 = 18U;
 constexpr std::uint32_t kBase64Shift16 = 16U;
@@ -325,6 +326,27 @@ auto defaultCancellationError(std::optional<std::string> statusMessage) -> JsonR
   return cancellationError;
 }
 
+auto taskStoreErrorMessage(TaskStoreError error) -> std::string
+{
+  switch (error)
+  {
+    case TaskStoreError::kNone:
+      return "No task store error";
+    case TaskStoreError::kNotFound:
+      return "Task not found";
+    case TaskStoreError::kAccessDenied:
+      return "Task access denied for current auth context";
+    case TaskStoreError::kInvalidTransition:
+      return "Task status transition is invalid";
+    case TaskStoreError::kTerminalImmutable:
+      return "Task is already in a terminal status";
+    case TaskStoreError::kLimitExceeded:
+      return "Task creation rejected by runtime limits";
+  }
+
+  return "Unknown task store error";
+}
+
 }  // namespace detail
 
 auto toString(TaskStatus status) -> std::string_view
@@ -547,6 +569,11 @@ auto authContextForRequest(const jsonrpc::RequestContext &context) -> std::optio
 
 struct InMemoryTaskStore::Impl
 {
+  explicit Impl(InMemoryTaskStoreOptions options)
+    : options(options)
+  {
+  }
+
   struct StoredTask
   {
     Task task;
@@ -558,6 +585,8 @@ struct InMemoryTaskStore::Impl
   };
 
   auto nowSystem() const -> std::chrono::system_clock::time_point { return std::chrono::system_clock::now(); }
+
+  auto normalizedAuthContextKey(const std::optional<std::string> &authContext) const -> std::string { return authContext.value_or(std::string(detail::kUnboundAuthContextKey)); }
 
   auto checkAccess(const StoredTask &storedTask, const std::optional<std::string> &authContext) const -> bool
   {
@@ -584,6 +613,26 @@ struct InMemoryTaskStore::Impl
     }
   }
 
+  auto countActiveTasksForAuthContext(const std::optional<std::string> &authContext) const -> std::size_t
+  {
+    const std::string authContextKey = normalizedAuthContextKey(authContext);
+    std::size_t activeCount = 0;
+    for (const auto &entry : tasks)
+    {
+      if (normalizedAuthContextKey(entry.second.authContext) != authContextKey)
+      {
+        continue;
+      }
+
+      if (!isTerminalTaskStatus(entry.second.task.status))
+      {
+        ++activeCount;
+      }
+    }
+
+    return activeCount;
+  }
+
   auto generateTaskId() -> std::string
   {
     static constexpr std::string_view hexAlphabet = "0123456789abcdef";
@@ -605,10 +654,11 @@ struct InMemoryTaskStore::Impl
   std::condition_variable condition;
   std::unordered_map<std::string, StoredTask> tasks;
   std::uint64_t nextSequence = 1;
+  InMemoryTaskStoreOptions options;
 };
 
-InMemoryTaskStore::InMemoryTaskStore()
-  : impl_(std::make_shared<Impl>())
+InMemoryTaskStore::InMemoryTaskStore(InMemoryTaskStoreOptions options)
+  : impl_(std::make_shared<Impl>(options))
 {
 }
 
@@ -622,6 +672,26 @@ auto InMemoryTaskStore::createTask(TaskCreateOptions options) -> TaskRecordResul
 {
   const std::scoped_lock lock(impl_->mutex);
   impl_->purgeExpiredLocked();
+
+  if (options.ttl.has_value())
+  {
+    if (*options.ttl < 0)
+    {
+      return {.error = TaskStoreError::kLimitExceeded, .errorMessage = std::string("Task ttl must be greater than or equal to zero milliseconds")};
+    }
+
+    if (*options.ttl > impl_->options.maxTaskTtlMilliseconds)
+    {
+      return {.error = TaskStoreError::kLimitExceeded,
+              .errorMessage = std::string("Task ttl exceeds configured maximum of ") + std::to_string(impl_->options.maxTaskTtlMilliseconds) + " milliseconds"};
+    }
+  }
+
+  if (impl_->countActiveTasksForAuthContext(options.authContext) >= impl_->options.maxActiveTasksPerAuthContext)
+  {
+    return {.error = TaskStoreError::kLimitExceeded,
+            .errorMessage = std::string("Active task limit reached for auth context (max ") + std::to_string(impl_->options.maxActiveTasksPerAuthContext) + ")"};
+  }
 
   std::string taskId;
   do
@@ -901,7 +971,12 @@ auto TaskReceiver::createTask(const jsonrpc::RequestContext &context, const Task
   const TaskRecordResult createResult = store_->createTask(std::move(createOptions));
   if (createResult.error != TaskStoreError::kNone)
   {
-    throw std::runtime_error("Failed to create task");
+    if (createResult.errorMessage.has_value())
+    {
+      throw std::runtime_error(*createResult.errorMessage);
+    }
+
+    throw std::runtime_error(detail::taskStoreErrorMessage(createResult.error));
   }
 
   CreateTaskResult response;
