@@ -1,32 +1,41 @@
 #include <algorithm>
+#include <cstddef>
+#include <future>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <sstream>
-#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <variant>
+#include <vector>
 
+#include <jsoncons/basic_json.hpp>
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/transport.hpp>
+#include <mcp/version.hpp>
 
 namespace mcp
 {
 
-namespace
-{
+static constexpr std::string_view kInitializeMethod = "initialize";
+static constexpr std::string_view kPingMethod = "ping";
+static constexpr std::string_view kLoggingSetLevelMethod = "logging/setLevel";
+static constexpr std::string_view kNotificationInitialized = "notifications/initialized";
+static constexpr std::string_view kNotificationMessage = "notifications/message";
+static constexpr std::string_view kDefaultClientName = "mcp-cpp-client";
+static constexpr std::string_view kDefaultServerName = "mcp-cpp-sdk";
 
-constexpr std::string_view kInitializeMethod = "initialize";
-constexpr std::string_view kPingMethod = "ping";
-constexpr std::string_view kLoggingSetLevelMethod = "logging/setLevel";
-constexpr std::string_view kNotificationInitialized = "notifications/initialized";
-constexpr std::string_view kNotificationMessage = "notifications/message";
-constexpr std::string_view kDefaultClientName = "mcp-cpp-client";
-constexpr std::string_view kDefaultServerName = "mcp-cpp-sdk";
-
-bool isVersionSupported(const std::vector<std::string> &supportedVersions, std::string_view version)
+static auto isVersionSupported(const std::vector<std::string> &supportedVersions, std::string_view version) -> bool
 {
-  return std::find_if(supportedVersions.begin(), supportedVersions.end(), [version](const std::string &v) { return v == version; }) != supportedVersions.end();
+  return std::any_of(supportedVersions.begin(), supportedVersions.end(), [version](const std::string &supportedVersion) -> bool { return supportedVersion == version; });
 }
 
-std::optional<std::string> selectServerProtocolVersion(std::string_view clientProposed, const std::vector<std::string> &serverSupported)
+static auto selectServerProtocolVersion(std::string_view clientProposed, const std::vector<std::string> &serverSupported) -> std::optional<std::string>
 {
   if (isVersionSupported(serverSupported, clientProposed))
   {
@@ -41,12 +50,12 @@ std::optional<std::string> selectServerProtocolVersion(std::string_view clientPr
   return *std::max_element(serverSupported.begin(), serverSupported.end());
 }
 
-auto jsonArrayFromStrings(const std::vector<std::string> &values) -> jsoncons::json
+static auto jsonArrayFromStrings(const std::vector<std::string> &values) -> jsoncons::json
 {
   return jsoncons::json::array(values.begin(), values.end());
 }
 
-auto negotiationFailureData(std::string_view requested, const std::vector<std::string> &supported) -> jsoncons::json
+static auto negotiationFailureData(std::string_view requested, const std::vector<std::string> &supported) -> jsoncons::json
 {
   jsoncons::json data = jsoncons::json::object();
   data["requested"] = std::string(requested);
@@ -54,7 +63,7 @@ auto negotiationFailureData(std::string_view requested, const std::vector<std::s
   return data;
 }
 
-auto joinedVersions(const std::vector<std::string> &versions) -> std::string
+static auto joinedVersions(const std::vector<std::string> &versions) -> std::string
 {
   std::ostringstream stream;
   for (std::size_t index = 0; index < versions.size(); ++index)
@@ -70,7 +79,7 @@ auto joinedVersions(const std::vector<std::string> &versions) -> std::string
   return stream.str();
 }
 
-auto parseIcon(const jsoncons::json &iconJson) -> std::optional<Icon>
+static auto parseIcon(const jsoncons::json &iconJson) -> std::optional<Icon>
 {
   if (!iconJson.is_object() || !iconJson.contains("src") || !iconJson["src"].is_string())
   {
@@ -107,11 +116,11 @@ auto parseIcon(const jsoncons::json &iconJson) -> std::optional<Icon>
   return Icon(iconJson["src"].as<std::string>(), std::move(mimeType), std::move(sizes), std::move(theme));
 }
 
-auto parseImplementation(const jsoncons::json &implementationJson, std::string defaultName, std::string defaultVersion) -> Implementation
+static auto parseImplementation(const jsoncons::json &implementationJson, std::string defaultName, std::string defaultVersion) -> Implementation
 {
   if (!implementationJson.is_object())
   {
-    return Implementation(std::move(defaultName), std::move(defaultVersion));
+    return {std::move(defaultName), std::move(defaultVersion)};
   }
 
   std::string name = implementationJson.contains("name") && implementationJson["name"].is_string() ? implementationJson["name"].as<std::string>() : std::move(defaultName);
@@ -153,10 +162,10 @@ auto parseImplementation(const jsoncons::json &implementationJson, std::string d
     icons = std::move(parsedIcons);
   }
 
-  return Implementation(std::move(name), std::move(version), std::move(title), std::move(description), std::move(websiteUrl), std::move(icons));
+  return {std::move(name), std::move(version), std::move(title), std::move(description), std::move(websiteUrl), std::move(icons)};
 }
 
-auto iconToJson(const Icon &icon) -> jsoncons::json
+static auto iconToJson(const Icon &icon) -> jsoncons::json
 {
   jsoncons::json iconJson = jsoncons::json::object();
   iconJson["src"] = icon.src();
@@ -179,7 +188,7 @@ auto iconToJson(const Icon &icon) -> jsoncons::json
   return iconJson;
 }
 
-auto implementationToJson(const Implementation &implementation) -> jsoncons::json
+static auto implementationToJson(const Implementation &implementation) -> jsoncons::json
 {
   jsoncons::json implementationJson = jsoncons::json::object();
   implementationJson["name"] = implementation.name();
@@ -214,7 +223,8 @@ auto implementationToJson(const Implementation &implementation) -> jsoncons::jso
   return implementationJson;
 }
 
-auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> ClientCapabilities
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+static auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> ClientCapabilities
 {
   if (!capabilitiesJson.is_object())
   {
@@ -282,10 +292,11 @@ auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> ClientCa
     experimental = capabilitiesJson["experimental"];
   }
 
-  return ClientCapabilities(std::move(roots), std::move(sampling), std::move(elicitation), std::move(tasks), std::move(experimental));
+  return {roots, sampling, elicitation, tasks, std::move(experimental)};
 }
 
-auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> ServerCapabilities
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+static auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> ServerCapabilities
 {
   if (!capabilitiesJson.is_object())
   {
@@ -371,10 +382,10 @@ auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> ServerCa
     experimental = capabilitiesJson["experimental"];
   }
 
-  return ServerCapabilities(std::move(logging), std::move(completions), std::move(prompts), std::move(resources), std::move(tools), std::move(tasks), std::move(experimental));
+  return {logging, completions, prompts, resources, tools, tasks, std::move(experimental)};
 }
 
-auto serverCapabilitiesToJson(const ServerCapabilities &capabilities) -> jsoncons::json
+static auto serverCapabilitiesToJson(const ServerCapabilities &capabilities) -> jsoncons::json
 {
   jsoncons::json capabilitiesJson = jsoncons::json::object();
 
@@ -459,7 +470,7 @@ auto serverCapabilitiesToJson(const ServerCapabilities &capabilities) -> jsoncon
   return capabilitiesJson;
 }
 
-auto ensureClientInitializeDefaults(jsonrpc::JsonValue &params, const std::vector<std::string> &supportedVersions) -> void
+static auto ensureClientInitializeDefaults(jsonrpc::JsonValue &params, const std::vector<std::string> &supportedVersions) -> void
 {
   if (!params.is_object())
   {
@@ -499,12 +510,10 @@ auto ensureClientInitializeDefaults(jsonrpc::JsonValue &params, const std::vecto
   }
 }
 
-}  // namespace
-
 // Icon implementation
-Icon::Icon(std::string src, std::optional<std::string> mime_type, std::optional<std::vector<std::string>> sizes, std::optional<std::string> theme)
+Icon::Icon(std::string src, std::optional<std::string> mimeType, std::optional<std::vector<std::string>> sizes, std::optional<std::string> theme)
   : src_(std::move(src))
-  , mimeType_(std::move(mime_type))
+  , mimeType_(std::move(mimeType))
   , sizes_(std::move(sizes))
   , theme_(std::move(theme))
 {
@@ -515,13 +524,13 @@ Implementation::Implementation(std::string name,
                                std::string version,
                                std::optional<std::string> title,
                                std::optional<std::string> description,
-                               std::optional<std::string> website_url,
+                               std::optional<std::string> websiteUrl,
                                std::optional<std::vector<Icon>> icons)
   : name_(std::move(name))
   , version_(std::move(version))
   , title_(std::move(title))
   , description_(std::move(description))
-  , websiteUrl_(std::move(website_url))
+  , websiteUrl_(std::move(websiteUrl))
   , icons_(std::move(icons))
 {
 }
@@ -532,10 +541,10 @@ ClientCapabilities::ClientCapabilities(std::optional<RootsCapability> roots,
                                        std::optional<ElicitationCapability> elicitation,
                                        std::optional<TasksCapability> tasks,
                                        std::optional<jsoncons::json> experimental)
-  : roots_(std::move(roots))
-  , sampling_(std::move(sampling))
-  , elicitation_(std::move(elicitation))
-  , tasks_(std::move(tasks))
+  : roots_(roots)
+  , sampling_(sampling)
+  , elicitation_(elicitation)
+  , tasks_(tasks)
   , experimental_(std::move(experimental))
 {
 }
@@ -567,17 +576,8 @@ auto ClientCapabilities::experimental() const noexcept -> const std::optional<js
 
 auto ClientCapabilities::hasCapability(std::string_view capability) const -> bool
 {
-  if (capability == "roots" && roots_.has_value())
-    return true;
-  if (capability == "sampling" && sampling_.has_value())
-    return true;
-  if (capability == "elicitation" && elicitation_.has_value())
-    return true;
-  if (capability == "tasks" && tasks_.has_value())
-    return true;
-  if (capability == "experimental" && experimental_.has_value())
-    return true;
-  return false;
+  return (capability == "roots" && roots_.has_value()) || (capability == "sampling" && sampling_.has_value()) || (capability == "elicitation" && elicitation_.has_value())
+    || (capability == "tasks" && tasks_.has_value()) || (capability == "experimental" && experimental_.has_value());
 }
 
 // ServerCapabilities implementation
@@ -588,12 +588,12 @@ ServerCapabilities::ServerCapabilities(std::optional<LoggingCapability> logging,
                                        std::optional<ToolsCapability> tools,
                                        std::optional<TasksCapability> tasks,
                                        std::optional<jsoncons::json> experimental)
-  : logging_(std::move(logging))
-  , completions_(std::move(completions))
-  , prompts_(std::move(prompts))
-  , resources_(std::move(resources))
-  , tools_(std::move(tools))
-  , tasks_(std::move(tasks))
+  : logging_(logging)
+  , completions_(completions)
+  , prompts_(prompts)
+  , resources_(resources)
+  , tools_(tools)
+  , tasks_(tasks)
   , experimental_(std::move(experimental))
 {
 }
@@ -635,35 +635,23 @@ auto ServerCapabilities::experimental() const noexcept -> const std::optional<js
 
 auto ServerCapabilities::hasCapability(std::string_view capability) const -> bool
 {
-  if (capability == "logging" && logging_.has_value())
-    return true;
-  if (capability == "completions" && completions_.has_value())
-    return true;
-  if (capability == "prompts" && prompts_.has_value())
-    return true;
-  if (capability == "resources" && resources_.has_value())
-    return true;
-  if (capability == "tools" && tools_.has_value())
-    return true;
-  if (capability == "tasks" && tasks_.has_value())
-    return true;
-  if (capability == "experimental" && experimental_.has_value())
-    return true;
-  return false;
+  return (capability == "logging" && logging_.has_value()) || (capability == "completions" && completions_.has_value()) || (capability == "prompts" && prompts_.has_value())
+    || (capability == "resources" && resources_.has_value()) || (capability == "tools" && tools_.has_value()) || (capability == "tasks" && tasks_.has_value())
+    || (capability == "experimental" && experimental_.has_value());
 }
 
 // NegotiatedParameters implementation
-NegotiatedParameters::NegotiatedParameters(std::string protocol_version,
-                                           ClientCapabilities client_caps,
-                                           ServerCapabilities server_caps,
-                                           Implementation client_info,
-                                           Implementation server_info,
+NegotiatedParameters::NegotiatedParameters(std::string protocolVersion,
+                                           ClientCapabilities clientCaps,
+                                           ServerCapabilities serverCaps,
+                                           Implementation clientInfo,
+                                           Implementation serverInfo,
                                            std::optional<std::string> instructions)
-  : protocolVersion_(std::move(protocol_version))
-  , clientCapabilities_(std::move(client_caps))
-  , serverCapabilities_(std::move(server_caps))
-  , clientInfo_(std::move(client_info))
-  , serverInfo_(std::move(server_info))
+  : protocolVersion_(std::move(protocolVersion))
+  , clientCapabilities_(std::move(clientCaps))
+  , serverCapabilities_(std::move(serverCaps))
+  , clientInfo_(std::move(clientInfo))
+  , serverInfo_(std::move(serverInfo))
   , instructions_(std::move(instructions))
 {
 }
@@ -706,22 +694,22 @@ Session::Session(SessionOptions options)
 
 auto Session::registerRequestHandler(std::string method, jsonrpc::RequestHandler handler) -> void
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   router_.registerRequestHandler(std::move(method), std::move(handler));
 }
 
 auto Session::registerNotificationHandler(std::string method, jsonrpc::NotificationHandler handler) -> void
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   router_.registerNotificationHandler(std::move(method), std::move(handler));
 }
 
-auto Session::sendRequest(std::string method, jsonrpc::JsonValue params, RequestOptions options) -> std::future<jsonrpc::Response>
+auto Session::sendRequest(const std::string &method, jsonrpc::JsonValue params, RequestOptions options) -> std::future<jsonrpc::Response>
 {
   static_cast<void>(options);
 
   {
-    std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
 
     if (role_ == SessionRole::kClient)
     {
@@ -767,9 +755,9 @@ auto Session::sendRequest(std::string method, jsonrpc::JsonValue params, Request
   return promise.get_future();
 }
 
-auto Session::sendRequestAsync(std::string method, jsonrpc::JsonValue params, ResponseCallback callback, RequestOptions options) -> void
+auto Session::sendRequestAsync(const std::string &method, jsonrpc::JsonValue params, const ResponseCallback &callback, RequestOptions options) -> void
 {
-  std::future<jsonrpc::Response> responseFuture = sendRequest(std::move(method), std::move(params), options);
+  std::future<jsonrpc::Response> responseFuture = sendRequest(method, std::move(params), options);
   callback(responseFuture.get());
 }
 
@@ -778,7 +766,7 @@ auto Session::sendNotification(std::string method, std::optional<jsonrpc::JsonVa
   std::shared_ptr<transport::Transport> transport;
 
   {
-    std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
 
     if (role_ == SessionRole::kClient)
     {
@@ -821,13 +809,13 @@ auto Session::sendNotification(std::string method, std::optional<jsonrpc::JsonVa
 
 auto Session::attachTransport(std::shared_ptr<transport::Transport> transport) -> void
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   transport_ = std::move(transport);
 }
 
 auto Session::start() -> void
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   if (state_ != SessionState::kCreated)
   {
     throw LifecycleError("Session can only be started from Created state");
@@ -837,7 +825,7 @@ auto Session::start() -> void
 
 auto Session::stop() -> void
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   if (state_ == SessionState::kStopped)
   {
     return;
@@ -849,13 +837,13 @@ auto Session::stop() -> void
 
 auto Session::state() const noexcept -> SessionState
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   return state_;
 }
 
 auto Session::negotiatedProtocolVersion() const noexcept -> std::optional<std::string_view>
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   if (!negotiatedParams_)
   {
     return std::nullopt;
@@ -870,25 +858,25 @@ auto Session::supportedProtocolVersions() const -> const std::vector<std::string
 
 auto Session::negotiatedParameters() const -> const std::optional<NegotiatedParameters> &
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   return negotiatedParams_;
 }
 
 auto Session::setRole(SessionRole role) -> void
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   role_ = role;
 }
 
 auto Session::role() const noexcept -> SessionRole
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
   return role_;
 }
 
 auto Session::handleInitializeRequest(const jsonrpc::Request &request) -> jsonrpc::Response
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
 
   if (role_ != SessionRole::kServer)
   {
@@ -944,7 +932,7 @@ auto Session::handleInitializeRequest(const jsonrpc::Request &request) -> jsonrp
                                       request.id);
   }
 
-  ServerCapabilities serverCaps;
+  const ServerCapabilities serverCaps;
   const Implementation serverInfo {std::string(kDefaultServerName), std::string(kSdkVersion)};
 
   // Store negotiated parameters
@@ -1058,7 +1046,7 @@ auto Session::handleInitializeResponse(const jsonrpc::Response &response) -> voi
 
 auto Session::handleInitializedNotification() -> void
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
 
   // Server enforcement: only transition to operating after receiving initialized
   if (state_ == SessionState::kInitialized)
@@ -1069,7 +1057,7 @@ auto Session::handleInitializedNotification() -> void
 
 auto Session::canHandleRequest(std::string_view method) const -> bool
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
 
   // Server enforcement: pre-initialization request handling
   if (role_ == SessionRole::kServer && state_ != SessionState::kOperating)
@@ -1096,7 +1084,7 @@ auto Session::canHandleRequest(std::string_view method) const -> bool
 
 auto Session::canSendRequest(std::string_view method) const -> bool
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
 
   // Client enforcement: pre-initialization request sending
   if (role_ == SessionRole::kClient)
@@ -1129,7 +1117,7 @@ auto Session::canSendRequest(std::string_view method) const -> bool
 
 auto Session::canSendNotification(std::string_view method) const -> bool
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
 
   if (role_ == SessionRole::kClient)
   {
@@ -1150,18 +1138,12 @@ auto Session::canSendNotification(std::string_view method) const -> bool
     return state_ == SessionState::kInitialized || state_ == SessionState::kOperating;
   }
 
-  // Server enforcement: other notifications
-  if (role_ == SessionRole::kServer && state_ != SessionState::kOperating)
-  {
-    return false;
-  }
-
-  return true;
+  return role_ != SessionRole::kServer || state_ == SessionState::kOperating;
 }
 
 auto Session::checkCapability(std::string_view capability) const -> bool
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
 
   if (!negotiatedParams_)
   {

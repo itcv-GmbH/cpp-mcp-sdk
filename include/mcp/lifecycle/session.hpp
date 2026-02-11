@@ -100,7 +100,7 @@ class Icon
 public:
   Icon() = default;
   Icon(std::string src,
-       std::optional<std::string> mime_type = std::nullopt,
+       std::optional<std::string> mimeType = std::nullopt,
        std::optional<std::vector<std::string>> sizes = std::nullopt,
        std::optional<std::string> theme = std::nullopt);
 
@@ -125,7 +125,7 @@ public:
                  std::string version,
                  std::optional<std::string> title = std::nullopt,
                  std::optional<std::string> description = std::nullopt,
-                 std::optional<std::string> website_url = std::nullopt,
+                 std::optional<std::string> websiteUrl = std::nullopt,
                  std::optional<std::vector<Icon>> icons = std::nullopt);
 
   auto name() const noexcept -> const std::string & { return name_; }
@@ -262,11 +262,11 @@ class NegotiatedParameters
 {
 public:
   NegotiatedParameters() = default;
-  NegotiatedParameters(std::string protocol_version,
-                       ClientCapabilities client_caps,
-                       ServerCapabilities server_caps,
-                       Implementation client_info,
-                       Implementation server_info,
+  NegotiatedParameters(std::string protocolVersion,
+                       ClientCapabilities clientCaps,
+                       ServerCapabilities serverCaps,
+                       Implementation clientInfo,
+                       Implementation serverInfo,
                        std::optional<std::string> instructions);
 
   auto protocolVersion() const noexcept -> std::string_view;
@@ -295,8 +295,8 @@ public:
   auto registerNotificationHandler(std::string method, jsonrpc::NotificationHandler handler) -> void;
 
   // Message sending
-  auto sendRequest(std::string method, jsonrpc::JsonValue params, RequestOptions options = {}) -> std::future<jsonrpc::Response>;
-  auto sendRequestAsync(std::string method, jsonrpc::JsonValue params, ResponseCallback callback, RequestOptions options = {}) -> void;
+  auto sendRequest(const std::string &method, jsonrpc::JsonValue params, RequestOptions options = {}) -> std::future<jsonrpc::Response>;
+  auto sendRequestAsync(const std::string &method, jsonrpc::JsonValue params, const ResponseCallback &callback, RequestOptions options = {}) -> void;
   auto sendNotification(std::string method, std::optional<jsonrpc::JsonValue> params = std::nullopt) -> void;
 
   // Transport and lifecycle

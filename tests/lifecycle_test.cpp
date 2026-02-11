@@ -1,9 +1,13 @@
+#include <algorithm>
+#include <string>
+
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/version.hpp>
 
-// NOLINTBEGIN(readability-function-cognitive-complexity)
+// NOLINTBEGIN(readability-function-cognitive-complexity, misc-const-correctness, bugprone-unchecked-optional-access, google-build-using-namespace, abseil-string-find-str-contains,
+// misc-include-cleaner)
 
 using namespace mcp;
 
@@ -512,4 +516,5 @@ TEST_CASE("NegotiatedParameters stores negotiated values", "[lifecycle][negotiat
   REQUIRE(*params.instructions() == "Test instructions");
 }
 
-// NOLINTEND(readability-function-cognitive-complexity)
+// NOLINTEND(readability-function-cognitive-complexity, misc-const-correctness, bugprone-unchecked-optional-access, google-build-using-namespace, abseil-string-find-str-contains,
+// misc-include-cleaner)
