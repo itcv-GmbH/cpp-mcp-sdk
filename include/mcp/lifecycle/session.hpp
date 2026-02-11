@@ -318,6 +318,7 @@ public:
   auto handleInitializeRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleInitializeResponse(const jsonrpc::Response &response) -> void;
   auto handleInitializedNotification() -> void;
+  auto configureServerInitialization(ServerCapabilities capabilities, Implementation serverInfo, std::optional<std::string> instructions = std::nullopt) -> void;
 
   // Lifecycle enforcement
   auto canHandleRequest(std::string_view method) const -> bool;
@@ -336,6 +337,9 @@ private:
   std::optional<NegotiatedParameters> negotiatedParams_;
   std::optional<ClientCapabilities> pendingClientCapabilities_;
   std::optional<Implementation> pendingClientInfo_;
+  ServerCapabilities configuredServerCapabilities_;
+  Implementation configuredServerInfo_;
+  std::optional<std::string> configuredServerInstructions_;
   mutable std::mutex mutex_;
 };
 

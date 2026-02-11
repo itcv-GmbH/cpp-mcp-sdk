@@ -689,6 +689,7 @@ auto NegotiatedParameters::instructions() const noexcept -> const std::optional<
 // Session implementation
 Session::Session(SessionOptions options)
   : options_(std::move(options))
+  , configuredServerInfo_(std::string(kDefaultServerName), std::string(kSdkVersion))
 {
 }
 
@@ -932,11 +933,8 @@ auto Session::handleInitializeRequest(const jsonrpc::Request &request) -> jsonrp
                                       request.id);
   }
 
-  const ServerCapabilities serverCaps;
-  const Implementation serverInfo {std::string(kDefaultServerName), std::string(kSdkVersion)};
-
   // Store negotiated parameters
-  negotiatedParams_.emplace(*negotiatedVersion, clientCaps, serverCaps, clientInfo, serverInfo, std::nullopt);
+  negotiatedParams_.emplace(*negotiatedVersion, clientCaps, configuredServerCapabilities_, clientInfo, configuredServerInfo_, configuredServerInstructions_);
 
   // Transition to initialized state
   state_ = SessionState::kInitialized;
@@ -944,8 +942,12 @@ auto Session::handleInitializeRequest(const jsonrpc::Request &request) -> jsonrp
   // Build initialize result
   jsoncons::json result = jsoncons::json::object();
   result["protocolVersion"] = *negotiatedVersion;
-  result["capabilities"] = serverCapabilitiesToJson(serverCaps);
-  result["serverInfo"] = implementationToJson(serverInfo);
+  result["capabilities"] = serverCapabilitiesToJson(configuredServerCapabilities_);
+  result["serverInfo"] = implementationToJson(configuredServerInfo_);
+  if (configuredServerInstructions_.has_value())
+  {
+    result["instructions"] = *configuredServerInstructions_;
+  }
 
   jsonrpc::SuccessResponse response;
   response.id = request.id;
@@ -1053,6 +1055,20 @@ auto Session::handleInitializedNotification() -> void
   {
     state_ = SessionState::kOperating;
   }
+}
+
+auto Session::configureServerInitialization(ServerCapabilities capabilities, Implementation serverInfo, std::optional<std::string> instructions) -> void
+{
+  const std::scoped_lock lock(mutex_);
+
+  if (state_ != SessionState::kCreated)
+  {
+    throw LifecycleError("Server initialization configuration must be set before the session starts initialization");
+  }
+
+  configuredServerCapabilities_ = std::move(capabilities);
+  configuredServerInfo_ = std::move(serverInfo);
+  configuredServerInstructions_ = std::move(instructions);
 }
 
 auto Session::canHandleRequest(std::string_view method) const -> bool
