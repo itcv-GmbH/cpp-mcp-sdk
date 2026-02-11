@@ -33,6 +33,11 @@ cmake --build build/windows-release --config Release
 
 **Note:** The `unix-release` preset requires dependencies to be already installed or cached from a previous vcpkg build. Use `vcpkg-unix-release` preset for the first build or when dependencies are missing.
 
+**UNIX parallel builds:** On UNIX systems, you can parallelize builds while reserving 4 CPU cores:
+```bash
+cmake --build build/unix-release --parallel $(( $(nproc) - 4 ))
+```
+
 ### Build Options
 - `MCP_SDK_BUILD_TESTS=ON` - Build test suite (default: ON)
 - `MCP_SDK_BUILD_EXAMPLES=ON` - Build examples (default: ON)
