@@ -18,6 +18,30 @@ target_link_libraries(mcp_sdk_test_pinned_mirror
         mcp::sdk
 )
 
+add_executable(mcp_sdk_test_conformance_jsonrpc_invariants conformance/test_jsonrpc_invariants.cpp)
+
+target_link_libraries(mcp_sdk_test_conformance_jsonrpc_invariants
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_executable(mcp_sdk_test_conformance_lifecycle conformance/test_lifecycle.cpp)
+
+target_link_libraries(mcp_sdk_test_conformance_lifecycle
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_executable(mcp_sdk_test_conformance_capabilities conformance/test_capabilities.cpp)
+
+target_link_libraries(mcp_sdk_test_conformance_capabilities
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
 add_executable(mcp_sdk_test_jsonrpc_messages jsonrpc_messages_test.cpp)
 
 target_link_libraries(mcp_sdk_test_jsonrpc_messages
@@ -29,6 +53,10 @@ target_link_libraries(mcp_sdk_test_jsonrpc_messages
 # Register with CTest
 add_test(NAME mcp_sdk_smoke_test COMMAND mcp_sdk_test_smoke)
 add_test(NAME mcp_sdk_pinned_mirror_test COMMAND mcp_sdk_test_pinned_mirror)
+add_test(NAME mcp_sdk_conformance_pinned_mirror_test COMMAND mcp_sdk_test_pinned_mirror)
+add_test(NAME mcp_sdk_conformance_jsonrpc_invariants_test COMMAND mcp_sdk_test_conformance_jsonrpc_invariants)
+add_test(NAME mcp_sdk_conformance_lifecycle_test COMMAND mcp_sdk_test_conformance_lifecycle)
+add_test(NAME mcp_sdk_conformance_capabilities_test COMMAND mcp_sdk_test_conformance_capabilities)
 add_test(NAME mcp_sdk_jsonrpc_messages_test COMMAND mcp_sdk_test_jsonrpc_messages)
 
 add_executable(mcp_sdk_test_jsonrpc_router jsonrpc_router_test.cpp)
