@@ -1193,6 +1193,73 @@ TEST_CASE("Client elicitation/create supports task augmentation", "[client][task
   REQUIRE(taskResult.result["_meta"]["io.modelcontextprotocol/related-task"]["taskId"].as<std::string>() == taskId);
 }
 
+TEST_CASE("Client teardown is safe with in-flight task-augmented elicitation worker", "[client][tasks][elicitation][teardown]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::ElicitationCapability elicitationCapability;
+  elicitationCapability.form = true;
+
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.elicitationCreate = true;
+
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, tasksCapability, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  std::promise<void> handlerEnteredPromise;
+  auto handlerEnteredFuture = handlerEnteredPromise.get_future();
+  std::promise<void> releaseHandlerPromise;
+  auto releaseHandlerFuture = releaseHandlerPromise.get_future();
+  std::promise<void> handlerFinishedPromise;
+  auto handlerFinishedFuture = handlerFinishedPromise.get_future();
+
+  client->setFormElicitationHandler(
+    [&handlerEnteredPromise, &releaseHandlerFuture, &handlerFinishedPromise](const mcp::ElicitationCreateContext &,
+                                                                             const mcp::FormElicitationRequest &) -> mcp::FormElicitationResult
+    {
+      handlerEnteredPromise.set_value();
+      releaseHandlerFuture.wait();
+
+      mcp::FormElicitationResult result;
+      result.action = mcp::ElicitationAction::kCancel;
+      handlerFinishedPromise.set_value();
+      return result;
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  mcp::jsonrpc::Request request;
+  request.id = std::int64_t {9312};
+  request.method = "elicitation/create";
+  request.params = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["mode"] = "form";
+  (*request.params)["message"] = "long-running";
+  (*request.params)["requestedSchema"] = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["requestedSchema"]["type"] = "object";
+  (*request.params)["requestedSchema"]["properties"] = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["requestedSchema"]["properties"]["name"] = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["requestedSchema"]["properties"]["name"]["type"] = "string";
+  (*request.params)["task"] = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response taskCreateResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, request).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(taskCreateResponse));
+  REQUIRE(handlerEnteredFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+
+  client.reset();
+
+  releaseHandlerPromise.set_value();
+  REQUIRE(handlerFinishedFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+}
+
 TEST_CASE("Client tasks/list and tasks/cancel are gated by negotiated sub-capabilities", "[client][tasks][capabilities]")
 {
   auto client = mcp::Client::create();

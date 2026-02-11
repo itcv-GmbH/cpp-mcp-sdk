@@ -9,7 +9,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -20,6 +19,7 @@
 
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/security/crypto_random.hpp>
 #include <mcp/util/tasks.hpp>
 
 namespace mcp::util
@@ -586,14 +586,14 @@ struct InMemoryTaskStore::Impl
 
   auto generateTaskId() -> std::string
   {
-    std::uniform_int_distribution<std::uint32_t> distribution(0U, 255U);
     static constexpr std::string_view hexAlphabet = "0123456789abcdef";
+
+    const std::vector<std::uint8_t> randomBytes = security::cryptoRandomBytes(detail::kTaskIdRandomBytes);
 
     std::string taskId;
     taskId.reserve(detail::kTaskIdRandomBytes * 2U);
-    for (std::size_t index = 0; index < detail::kTaskIdRandomBytes; ++index)
+    for (const std::uint8_t value : randomBytes)
     {
-      const std::uint8_t value = static_cast<std::uint8_t>(distribution(randomEngine));
       taskId.push_back(hexAlphabet[(value >> 4U) & 0x0FU]);
       taskId.push_back(hexAlphabet[value & 0x0FU]);
     }
@@ -604,7 +604,6 @@ struct InMemoryTaskStore::Impl
   std::mutex mutex;
   std::condition_variable condition;
   std::unordered_map<std::string, StoredTask> tasks;
-  std::mt19937 randomEngine {std::random_device {}()};
   std::uint64_t nextSequence = 1;
 };
 

@@ -46,6 +46,7 @@ target_sources(mcp_sdk
         src/jsonrpc/router.cpp
         src/client/client.cpp
         src/lifecycle/session.cpp
+        src/security/crypto_random.cpp
         src/server/server.cpp
         src/schema/validator.cpp
         src/transport/http_client.cpp
@@ -83,6 +84,10 @@ target_link_libraries(mcp_sdk
 
 if(TARGET Boost::process)
     target_link_libraries(mcp_sdk PUBLIC Boost::process)
+endif()
+
+if(WIN32)
+    target_link_libraries(mcp_sdk PUBLIC bcrypt)
 endif()
 
 target_include_directories(mcp_sdk

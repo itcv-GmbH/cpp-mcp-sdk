@@ -67,7 +67,7 @@ struct ListPromptsResult
   std::optional<std::string> nextCursor;
 };
 
-class Client
+class Client : public std::enable_shared_from_this<Client>
 {
 public:
   static auto create(SessionOptions options = {}) -> std::shared_ptr<Client>;

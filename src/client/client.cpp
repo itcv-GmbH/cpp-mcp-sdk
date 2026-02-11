@@ -1571,10 +1571,30 @@ Client::Client(std::shared_ptr<Session> session)
 
           const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
           const jsonrpc::RequestContext taskContext = context;
+          std::weak_ptr<Client> weakClient;
+          try
+          {
+            weakClient = shared_from_this();
+          }
+          catch (const std::bad_weak_ptr &)
+          {
+            weakClient.reset();
+          }
+
           std::thread(
-            [this, taskReceiver, taskContext, internalRequest = std::move(internalRequest), taskId]() mutable -> void
+            [weakClient, taskReceiver, taskContext, internalRequest = std::move(internalRequest), taskId]() mutable -> void
             {
-              const jsonrpc::Response taskResponse = handleRequest(taskContext, internalRequest).get();
+              jsonrpc::Response taskResponse;
+              if (const std::shared_ptr<Client> client = weakClient.lock())
+              {
+                taskResponse = client->handleRequest(taskContext, internalRequest).get();
+              }
+              else
+              {
+                taskResponse = jsonrpc::makeErrorResponse(
+                  jsonrpc::makeInternalError(std::nullopt, "Task worker could not continue because the client instance is no longer available"), std::int64_t {0});
+              }
+
               static_cast<void>(taskReceiver->completeTaskWithResponse(taskContext, taskId, taskResponse, util::TaskStatus::kCompleted));
             })
             .detach();
