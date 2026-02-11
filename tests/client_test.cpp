@@ -978,6 +978,310 @@ TEST_CASE("Client sampling/createMessage happy path and user rejection", "[clien
   REQUIRE(rejectedError.error.code == -1);
 }
 
+TEST_CASE("Client sampling/createMessage supports task augmentation with deferred tasks/result", "[client][tasks][sampling]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::SamplingCapability samplingCapability;
+  samplingCapability.tools = true;
+
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.list = true;
+  tasksCapability.cancel = true;
+  tasksCapability.samplingCreateMessage = true;
+
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, tasksCapability, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setSamplingCreateMessageHandler(
+    [](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &) -> std::optional<mcp::jsonrpc::JsonValue>
+    {
+      mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
+      result["role"] = "assistant";
+      result["model"] = "task-model";
+      result["content"] = mcp::jsonrpc::JsonValue::object();
+      result["content"]["type"] = "text";
+      result["content"]["text"] = "completed";
+      return result;
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  mcp::jsonrpc::RequestContext authA;
+  authA.authContext = "auth-a";
+
+  mcp::jsonrpc::Request samplingRequest;
+  samplingRequest.id = std::int64_t {9301};
+  samplingRequest.method = "sampling/createMessage";
+  samplingRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*samplingRequest.params)["maxTokens"] = 32;
+  (*samplingRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+  mcp::jsonrpc::JsonValue message = mcp::jsonrpc::JsonValue::object();
+  message["role"] = "user";
+  message["content"] = mcp::jsonrpc::JsonValue::object();
+  message["content"]["type"] = "text";
+  message["content"]["text"] = "hello";
+  (*samplingRequest.params)["messages"].push_back(std::move(message));
+  (*samplingRequest.params)["task"] = mcp::jsonrpc::JsonValue::object();
+  (*samplingRequest.params)["task"]["ttl"] = std::int64_t {5000};
+
+  const mcp::jsonrpc::Response taskCreateResponse = client->handleRequest(authA, samplingRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(taskCreateResponse));
+  const auto &taskCreate = std::get<mcp::jsonrpc::SuccessResponse>(taskCreateResponse);
+  REQUIRE(taskCreate.result.contains("task"));
+  const std::string taskId = taskCreate.result["task"]["taskId"].as<std::string>();
+  REQUIRE_FALSE(taskId.empty());
+
+  mcp::jsonrpc::Request resultRequest;
+  resultRequest.id = std::int64_t {9302};
+  resultRequest.method = "tasks/result";
+  resultRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*resultRequest.params)["taskId"] = taskId;
+
+  const mcp::jsonrpc::Response taskResultResponse = client->handleRequest(authA, resultRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(taskResultResponse));
+  const auto &taskResult = std::get<mcp::jsonrpc::SuccessResponse>(taskResultResponse);
+  REQUIRE(taskResult.result["role"].as<std::string>() == "assistant");
+  REQUIRE(taskResult.result["model"].as<std::string>() == "task-model");
+  REQUIRE(taskResult.result["content"]["text"].as<std::string>() == "completed");
+  REQUIRE(taskResult.result["_meta"]["io.modelcontextprotocol/related-task"]["taskId"].as<std::string>() == taskId);
+
+  mcp::jsonrpc::RequestContext authB;
+  authB.authContext = "auth-b";
+
+  mcp::jsonrpc::Request deniedGet;
+  deniedGet.id = std::int64_t {9303};
+  deniedGet.method = "tasks/get";
+  deniedGet.params = mcp::jsonrpc::JsonValue::object();
+  (*deniedGet.params)["taskId"] = taskId;
+
+  const mcp::jsonrpc::Response deniedGetResponse = client->handleRequest(authB, deniedGet).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(deniedGetResponse));
+  const auto &deniedGetError = std::get<mcp::jsonrpc::ErrorResponse>(deniedGetResponse);
+  REQUIRE(deniedGetError.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+}
+
+TEST_CASE("Client sampling/createMessage ignores task metadata when tasks capability is not negotiated", "[client][tasks][sampling]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::SamplingCapability samplingCapability;
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setSamplingCreateMessageHandler(
+    [](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &) -> std::optional<mcp::jsonrpc::JsonValue>
+    {
+      mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
+      result["role"] = "assistant";
+      result["model"] = "no-task-model";
+      result["content"] = mcp::jsonrpc::JsonValue::object();
+      result["content"]["type"] = "text";
+      result["content"]["text"] = "direct";
+      return result;
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  mcp::jsonrpc::Request samplingRequest;
+  samplingRequest.id = std::int64_t {9304};
+  samplingRequest.method = "sampling/createMessage";
+  samplingRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*samplingRequest.params)["maxTokens"] = 32;
+  (*samplingRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+  mcp::jsonrpc::JsonValue message = mcp::jsonrpc::JsonValue::object();
+  message["role"] = "user";
+  message["content"] = mcp::jsonrpc::JsonValue::object();
+  message["content"]["type"] = "text";
+  message["content"]["text"] = "hello";
+  (*samplingRequest.params)["messages"].push_back(std::move(message));
+  (*samplingRequest.params)["task"] = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, samplingRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
+  const auto &success = std::get<mcp::jsonrpc::SuccessResponse>(response);
+  REQUIRE(success.result["model"].as<std::string>() == "no-task-model");
+  REQUIRE_FALSE(success.result.contains("task"));
+}
+
+TEST_CASE("Client elicitation/create supports task augmentation", "[client][tasks][elicitation]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::ElicitationCapability elicitationCapability;
+  elicitationCapability.form = true;
+
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.elicitationCreate = true;
+
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, tasksCapability, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setFormElicitationHandler(
+    [](const mcp::ElicitationCreateContext &, const mcp::FormElicitationRequest &) -> mcp::FormElicitationResult
+    {
+      mcp::FormElicitationResult result;
+      result.action = mcp::ElicitationAction::kAccept;
+      result.content = mcp::jsonrpc::JsonValue::object();
+      (*result.content)["name"] = "octocat";
+      return result;
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  mcp::jsonrpc::RequestContext authA;
+  authA.authContext = "auth-a";
+
+  mcp::jsonrpc::Request elicitationRequest;
+  elicitationRequest.id = std::int64_t {9305};
+  elicitationRequest.method = "elicitation/create";
+  elicitationRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*elicitationRequest.params)["mode"] = "form";
+  (*elicitationRequest.params)["message"] = "Collect project name";
+  (*elicitationRequest.params)["requestedSchema"] = mcp::jsonrpc::JsonValue::object();
+  (*elicitationRequest.params)["requestedSchema"]["type"] = "object";
+  (*elicitationRequest.params)["requestedSchema"]["properties"] = mcp::jsonrpc::JsonValue::object();
+  (*elicitationRequest.params)["requestedSchema"]["properties"]["name"] = mcp::jsonrpc::JsonValue::object();
+  (*elicitationRequest.params)["requestedSchema"]["properties"]["name"]["type"] = "string";
+  (*elicitationRequest.params)["task"] = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response taskCreateResponse = client->handleRequest(authA, elicitationRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(taskCreateResponse));
+  const auto &taskCreate = std::get<mcp::jsonrpc::SuccessResponse>(taskCreateResponse);
+  REQUIRE(taskCreate.result.contains("task"));
+  const std::string taskId = taskCreate.result["task"]["taskId"].as<std::string>();
+  REQUIRE_FALSE(taskId.empty());
+
+  mcp::jsonrpc::Request resultRequest;
+  resultRequest.id = std::int64_t {9306};
+  resultRequest.method = "tasks/result";
+  resultRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*resultRequest.params)["taskId"] = taskId;
+
+  const mcp::jsonrpc::Response taskResultResponse = client->handleRequest(authA, resultRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(taskResultResponse));
+  const auto &taskResult = std::get<mcp::jsonrpc::SuccessResponse>(taskResultResponse);
+  REQUIRE(taskResult.result["action"].as<std::string>() == "accept");
+  REQUIRE(taskResult.result["content"]["name"].as<std::string>() == "octocat");
+  REQUIRE(taskResult.result["_meta"]["io.modelcontextprotocol/related-task"]["taskId"].as<std::string>() == taskId);
+}
+
+TEST_CASE("Client tasks/list and tasks/cancel are gated by negotiated sub-capabilities", "[client][tasks][capabilities]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::SamplingCapability samplingCapability;
+
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.list = false;
+  tasksCapability.cancel = false;
+  tasksCapability.samplingCreateMessage = true;
+
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, tasksCapability, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setSamplingCreateMessageHandler(
+    [](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &) -> std::optional<mcp::jsonrpc::JsonValue>
+    {
+      mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
+      result["role"] = "assistant";
+      result["model"] = "task-model";
+      result["content"] = mcp::jsonrpc::JsonValue::object();
+      result["content"]["type"] = "text";
+      result["content"]["text"] = "ok";
+      return result;
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  mcp::jsonrpc::Request createRequest;
+  createRequest.id = std::int64_t {9307};
+  createRequest.method = "sampling/createMessage";
+  createRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*createRequest.params)["maxTokens"] = 16;
+  (*createRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+  mcp::jsonrpc::JsonValue message = mcp::jsonrpc::JsonValue::object();
+  message["role"] = "user";
+  message["content"] = mcp::jsonrpc::JsonValue::object();
+  message["content"]["type"] = "text";
+  message["content"]["text"] = "ping";
+  (*createRequest.params)["messages"].push_back(std::move(message));
+  (*createRequest.params)["task"] = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response createResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, createRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(createResponse));
+  const std::string taskId = std::get<mcp::jsonrpc::SuccessResponse>(createResponse).result["task"]["taskId"].as<std::string>();
+
+  mcp::jsonrpc::Request listRequest;
+  listRequest.id = std::int64_t {9308};
+  listRequest.method = "tasks/list";
+  listRequest.params = mcp::jsonrpc::JsonValue::object();
+  const mcp::jsonrpc::Response listResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, listRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(listResponse));
+  REQUIRE(std::get<mcp::jsonrpc::ErrorResponse>(listResponse).error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kMethodNotFound));
+
+  mcp::jsonrpc::Request cancelRequest;
+  cancelRequest.id = std::int64_t {9309};
+  cancelRequest.method = "tasks/cancel";
+  cancelRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*cancelRequest.params)["taskId"] = taskId;
+  const mcp::jsonrpc::Response cancelResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, cancelRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(cancelResponse));
+  REQUIRE(std::get<mcp::jsonrpc::ErrorResponse>(cancelResponse).error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kMethodNotFound));
+
+  mcp::jsonrpc::Request getRequest;
+  getRequest.id = std::int64_t {9310};
+  getRequest.method = "tasks/get";
+  getRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*getRequest.params)["taskId"] = taskId;
+  const mcp::jsonrpc::Response getResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, getRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(getResponse));
+
+  mcp::jsonrpc::Request resultRequest;
+  resultRequest.id = std::int64_t {9311};
+  resultRequest.method = "tasks/result";
+  resultRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*resultRequest.params)["taskId"] = taskId;
+  const mcp::jsonrpc::Response resultResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, resultRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(resultResponse));
+}
+
 TEST_CASE("Client elicitation/create enforces capability and mode gating", "[client][elicitation][capabilities]")
 {
   SECTION("elicitation/create returns method-not-found when elicitation capability is not negotiated")

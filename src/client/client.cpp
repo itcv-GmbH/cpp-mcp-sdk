@@ -51,6 +51,11 @@ static constexpr std::string_view kPromptsGetMethod = "prompts/get";
 static constexpr std::string_view kRootsListMethod = "roots/list";
 static constexpr std::string_view kSamplingCreateMessageMethod = "sampling/createMessage";
 static constexpr std::string_view kElicitationCreateMethod = "elicitation/create";
+static constexpr std::string_view kTasksGetMethod = "tasks/get";
+static constexpr std::string_view kTasksResultMethod = "tasks/result";
+static constexpr std::string_view kTasksListMethod = "tasks/list";
+static constexpr std::string_view kTasksCancelMethod = "tasks/cancel";
+static constexpr std::string_view kTasksStatusNotificationMethod = "notifications/tasks/status";
 static constexpr std::string_view kRootsListChangedNotificationMethod = "notifications/roots/list_changed";
 static constexpr std::string_view kElicitationCompleteNotificationMethod = "notifications/elicitation/complete";
 
@@ -1309,6 +1314,27 @@ Client::Client(std::shared_ptr<Session> session)
 
   router_.setOutboundMessageSender([this](const jsonrpc::RequestContext &, jsonrpc::Message message) -> void { dispatchOutboundMessage(std::move(message)); });
 
+  taskReceiver_ = std::make_shared<util::TaskReceiver>(std::make_shared<util::InMemoryTaskStore>());
+  taskReceiver_->setStatusObserver(
+    [this](const jsonrpc::RequestContext &context, const util::Task &task) -> void
+    {
+      const auto negotiatedCapabilities = negotiatedClientCapabilities();
+      if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->tasks().has_value())
+      {
+        return;
+      }
+
+      if (!session_->canSendNotification(kTasksStatusNotificationMethod))
+      {
+        return;
+      }
+
+      jsonrpc::Notification notification;
+      notification.method = std::string(kTasksStatusNotificationMethod);
+      notification.params = util::taskToJson(task);
+      router_.sendNotification(context, std::move(notification));
+    });
+
   router_.registerRequestHandler(std::string(kPingMethod),
                                  [](const jsonrpc::RequestContext &, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
                                  {
@@ -1400,16 +1426,80 @@ Client::Client(std::shared_ptr<Session> session)
         return makeReadyResponseFuture(makeSamplingUnsupportedResponse(request.id, "Client does not have a registered sampling/createMessage handler"));
       }
 
-      const jsonrpc::JsonValue params = request.params.has_value() ? *request.params : jsonrpc::JsonValue::object();
-      if (const auto semanticError = validateSamplingRequestSemantics(*this, params); semanticError.has_value())
+      const bool samplingTaskSupported = negotiatedCapabilities->tasks().has_value() && negotiatedCapabilities->tasks()->samplingCreateMessage;
+      util::TaskAugmentationRequest taskAugmentation;
+      if (samplingTaskSupported)
+      {
+        std::string taskParseError;
+        taskAugmentation = util::parseTaskAugmentation(request.params, &taskParseError);
+        if (!taskParseError.empty())
+        {
+          return makeReadyResponseFuture(makeSamplingInvalidParamsResponse(request.id, taskParseError));
+        }
+      }
+
+      jsonrpc::JsonValue effectiveParams = request.params.has_value() ? *request.params : jsonrpc::JsonValue::object();
+      if (effectiveParams.is_object() && effectiveParams.contains("task"))
+      {
+        effectiveParams.erase("task");
+      }
+
+      if (const auto semanticError = validateSamplingRequestSemantics(*this, effectiveParams); semanticError.has_value())
       {
         return makeReadyResponseFuture(makeSamplingInvalidParamsResponse(request.id, *semanticError));
+      }
+
+      if (samplingTaskSupported && taskAugmentation.requested)
+      {
+        const util::CreateTaskResult createTaskResult = taskReceiver_->createTask(context, taskAugmentation);
+        const std::string taskId = createTaskResult.task.taskId;
+        const SamplingCreateMessageHandler taskHandler = *samplingCreateMessageHandler;
+        const jsonrpc::RequestContext taskContext = context;
+        const jsonrpc::JsonValue taskParams = effectiveParams;
+        const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
+
+        std::thread(
+          [taskReceiver, taskId, taskHandler, taskContext, taskParams]() mutable -> void
+          {
+            jsonrpc::Response taskResponse;
+            try
+            {
+              std::optional<jsonrpc::JsonValue> result = taskHandler(SamplingCreateMessageContext {taskContext}, taskParams);
+              if (!result.has_value())
+              {
+                JsonRpcError rejectionError;
+                rejectionError.code = -1;
+                rejectionError.message = "User rejected sampling request";
+                taskResponse = jsonrpc::makeErrorResponse(std::move(rejectionError), std::int64_t {0});
+              }
+              else
+              {
+                ensureValidResultSchema(*result, "CreateMessageResult", kSamplingCreateMessageMethod);
+                jsonrpc::SuccessResponse success;
+                success.id = std::int64_t {0};
+                success.result = std::move(*result);
+                taskResponse = std::move(success);
+              }
+            }
+            catch (const std::exception &error)
+            {
+              taskResponse = jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string("sampling/createMessage failed: ") + error.what()), std::int64_t {0});
+            }
+
+            static_cast<void>(taskReceiver->completeTaskWithResponse(taskContext, taskId, taskResponse, util::TaskStatus::kCompleted));
+          })
+          .detach();
+
+        jsonrpc::SuccessResponse response;
+        response.id = request.id;
+        response.result = util::createTaskResultToJson(createTaskResult);
+        return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
       }
 
       std::optional<jsonrpc::JsonValue> result;
       try
       {
-        result = (*samplingCreateMessageHandler)(SamplingCreateMessageContext {context}, params);
+        result = (*samplingCreateMessageHandler)(SamplingCreateMessageContext {context}, effectiveParams);
       }
       catch (const std::exception &error)
       {
@@ -1455,6 +1545,45 @@ Client::Client(std::shared_ptr<Session> session)
       if (!params.is_object())
       {
         return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create requires object params"));
+      }
+
+      const bool elicitationTaskSupported = negotiatedCapabilities->tasks().has_value() && negotiatedCapabilities->tasks()->elicitationCreate;
+      if (elicitationTaskSupported)
+      {
+        std::string taskParseError;
+        const util::TaskAugmentationRequest taskAugmentation = util::parseTaskAugmentation(request.params, &taskParseError);
+        if (!taskParseError.empty())
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, taskParseError));
+        }
+
+        if (taskAugmentation.requested)
+        {
+          const util::CreateTaskResult createTaskResult = taskReceiver_->createTask(context, taskAugmentation);
+          const std::string taskId = createTaskResult.task.taskId;
+
+          jsonrpc::Request internalRequest = request;
+          internalRequest.id = std::string("elicitation-task-") + taskId;
+          if (internalRequest.params.has_value() && internalRequest.params->is_object() && internalRequest.params->contains("task"))
+          {
+            internalRequest.params->erase("task");
+          }
+
+          const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
+          const jsonrpc::RequestContext taskContext = context;
+          std::thread(
+            [this, taskReceiver, taskContext, internalRequest = std::move(internalRequest), taskId]() mutable -> void
+            {
+              const jsonrpc::Response taskResponse = handleRequest(taskContext, internalRequest).get();
+              static_cast<void>(taskReceiver->completeTaskWithResponse(taskContext, taskId, taskResponse, util::TaskStatus::kCompleted));
+            })
+            .detach();
+
+          jsonrpc::SuccessResponse response;
+          response.id = request.id;
+          response.result = util::createTaskResultToJson(createTaskResult);
+          return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
+        }
       }
 
       std::string mode = "form";
@@ -1606,6 +1735,58 @@ Client::Client(std::shared_ptr<Session> session)
       }
 
       return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create mode must be 'form' or 'url'"));
+    });
+
+  router_.registerRequestHandler(
+    std::string(kTasksGetMethod),
+    [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+    {
+      const auto negotiatedCapabilities = negotiatedClientCapabilities();
+      if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->tasks().has_value())
+      {
+        return makeReadyResponseFuture(jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::nullopt, "Tasks are not supported by this client"), request.id));
+      }
+
+      return makeReadyResponseFuture(taskReceiver_->handleTasksGetRequest(context, request));
+    });
+
+  router_.registerRequestHandler(
+    std::string(kTasksResultMethod),
+    [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+    {
+      const auto negotiatedCapabilities = negotiatedClientCapabilities();
+      if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->tasks().has_value())
+      {
+        return makeReadyResponseFuture(jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::nullopt, "Tasks are not supported by this client"), request.id));
+      }
+
+      return makeReadyResponseFuture(taskReceiver_->handleTasksResultRequest(context, request));
+    });
+
+  router_.registerRequestHandler(
+    std::string(kTasksListMethod),
+    [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+    {
+      const auto negotiatedCapabilities = negotiatedClientCapabilities();
+      if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->tasks().has_value() || !negotiatedCapabilities->tasks()->list)
+      {
+        return makeReadyResponseFuture(jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::nullopt, "tasks/list is not supported by this client"), request.id));
+      }
+
+      return makeReadyResponseFuture(taskReceiver_->handleTasksListRequest(context, request));
+    });
+
+  router_.registerRequestHandler(
+    std::string(kTasksCancelMethod),
+    [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+    {
+      const auto negotiatedCapabilities = negotiatedClientCapabilities();
+      if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->tasks().has_value() || !negotiatedCapabilities->tasks()->cancel)
+      {
+        return makeReadyResponseFuture(jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::nullopt, "tasks/cancel is not supported by this client"), request.id));
+      }
+
+      return makeReadyResponseFuture(taskReceiver_->handleTasksCancelRequest(context, request));
     });
 
   router_.registerNotificationHandler(std::string(kElicitationCompleteNotificationMethod),

@@ -34,7 +34,7 @@
 - [x] `task-023`: Client: Elicitation (form+url, URL safety, completion notifications) (Depends on: `task-019`)
 
 ## Phase 6: Tasks + Utilities (Blocked by Phases 4 and 5)
-- [ ] `task-024`: Tasks Utility (task augmentation + tasks/* + status notifications) (Depends on: `task-015`, `task-022`, `task-023`)
+- [x] `task-024`: Tasks Utility (task augmentation + tasks/* + status notifications) (Depends on: `task-015`, `task-022`, `task-023`)
 - [ ] `task-025`: Cancellation + Progress Utilities (Depends on: `task-005`, `task-024`)
 
 ## Phase 7: Authorization (Blocked by Phase 3)

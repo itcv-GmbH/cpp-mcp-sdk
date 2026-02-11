@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -29,6 +30,7 @@
 #include <mcp/server/resources.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/tools.hpp>
+#include <mcp/util/tasks.hpp>
 #include <mcp/version.hpp>
 
 namespace mcp
@@ -55,12 +57,18 @@ constexpr std::string_view kResourcesListChangedNotificationMethod = "notificati
 constexpr std::string_view kPromptsListMethod = "prompts/list";
 constexpr std::string_view kPromptsGetMethod = "prompts/get";
 constexpr std::string_view kPromptsListChangedNotificationMethod = "notifications/prompts/list_changed";
+constexpr std::string_view kTasksGetMethod = "tasks/get";
+constexpr std::string_view kTasksResultMethod = "tasks/result";
+constexpr std::string_view kTasksListMethod = "tasks/list";
+constexpr std::string_view kTasksCancelMethod = "tasks/cancel";
+constexpr std::string_view kTasksStatusNotificationMethod = "notifications/tasks/status";
 constexpr std::string_view kDefaultServerName = "mcp-cpp-sdk";
 constexpr std::string_view kCursorPrefix = "mcp:v1:";
 constexpr std::size_t kToolsPageSize = 50;
 constexpr std::size_t kResourcesPageSize = 50;
 constexpr std::size_t kResourceTemplatesPageSize = 50;
 constexpr std::size_t kPromptsPageSize = 50;
+constexpr std::size_t kTasksPageSize = 50;
 constexpr std::size_t kCompletionMaxValues = 100;
 
 constexpr std::uint32_t kBase64Shift18 = 18U;
@@ -93,6 +101,8 @@ struct SchemaValidationResult
   bool valid = false;
   std::vector<schema::ValidationDiagnostic> diagnostics;
 };
+
+auto validateJsonInstanceAgainstSchema(const jsonrpc::JsonValue &schemaObject, const jsonrpc::JsonValue &instance) -> SchemaValidationResult;
 
 constexpr std::array<std::pair<std::string_view, LogLevel>, 8> kLogLevelMappings {
   std::pair<std::string_view, LogLevel> {"debug", LogLevel::kDebug},
@@ -129,6 +139,35 @@ auto makeMethodNotFoundResponse(const jsonrpc::RequestId &requestId, std::string
 auto makeInvalidParamsResponse(const jsonrpc::RequestId &requestId, std::string message, std::optional<jsonrpc::JsonValue> data = std::nullopt) -> jsonrpc::Response
 {
   return jsonrpc::makeErrorResponse(jsonrpc::makeInvalidParamsError(std::move(data), std::move(message)), requestId);
+}
+
+enum class ToolTaskSupport : std::uint8_t
+{
+  kForbidden,
+  kOptional,
+  kRequired,
+};
+
+auto parseToolTaskSupport(const ToolDefinition &definition) -> ToolTaskSupport
+{
+  if (!definition.execution.has_value() || !definition.execution->is_object() || !definition.execution->contains("taskSupport")
+      || !(*definition.execution)["taskSupport"].is_string())
+  {
+    return ToolTaskSupport::kForbidden;
+  }
+
+  const std::string taskSupport = (*definition.execution)["taskSupport"].as<std::string>();
+  if (taskSupport == "optional")
+  {
+    return ToolTaskSupport::kOptional;
+  }
+
+  if (taskSupport == "required")
+  {
+    return ToolTaskSupport::kRequired;
+  }
+
+  return ToolTaskSupport::kForbidden;
 }
 
 auto makeResourceNotFoundResponse(const jsonrpc::RequestId &requestId, const std::string &uri) -> jsonrpc::Response
@@ -220,6 +259,100 @@ auto makeSchemaValidationErrorResult(std::string_view message, const std::vector
   }
 
   return result;
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+auto executeToolCall(const jsonrpc::RequestContext &context,
+                     const jsonrpc::RequestId &requestId,
+                     const std::string &toolName,
+                     const ToolDefinition &definition,
+                     const ToolHandler &handler,
+                     jsonrpc::JsonValue arguments) -> jsonrpc::Response
+{
+  static_cast<void>(context);
+
+  const detail::SchemaValidationResult inputValidation = detail::validateJsonInstanceAgainstSchema(definition.inputSchema, arguments);
+  if (!inputValidation.valid)
+  {
+    const CallToolResult validationError = detail::makeSchemaValidationErrorResult("Tool input validation failed for '" + toolName + "'", inputValidation.diagnostics);
+
+    jsonrpc::SuccessResponse response;
+    response.id = requestId;
+    response.result = jsonrpc::JsonValue::object();
+    response.result["content"] = validationError.content;
+    if (validationError.metadata.has_value())
+    {
+      response.result["_meta"] = *validationError.metadata;
+    }
+    response.result["isError"] = true;
+    return response;
+  }
+
+  CallToolResult result;
+  try
+  {
+    ToolCallContext callContext;
+    callContext.requestContext = context;
+    callContext.toolName = toolName;
+    callContext.arguments = std::move(arguments);
+    result = handler(callContext);
+  }
+  catch (const std::exception &exception)
+  {
+    result.content = detail::makeTextContentBlock(std::string("Tool execution failed: ") + exception.what());
+    result.isError = true;
+  }
+  catch (...)
+  {
+    result.content = detail::makeTextContentBlock("Tool execution failed: unknown error");
+    result.isError = true;
+  }
+
+  if (!result.content.is_array())
+  {
+    result.content = detail::makeTextContentBlock("Tool returned invalid content payload");
+    result.isError = true;
+  }
+
+  if (definition.outputSchema.has_value())
+  {
+    if (!result.structuredContent.has_value() || !result.structuredContent->is_object())
+    {
+      result.content = detail::makeTextContentBlock("Tool output schema requires structuredContent object");
+      result.isError = true;
+    }
+    else
+    {
+      const detail::SchemaValidationResult outputValidation = detail::validateJsonInstanceAgainstSchema(*definition.outputSchema, *result.structuredContent);
+      if (!outputValidation.valid)
+      {
+        const CallToolResult validationError = detail::makeSchemaValidationErrorResult("Tool output validation failed for '" + toolName + "'", outputValidation.diagnostics);
+        result.content = validationError.content;
+        result.metadata = validationError.metadata;
+        result.structuredContent.reset();
+        result.isError = true;
+      }
+    }
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = requestId;
+  response.result = jsonrpc::JsonValue::object();
+  response.result["content"] = result.content;
+  if (result.structuredContent.has_value())
+  {
+    response.result["structuredContent"] = *result.structuredContent;
+  }
+  if (result.metadata.has_value())
+  {
+    response.result["_meta"] = *result.metadata;
+  }
+  if (result.isError)
+  {
+    response.result["isError"] = true;
+  }
+
+  return response;
 }
 
 auto validateJsonInstanceAgainstSchema(const jsonrpc::JsonValue &schemaObject, const jsonrpc::JsonValue &instance) -> SchemaValidationResult
@@ -650,6 +783,26 @@ Server::Server(std::shared_ptr<Session> session, ServerConfiguration configurati
   {
     configuration_.serverInfo = detail::defaultServerInfo();
   }
+
+  if (!configuration_.taskStore)
+  {
+    configuration_.taskStore = std::make_shared<util::InMemoryTaskStore>();
+  }
+
+  taskReceiver_ = std::make_shared<util::TaskReceiver>(configuration_.taskStore, configuration_.defaultTaskPollInterval, detail::kTasksPageSize);
+  taskReceiver_->setStatusObserver(
+    [this](const jsonrpc::RequestContext &context, const util::Task &task) -> void
+    {
+      if (!configuration_.emitTaskStatusNotifications || !session_->canSendNotification(detail::kTasksStatusNotificationMethod))
+      {
+        return;
+      }
+
+      jsonrpc::Notification notification;
+      notification.method = std::string(detail::kTasksStatusNotificationMethod);
+      notification.params = util::taskToJson(task);
+      sendNotification(context, std::move(notification));
+    });
 
   configureSessionInitialization();
   registerCoreHandlers();
@@ -1244,6 +1397,22 @@ auto Server::registerCoreHandlers() -> void
   router_.registerRequestHandler(std::string(detail::kPromptsGetMethod),
                                  [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
                                  { return detail::makeReadyResponseFuture(handlePromptsGetRequest(context, request)); });
+
+  router_.registerRequestHandler(std::string(detail::kTasksGetMethod),
+                                 [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleTasksGetRequest(context, request)); });
+
+  router_.registerRequestHandler(std::string(detail::kTasksResultMethod),
+                                 [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleTasksResultRequest(context, request)); });
+
+  router_.registerRequestHandler(std::string(detail::kTasksListMethod),
+                                 [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleTasksListRequest(context, request)); });
+
+  router_.registerRequestHandler(std::string(detail::kTasksCancelMethod),
+                                 [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleTasksCancelRequest(context, request)); });
 }
 
 auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
@@ -1385,87 +1554,77 @@ auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, cons
     return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Tool registration is incomplete"), request.id);
   }
 
-  const detail::SchemaValidationResult inputValidation = detail::validateJsonInstanceAgainstSchema(definition->inputSchema, arguments);
-  if (!inputValidation.valid)
+  const bool taskCapabilityEnabled = configuration_.capabilities.tasks().has_value() && configuration_.capabilities.tasks()->toolsCall;
+  if (!taskCapabilityEnabled)
   {
-    const CallToolResult validationError = detail::makeSchemaValidationErrorResult("Tool input validation failed for '" + toolName + "'", inputValidation.diagnostics);
+    return detail::executeToolCall(context, request.id, toolName, *definition, handler, std::move(arguments));
+  }
 
-    jsonrpc::SuccessResponse response;
-    response.id = request.id;
-    response.result = jsonrpc::JsonValue::object();
-    response.result["content"] = validationError.content;
-    if (validationError.metadata.has_value())
+  std::string taskParseError;
+  const util::TaskAugmentationRequest taskAugmentation = util::parseTaskAugmentation(request.params, &taskParseError);
+  if (!taskParseError.empty())
+  {
+    return detail::makeInvalidParamsResponse(request.id, taskParseError);
+  }
+
+  const detail::ToolTaskSupport toolTaskSupport = detail::parseToolTaskSupport(*definition);
+  if (!taskAugmentation.requested && toolTaskSupport == detail::ToolTaskSupport::kRequired)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::nullopt, "Task augmentation required for this tool"), request.id);
+  }
+
+  if (taskAugmentation.requested && toolTaskSupport == detail::ToolTaskSupport::kForbidden)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::nullopt, "Task augmentation is not supported for this tool"), request.id);
+  }
+
+  if (!taskAugmentation.requested)
+  {
+    return detail::executeToolCall(context, request.id, toolName, *definition, handler, std::move(arguments));
+  }
+
+  if (!taskReceiver_)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Task receiver is unavailable"), request.id);
+  }
+
+  const util::CreateTaskResult createTaskResult = taskReceiver_->createTask(context, taskAugmentation, std::string("The operation is now in progress."));
+
+  std::string taskId = createTaskResult.task.taskId;
+  ToolDefinition definitionCopy = *definition;
+  ToolHandler handlerCopy = handler;
+  jsonrpc::JsonValue argumentsCopy = std::move(arguments);
+  jsonrpc::RequestContext backgroundContext = context;
+  const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
+  std::thread(
+    [taskId = std::move(taskId),
+     toolName,
+     definitionCopy = std::move(definitionCopy),
+     handlerCopy = std::move(handlerCopy),
+     argumentsCopy = std::move(argumentsCopy),
+     backgroundContext = std::move(backgroundContext),
+     taskReceiver]() mutable -> void
     {
-      response.result["_meta"] = *validationError.metadata;
-    }
-    response.result["isError"] = true;
-    return response;
-  }
+      const jsonrpc::Response toolResponse =
+        detail::executeToolCall(backgroundContext, jsonrpc::RequestId {std::string("task-") + taskId}, toolName, definitionCopy, handlerCopy, std::move(argumentsCopy));
 
-  CallToolResult result;
-  try
-  {
-    ToolCallContext callContext;
-    callContext.requestContext = context;
-    callContext.toolName = toolName;
-    callContext.arguments = std::move(arguments);
-    result = handler(callContext);
-  }
-  catch (const std::exception &exception)
-  {
-    result.content = detail::makeTextContentBlock(std::string("Tool execution failed: ") + exception.what());
-    result.isError = true;
-  }
-  catch (...)
-  {
-    result.content = detail::makeTextContentBlock("Tool execution failed: unknown error");
-    result.isError = true;
-  }
-
-  if (!result.content.is_array())
-  {
-    result.content = detail::makeTextContentBlock("Tool returned invalid content payload");
-    result.isError = true;
-  }
-
-  if (definition->outputSchema.has_value())
-  {
-    if (!result.structuredContent.has_value() || !result.structuredContent->is_object())
-    {
-      result.content = detail::makeTextContentBlock("Tool output schema requires structuredContent object");
-      result.isError = true;
-    }
-    else
-    {
-      const detail::SchemaValidationResult outputValidation = detail::validateJsonInstanceAgainstSchema(*definition->outputSchema, *result.structuredContent);
-      if (!outputValidation.valid)
+      util::TaskStatus successStatus = util::TaskStatus::kCompleted;
+      if (std::holds_alternative<jsonrpc::SuccessResponse>(toolResponse))
       {
-        const CallToolResult validationError = detail::makeSchemaValidationErrorResult("Tool output validation failed for '" + toolName + "'", outputValidation.diagnostics);
-        result.content = validationError.content;
-        result.metadata = validationError.metadata;
-        result.structuredContent.reset();
-        result.isError = true;
+        const auto &success = std::get<jsonrpc::SuccessResponse>(toolResponse);
+        if (success.result.contains("isError") && success.result["isError"].is_bool() && success.result["isError"].as<bool>())
+        {
+          successStatus = util::TaskStatus::kFailed;
+        }
       }
-    }
-  }
+
+      static_cast<void>(taskReceiver->completeTaskWithResponse(backgroundContext, taskId, toolResponse, successStatus));
+    })
+    .detach();
 
   jsonrpc::SuccessResponse response;
   response.id = request.id;
-  response.result = jsonrpc::JsonValue::object();
-  response.result["content"] = result.content;
-  if (result.structuredContent.has_value())
-  {
-    response.result["structuredContent"] = *result.structuredContent;
-  }
-  if (result.metadata.has_value())
-  {
-    response.result["_meta"] = *result.metadata;
-  }
-  if (result.isError)
-  {
-    response.result["isError"] = true;
-  }
-
+  response.result = util::createTaskResultToJson(createTaskResult);
   return response;
 }
 
@@ -2043,6 +2202,46 @@ auto Server::handlePromptsGetRequest(const jsonrpc::RequestContext &context, con
   return response;
 }
 
+auto Server::handleTasksGetRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  if (!taskReceiver_)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Task receiver is unavailable"), request.id);
+  }
+
+  return taskReceiver_->handleTasksGetRequest(context, request);
+}
+
+auto Server::handleTasksResultRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  if (!taskReceiver_)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Task receiver is unavailable"), request.id);
+  }
+
+  return taskReceiver_->handleTasksResultRequest(context, request);
+}
+
+auto Server::handleTasksListRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  if (!taskReceiver_)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Task receiver is unavailable"), request.id);
+  }
+
+  return taskReceiver_->handleTasksListRequest(context, request);
+}
+
+auto Server::handleTasksCancelRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  if (!taskReceiver_)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Task receiver is unavailable"), request.id);
+  }
+
+  return taskReceiver_->handleTasksCancelRequest(context, request);
+}
+
 auto Server::handleLoggingSetLevelRequest(const jsonrpc::Request &request) -> jsonrpc::Response
 {
   if (!request.params.has_value() || !request.params->is_object())
@@ -2198,6 +2397,21 @@ auto Server::isMethodEnabledByCapability(std::string_view method) const -> bool
   if (method == detail::kResourcesSubscribeMethod || method == detail::kResourcesUnsubscribeMethod)
   {
     return configuration_.capabilities.resources().has_value() && configuration_.capabilities.resources()->subscribe;
+  }
+
+  if (method == detail::kTasksListMethod)
+  {
+    return configuration_.capabilities.tasks().has_value() && configuration_.capabilities.tasks()->list;
+  }
+
+  if (method == detail::kTasksCancelMethod)
+  {
+    return configuration_.capabilities.tasks().has_value() && configuration_.capabilities.tasks()->cancel;
+  }
+
+  if (method == detail::kTasksGetMethod || method == detail::kTasksResultMethod)
+  {
+    return configuration_.capabilities.tasks().has_value();
   }
 
   const auto capability = detail::capabilityForMethod(method);

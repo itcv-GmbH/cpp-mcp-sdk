@@ -32,6 +32,7 @@ struct RequestContext
 {
   std::string protocolVersion = std::string(kLatestProtocolVersion);
   std::optional<std::string> sessionId;
+  std::optional<std::string> authContext;
 };
 
 struct Request

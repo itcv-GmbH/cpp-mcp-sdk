@@ -14,6 +14,7 @@
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
+#include <mcp/util/tasks.hpp>
 
 namespace mcp
 {
@@ -24,6 +25,9 @@ struct ServerConfiguration
   ServerCapabilities capabilities;
   std::optional<Implementation> serverInfo;
   std::optional<std::string> instructions;
+  std::shared_ptr<util::TaskStore> taskStore;
+  std::optional<std::int64_t> defaultTaskPollInterval = std::int64_t {1000};
+  bool emitTaskStatusNotifications = false;
 };
 
 enum class LogLevel : std::uint8_t
@@ -136,6 +140,10 @@ private:
   auto handleResourcesUnsubscribeRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handlePromptsGetRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleTasksGetRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleTasksResultRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleTasksListRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleTasksCancelRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleLoggingSetLevelRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleCompletionCompleteRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
 
@@ -155,6 +163,7 @@ private:
   std::vector<ResourceTemplateDefinition> resourceTemplates_;
   std::vector<ResourceSubscription> resourceSubscriptions_;
   std::vector<RegisteredPrompt> prompts_;
+  std::shared_ptr<util::TaskReceiver> taskReceiver_;
   LogLevel logLevel_ = LogLevel::kDebug;
 };
 

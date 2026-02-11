@@ -52,6 +52,7 @@ target_sources(mcp_sdk
         src/transport/http_runtime.cpp
         src/transport/http_server.cpp
         src/transport/stdio.cpp
+        src/util/tasks.cpp
         src/version.cpp
 )
 

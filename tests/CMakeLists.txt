@@ -72,6 +72,16 @@ target_link_libraries(mcp_sdk_test_server
 
 add_test(NAME mcp_sdk_server_test COMMAND mcp_sdk_test_server)
 
+add_executable(mcp_sdk_test_tasks tasks_test.cpp)
+
+target_link_libraries(mcp_sdk_test_tasks
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_tasks_test COMMAND mcp_sdk_test_tasks)
+
 add_executable(mcp_sdk_test_transport_stdio transport_stdio_test.cpp)
 
 target_link_libraries(mcp_sdk_test_transport_stdio

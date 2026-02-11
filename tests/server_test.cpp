@@ -563,6 +563,248 @@ TEST_CASE("Server tools call validates structured output when output schema is d
   REQUIRE_FALSE(invalidOutput.result.contains("structuredContent"));
 }
 
+TEST_CASE("Server tools/call task augmentation returns deferred result and enforces auth binding", "[server][tasks][tools]")
+{
+  mcp::ToolsCapability toolsCapability;
+
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.list = true;
+  tasksCapability.cancel = true;
+  tasksCapability.toolsCall = true;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
+  configuration.emitTaskStatusNotifications = true;
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  mcp::ToolDefinition toolDefinition = makeToolDefinition("task-echo");
+  toolDefinition.execution = mcp::jsonrpc::JsonValue::object();
+  (*toolDefinition.execution)["taskSupport"] = "optional";
+  server->registerTool(toolDefinition,
+                       [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+
+                         mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
+                         content["type"] = "text";
+                         content["text"] = "echo:" + context.arguments["value"].as<std::string>();
+                         result.content.push_back(std::move(content));
+                         return result;
+                       });
+
+  std::mutex messagesMutex;
+  std::vector<mcp::jsonrpc::Message> outboundMessages;
+  server->setOutboundMessageSender(
+    [&messagesMutex, &outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+    {
+      const std::scoped_lock lock(messagesMutex);
+      outboundMessages.push_back(std::move(message));
+    });
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::RequestContext authA;
+  authA.authContext = "auth-a";
+
+  mcp::jsonrpc::Request taskToolCall;
+  taskToolCall.id = std::int64_t {17};
+  taskToolCall.method = "tools/call";
+  taskToolCall.params = mcp::jsonrpc::JsonValue::object();
+  (*taskToolCall.params)["name"] = "task-echo";
+  (*taskToolCall.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*taskToolCall.params)["arguments"]["value"] = "payload";
+  (*taskToolCall.params)["task"] = mcp::jsonrpc::JsonValue::object();
+  (*taskToolCall.params)["task"]["ttl"] = std::int64_t {5000};
+
+  const mcp::jsonrpc::Response taskCreateResponse = dispatchRequest(*server, taskToolCall, authA);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(taskCreateResponse));
+  const auto &createdTask = std::get<mcp::jsonrpc::SuccessResponse>(taskCreateResponse);
+  REQUIRE(createdTask.result.contains("task"));
+  REQUIRE(createdTask.result["task"]["status"].as<std::string>() == "working");
+  REQUIRE(createdTask.result["task"]["ttl"].as<std::int64_t>() == 5000);
+  const std::string taskId = createdTask.result["task"]["taskId"].as<std::string>();
+  REQUIRE_FALSE(taskId.empty());
+
+  mcp::jsonrpc::Request resultRequest;
+  resultRequest.id = std::int64_t {18};
+  resultRequest.method = "tasks/result";
+  resultRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*resultRequest.params)["taskId"] = taskId;
+
+  const mcp::jsonrpc::Response taskResultResponse = dispatchRequest(*server, resultRequest, authA);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(taskResultResponse));
+  const auto &taskResult = std::get<mcp::jsonrpc::SuccessResponse>(taskResultResponse);
+  REQUIRE(taskResult.result["content"][0]["text"].as<std::string>() == "echo:payload");
+  REQUIRE(taskResult.result.contains("_meta"));
+  REQUIRE(taskResult.result["_meta"]["io.modelcontextprotocol/related-task"]["taskId"].as<std::string>() == taskId);
+
+  mcp::jsonrpc::RequestContext authB;
+  authB.authContext = "auth-b";
+
+  mcp::jsonrpc::Request deniedGet;
+  deniedGet.id = std::int64_t {19};
+  deniedGet.method = "tasks/get";
+  deniedGet.params = mcp::jsonrpc::JsonValue::object();
+  (*deniedGet.params)["taskId"] = taskId;
+
+  const mcp::jsonrpc::Response deniedGetResponse = dispatchRequest(*server, deniedGet, authB);
+  assertErrorCode(deniedGetResponse, mcp::JsonRpcErrorCode::kInvalidParams);
+
+  bool sawStatusNotification = false;
+  {
+    const std::scoped_lock lock(messagesMutex);
+    for (const auto &message : outboundMessages)
+    {
+      if (!std::holds_alternative<mcp::jsonrpc::Notification>(message))
+      {
+        continue;
+      }
+
+      const auto &notification = std::get<mcp::jsonrpc::Notification>(message);
+      if (notification.method == "notifications/tasks/status" && notification.params.has_value() && (*notification.params)["taskId"].as<std::string>() == taskId)
+      {
+        sawStatusNotification = true;
+      }
+    }
+  }
+
+  REQUIRE(sawStatusNotification);
+}
+
+TEST_CASE("Server tools/call enforces tool-level task support negotiation", "[server][tasks][negotiation]")
+{
+  mcp::ToolsCapability toolsCapability;
+
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.toolsCall = true;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  mcp::ToolDefinition requiredTaskTool = makeToolDefinition("requires-task");
+  requiredTaskTool.execution = mcp::jsonrpc::JsonValue::object();
+  (*requiredTaskTool.execution)["taskSupport"] = "required";
+  server->registerTool(requiredTaskTool,
+                       [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         return result;
+                       });
+
+  mcp::ToolDefinition forbiddenTaskTool = makeToolDefinition("forbids-task");
+  forbiddenTaskTool.execution = mcp::jsonrpc::JsonValue::object();
+  (*forbiddenTaskTool.execution)["taskSupport"] = "forbidden";
+  server->registerTool(forbiddenTaskTool,
+                       [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         return result;
+                       });
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request missingTaskAugmentation;
+  missingTaskAugmentation.id = std::int64_t {20};
+  missingTaskAugmentation.method = "tools/call";
+  missingTaskAugmentation.params = mcp::jsonrpc::JsonValue::object();
+  (*missingTaskAugmentation.params)["name"] = "requires-task";
+  (*missingTaskAugmentation.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*missingTaskAugmentation.params)["arguments"]["value"] = "x";
+
+  const mcp::jsonrpc::Response missingTaskResponse = dispatchRequest(*server, missingTaskAugmentation);
+  assertErrorCode(missingTaskResponse, mcp::JsonRpcErrorCode::kMethodNotFound);
+
+  mcp::jsonrpc::Request forbiddenTaskAugmentation;
+  forbiddenTaskAugmentation.id = std::int64_t {21};
+  forbiddenTaskAugmentation.method = "tools/call";
+  forbiddenTaskAugmentation.params = mcp::jsonrpc::JsonValue::object();
+  (*forbiddenTaskAugmentation.params)["name"] = "forbids-task";
+  (*forbiddenTaskAugmentation.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*forbiddenTaskAugmentation.params)["arguments"]["value"] = "x";
+  (*forbiddenTaskAugmentation.params)["task"] = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response forbiddenTaskResponse = dispatchRequest(*server, forbiddenTaskAugmentation);
+  assertErrorCode(forbiddenTaskResponse, mcp::JsonRpcErrorCode::kMethodNotFound);
+}
+
+TEST_CASE("Server tasks/list and tasks/cancel are gated by sub-capabilities", "[server][tasks][capabilities]")
+{
+  mcp::ToolsCapability toolsCapability;
+
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.list = false;
+  tasksCapability.cancel = false;
+  tasksCapability.toolsCall = true;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  mcp::ToolDefinition toolDefinition = makeToolDefinition("task-tool");
+  toolDefinition.execution = mcp::jsonrpc::JsonValue::object();
+  (*toolDefinition.execution)["taskSupport"] = "optional";
+  server->registerTool(toolDefinition,
+                       [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         return result;
+                       });
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request createRequest;
+  createRequest.id = std::int64_t {22};
+  createRequest.method = "tools/call";
+  createRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*createRequest.params)["name"] = "task-tool";
+  (*createRequest.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*createRequest.params)["arguments"]["value"] = "x";
+  (*createRequest.params)["task"] = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response createResponse = dispatchRequest(*server, createRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(createResponse));
+  const std::string taskId = std::get<mcp::jsonrpc::SuccessResponse>(createResponse).result["task"]["taskId"].as<std::string>();
+
+  mcp::jsonrpc::Request listRequest;
+  listRequest.id = std::int64_t {23};
+  listRequest.method = "tasks/list";
+  listRequest.params = mcp::jsonrpc::JsonValue::object();
+  const mcp::jsonrpc::Response listResponse = dispatchRequest(*server, listRequest);
+  assertErrorCode(listResponse, mcp::JsonRpcErrorCode::kMethodNotFound);
+
+  mcp::jsonrpc::Request cancelRequest;
+  cancelRequest.id = std::int64_t {24};
+  cancelRequest.method = "tasks/cancel";
+  cancelRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*cancelRequest.params)["taskId"] = taskId;
+  const mcp::jsonrpc::Response cancelResponse = dispatchRequest(*server, cancelRequest);
+  assertErrorCode(cancelResponse, mcp::JsonRpcErrorCode::kMethodNotFound);
+
+  mcp::jsonrpc::Request getRequest;
+  getRequest.id = std::int64_t {25};
+  getRequest.method = "tasks/get";
+  getRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*getRequest.params)["taskId"] = taskId;
+  const mcp::jsonrpc::Response getResponse = dispatchRequest(*server, getRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(getResponse));
+
+  mcp::jsonrpc::Request resultRequest;
+  resultRequest.id = std::int64_t {26};
+  resultRequest.method = "tasks/result";
+  resultRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*resultRequest.params)["taskId"] = taskId;
+  const mcp::jsonrpc::Response resultResponse = dispatchRequest(*server, resultRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(resultResponse));
+}
+
 TEST_CASE("Server emits tools list_changed notifications when enabled", "[server][tools][notifications]")
 {
   mcp::ToolsCapability toolsCapability;

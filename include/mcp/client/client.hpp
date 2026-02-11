@@ -24,6 +24,7 @@
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
 #include <mcp/transport/transport.hpp>
+#include <mcp/util/tasks.hpp>
 
 namespace mcp
 {
@@ -196,6 +197,7 @@ private:
   std::optional<UrlElicitationHandler> urlElicitationHandler_;
   std::optional<UrlElicitationCompletionHandler> urlElicitationCompletionHandler_;
   std::unordered_set<std::string> pendingUrlElicitationIds_;
+  std::shared_ptr<util::TaskReceiver> taskReceiver_;
   std::optional<jsonrpc::RequestId> pendingInitializeRequestId_;
   std::int64_t nextRequestId_ = 1;
 };
