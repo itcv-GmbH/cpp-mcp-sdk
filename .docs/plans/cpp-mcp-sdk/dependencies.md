@@ -16,7 +16,7 @@
 - [x] `task-009`: Implement Subprocess stdio Client (Cross-Platform) (Depends on: `task-008`)
 - [x] `task-010`: Implement Streamable HTTP Common (Headers, Session, Origin Policy) (Depends on: `task-006`)
 - [x] `task-011`: Implement Streamable HTTP Server (POST + GET SSE, resumability) (Depends on: `task-010`)
-- [ ] `task-012`: Implement Streamable HTTP Client (POST + GET SSE, resumability) (Depends on: `task-010`)
+- [x] `task-012`: Implement Streamable HTTP Client (POST + GET SSE, resumability) (Depends on: `task-010`)
 - [ ] `task-013`: Add HTTPS (TLS) for HTTP Server + Client (Runtime Config) (Depends on: `task-011`, `task-012`)
 
 ## Phase 4: Server Features (Blocked by Phase 3)

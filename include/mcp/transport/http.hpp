@@ -490,6 +490,53 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
+struct StreamableHttpSendResult
+{
+  std::uint16_t statusCode = 0;
+  std::vector<jsonrpc::Message> messages;
+  std::optional<jsonrpc::Response> response;
+};
+
+struct StreamableHttpListenResult
+{
+  std::uint16_t statusCode = 0;
+  std::vector<jsonrpc::Message> messages;
+  bool streamOpen = false;
+};
+
+struct StreamableHttpClientOptions
+{
+  std::string endpointUrl;
+  std::optional<std::string> bearerToken;
+  SessionHeaderState sessionState;
+  ProtocolVersionHeaderState protocolVersionState;
+  std::uint32_t defaultRetryMilliseconds = 1000;
+  std::function<void(std::uint32_t)> waitBeforeReconnect;
+};
+
+class StreamableHttpClient
+{
+public:
+  using RequestExecutor = std::function<ServerResponse(const ServerRequest &)>;
+
+  explicit StreamableHttpClient(StreamableHttpClientOptions options, RequestExecutor requestExecutor);
+  ~StreamableHttpClient();
+
+  StreamableHttpClient(const StreamableHttpClient &) = delete;
+  auto operator=(const StreamableHttpClient &) -> StreamableHttpClient & = delete;
+  StreamableHttpClient(StreamableHttpClient &&other) noexcept;
+  auto operator=(StreamableHttpClient &&other) noexcept -> StreamableHttpClient &;
+
+  auto send(const jsonrpc::Message &message) -> StreamableHttpSendResult;
+  auto openListenStream() -> StreamableHttpListenResult;
+  auto pollListenStream() -> StreamableHttpListenResult;
+  [[nodiscard]] auto hasActiveListenStream() const noexcept -> bool;
+
+private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+
 }  // namespace http
 
 struct HttpClientOptions

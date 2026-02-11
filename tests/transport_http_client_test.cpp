@@ -1,0 +1,351 @@
+#include <cstdint>
+#include <mutex>
+#include <optional>
+#include <set>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include <catch2/catch_test_macros.hpp>
+#include <mcp/http/sse.hpp>
+#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/transport/http.hpp>
+
+// NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
+// readability-magic-numbers, misc-const-correctness)
+
+namespace
+{
+
+namespace mcp_http = mcp::transport::http;
+
+class LocalHttpServerFixture
+{
+public:
+  mcp_http::StreamableHttpServer server;
+
+  auto execute(const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+  {
+    {
+      const std::scoped_lock lock(mutex_);
+      requests_.push_back(request);
+    }
+
+    if (beforeHandle)
+    {
+      beforeHandle(request);
+    }
+
+    return server.handleRequest(request);
+  }
+
+  [[nodiscard]] auto requests() const -> std::vector<mcp_http::ServerRequest>
+  {
+    const std::scoped_lock lock(mutex_);
+    return requests_;
+  }
+
+  std::function<void(const mcp_http::ServerRequest &)> beforeHandle;
+
+private:
+  mutable std::mutex mutex_;
+  std::vector<mcp_http::ServerRequest> requests_;
+};
+
+auto makeClientOptions(std::vector<std::uint32_t> *retryDelays = nullptr) -> mcp_http::StreamableHttpClientOptions
+{
+  mcp_http::StreamableHttpClientOptions options;
+  options.endpointUrl = "http://localhost/mcp";
+  options.defaultRetryMilliseconds = 10;
+  options.waitBeforeReconnect = [retryDelays](std::uint32_t retryMilliseconds) -> void
+  {
+    if (retryDelays != nullptr)
+    {
+      retryDelays->push_back(retryMilliseconds);
+    }
+  };
+  return options;
+}
+
+auto makeRequest(std::int64_t id, std::string method) -> mcp::jsonrpc::Message
+{
+  mcp::jsonrpc::Request request;
+  request.id = id;
+  request.method = std::move(method);
+  return mcp::jsonrpc::Message {request};
+}
+
+auto makeSuccessResponse(std::int64_t id) -> mcp::jsonrpc::Message
+{
+  mcp::jsonrpc::SuccessResponse response;
+  response.id = id;
+  response.result = mcp::jsonrpc::JsonValue::object();
+  response.result["ok"] = true;
+  return mcp::jsonrpc::Message {response};
+}
+
+auto makeNotification(std::string method) -> mcp::jsonrpc::Message
+{
+  mcp::jsonrpc::Notification notification;
+  notification.method = std::move(method);
+  return mcp::jsonrpc::Message {notification};
+}
+
+auto isNotificationMethod(const mcp::jsonrpc::Message &message, std::string_view method) -> bool
+{
+  return std::holds_alternative<mcp::jsonrpc::Notification>(message) && std::get<mcp::jsonrpc::Notification>(message).method == method;
+}
+
+auto isSuccessResponseFor(const mcp::jsonrpc::Message &message, std::int64_t id) -> bool
+{
+  return std::holds_alternative<mcp::jsonrpc::SuccessResponse>(message) && std::get<mcp::jsonrpc::SuccessResponse>(message).id == mcp::jsonrpc::RequestId {std::int64_t {id}};
+}
+
+auto countPostRequests(const std::vector<mcp_http::ServerRequest> &requests) -> std::size_t
+{
+  std::size_t count = 0;
+  for (const auto &request : requests)
+  {
+    if (request.method == mcp_http::ServerRequestMethod::kPost)
+    {
+      ++count;
+    }
+  }
+
+  return count;
+}
+
+}  // namespace
+
+TEST_CASE("HTTP client sends notifications/responses with POST and handles 202", "[transport][http][client]")
+{
+  LocalHttpServerFixture fixture;
+  mcp_http::StreamableHttpClient client(makeClientOptions(), [&fixture](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse { return fixture.execute(request); });
+
+  const auto notificationResult = client.send(makeNotification("notifications/initialized"));
+  REQUIRE(notificationResult.statusCode == 202);
+  REQUIRE_FALSE(notificationResult.response.has_value());
+
+  const auto responseResult = client.send(makeSuccessResponse(7));
+  REQUIRE(responseResult.statusCode == 202);
+  REQUIRE_FALSE(responseResult.response.has_value());
+
+  const auto requests = fixture.requests();
+  REQUIRE(requests.size() == 2);
+
+  for (const auto &request : requests)
+  {
+    REQUIRE(request.method == mcp_http::ServerRequestMethod::kPost);
+    REQUIRE(mcp_http::getHeader(request.headers, mcp_http::kHeaderAccept) == std::optional<std::string> {"application/json, text/event-stream"});
+    REQUIRE(mcp_http::getHeader(request.headers, mcp_http::kHeaderContentType) == std::optional<std::string> {"application/json"});
+  }
+}
+
+TEST_CASE("HTTP client reconnects with GET Last-Event-ID and respects retry guidance", "[transport][http][client]")
+{
+  LocalHttpServerFixture fixture;
+  fixture.server.setRequestHandler(
+    [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &) -> mcp_http::StreamableRequestResult
+    {
+      mcp_http::StreamableRequestResult result;
+      result.useSse = true;
+      result.closeSseConnection = true;
+      result.retryMilliseconds = 37;
+      result.preResponseMessages.push_back(makeNotification("notifications/customProgress"));
+      return result;
+    });
+
+  bool queuedFinalResponse = false;
+  fixture.beforeHandle = [&fixture, &queuedFinalResponse](const mcp_http::ServerRequest &request) -> void
+  {
+    const auto lastEventId = mcp_http::getHeader(request.headers, mcp_http::kHeaderLastEventId);
+    if (!queuedFinalResponse && request.method == mcp_http::ServerRequestMethod::kGet && lastEventId.has_value())
+    {
+      REQUIRE(fixture.server.enqueueServerMessage(makeSuccessResponse(91)));
+      queuedFinalResponse = true;
+    }
+  };
+
+  std::vector<std::uint32_t> retryDelays;
+  mcp_http::StreamableHttpClient client(makeClientOptions(&retryDelays),
+                                        [&fixture](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse { return fixture.execute(request); });
+
+  const auto result = client.send(makeRequest(91, "longRunning"));
+
+  REQUIRE(result.response.has_value());
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(*result.response));
+  REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(*result.response).id == mcp::jsonrpc::RequestId {std::int64_t {91}});
+  REQUIRE(result.messages.size() == 1);
+  REQUIRE(isNotificationMethod(result.messages.front(), "notifications/customProgress"));
+  REQUIRE(retryDelays == std::vector<std::uint32_t> {37});
+
+  const auto requests = fixture.requests();
+  REQUIRE(requests.size() >= 2);
+  REQUIRE(requests.front().method == mcp_http::ServerRequestMethod::kPost);
+  REQUIRE(countPostRequests(requests) == 1);
+
+  bool observedResumeGet = false;
+  for (const auto &request : requests)
+  {
+    if (request.method != mcp_http::ServerRequestMethod::kGet)
+    {
+      continue;
+    }
+
+    const auto lastEventId = mcp_http::getHeader(request.headers, mcp_http::kHeaderLastEventId);
+    if (!lastEventId.has_value())
+    {
+      continue;
+    }
+
+    observedResumeGet = true;
+    REQUIRE(mcp_http::getHeader(request.headers, mcp_http::kHeaderAccept) == std::optional<std::string> {"text/event-stream"});
+    REQUIRE(mcp::http::sse::parseEventId(*lastEventId).has_value());
+  }
+
+  REQUIRE(observedResumeGet);
+}
+
+TEST_CASE("HTTP client supports GET listen stream alongside POST SSE resume without duplicates", "[transport][http][client]")
+{
+  LocalHttpServerFixture fixture;
+  fixture.server.setRequestHandler(
+    [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &) -> mcp_http::StreamableRequestResult
+    {
+      mcp_http::StreamableRequestResult result;
+      result.useSse = true;
+      result.closeSseConnection = true;
+      result.retryMilliseconds = 12;
+      return result;
+    });
+
+  bool sawPost = false;
+  bool queuedPostResponse = false;
+  fixture.beforeHandle = [&fixture, &sawPost, &queuedPostResponse](const mcp_http::ServerRequest &request) -> void
+  {
+    if (request.method == mcp_http::ServerRequestMethod::kPost)
+    {
+      sawPost = true;
+      return;
+    }
+
+    const auto lastEventId = mcp_http::getHeader(request.headers, mcp_http::kHeaderLastEventId);
+    if (request.method == mcp_http::ServerRequestMethod::kGet && sawPost && !queuedPostResponse && lastEventId.has_value())
+    {
+      REQUIRE(fixture.server.enqueueServerMessage(makeSuccessResponse(17)));
+      queuedPostResponse = true;
+    }
+  };
+
+  std::vector<std::uint32_t> retryDelays;
+  mcp_http::StreamableHttpClient client(makeClientOptions(&retryDelays),
+                                        [&fixture](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse { return fixture.execute(request); });
+
+  const auto opened = client.openListenStream();
+  REQUIRE(opened.statusCode == 200);
+  REQUIRE(opened.streamOpen);
+  REQUIRE(opened.messages.empty());
+
+  REQUIRE(fixture.server.enqueueServerMessage(makeNotification("notifications/listen")));
+  const auto firstListenPoll = client.pollListenStream();
+  REQUIRE(firstListenPoll.statusCode == 200);
+  REQUIRE(firstListenPoll.streamOpen);
+  REQUIRE(firstListenPoll.messages.size() == 1);
+  REQUIRE(isNotificationMethod(firstListenPoll.messages.front(), "notifications/listen"));
+
+  const auto sendResult = client.send(makeRequest(17, "work"));
+  REQUIRE(sendResult.response.has_value());
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(*sendResult.response));
+  REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(*sendResult.response).id == mcp::jsonrpc::RequestId {std::int64_t {17}});
+
+  const auto secondListenPoll = client.pollListenStream();
+  REQUIRE(secondListenPoll.statusCode == 200);
+
+  std::size_t listenNotificationCount = 0;
+  for (const auto &message : firstListenPoll.messages)
+  {
+    if (isNotificationMethod(message, "notifications/listen"))
+    {
+      ++listenNotificationCount;
+    }
+  }
+
+  for (const auto &message : sendResult.messages)
+  {
+    if (isNotificationMethod(message, "notifications/listen"))
+    {
+      ++listenNotificationCount;
+    }
+  }
+
+  for (const auto &message : secondListenPoll.messages)
+  {
+    if (isNotificationMethod(message, "notifications/listen"))
+    {
+      ++listenNotificationCount;
+    }
+
+    REQUIRE_FALSE(isSuccessResponseFor(message, 17));
+  }
+
+  REQUIRE(listenNotificationCount == 1);
+
+  std::size_t responseCount = 0;
+  if (sendResult.response.has_value() && std::holds_alternative<mcp::jsonrpc::SuccessResponse>(*sendResult.response)
+      && std::get<mcp::jsonrpc::SuccessResponse>(*sendResult.response).id == mcp::jsonrpc::RequestId {std::int64_t {17}})
+  {
+    ++responseCount;
+  }
+
+  for (const auto &message : sendResult.messages)
+  {
+    if (isSuccessResponseFor(message, 17))
+    {
+      ++responseCount;
+    }
+  }
+
+  for (const auto &message : firstListenPoll.messages)
+  {
+    if (isSuccessResponseFor(message, 17))
+    {
+      ++responseCount;
+    }
+  }
+
+  for (const auto &message : secondListenPoll.messages)
+  {
+    if (isSuccessResponseFor(message, 17))
+    {
+      ++responseCount;
+    }
+  }
+
+  REQUIRE(responseCount == 1);
+
+  const auto requests = fixture.requests();
+  std::set<std::string> resumedStreamIds;
+  for (const auto &request : requests)
+  {
+    if (request.method != mcp_http::ServerRequestMethod::kGet)
+    {
+      continue;
+    }
+
+    const auto lastEventId = mcp_http::getHeader(request.headers, mcp_http::kHeaderLastEventId);
+    if (!lastEventId.has_value())
+    {
+      continue;
+    }
+
+    const auto parsed = mcp::http::sse::parseEventId(*lastEventId);
+    REQUIRE(parsed.has_value());
+    resumedStreamIds.insert(parsed->streamId);
+  }
+
+  REQUIRE(resumedStreamIds.size() >= 2);
+}
+
+// NOLINTEND(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
+// readability-magic-numbers, misc-const-correctness)

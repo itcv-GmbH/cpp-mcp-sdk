@@ -94,6 +94,53 @@ inline auto appendDataLines(std::string &encoded, std::string_view data) -> void
   }
 }
 
+inline auto parseRetryField(std::string_view value) -> std::optional<std::uint32_t>
+{
+  if (value.empty())
+  {
+    return std::nullopt;
+  }
+
+  std::uint64_t parsed = 0;
+  for (const char character : value)
+  {
+    if (character < '0' || character > '9')
+    {
+      return std::nullopt;
+    }
+
+    const auto digit = static_cast<std::uint64_t>(character - '0');
+    if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / 10U)
+    {
+      return std::nullopt;
+    }
+
+    parsed = (parsed * 10U) + digit;
+    if (parsed > std::numeric_limits<std::uint32_t>::max())
+    {
+      return std::nullopt;
+    }
+  }
+
+  return static_cast<std::uint32_t>(parsed);
+}
+
+inline auto flushParsedEvent(std::vector<Event> &events, Event &current, bool hasFields) -> void
+{
+  if (!hasFields)
+  {
+    return;
+  }
+
+  if (!current.data.empty() && current.data.back() == '\n')
+  {
+    current.data.pop_back();
+  }
+
+  events.push_back(std::move(current));
+  current = Event {};
+}
+
 }  // namespace detail
 
 inline auto makeEventId(std::string_view streamId, std::uint64_t cursor) -> std::string
@@ -190,6 +237,81 @@ inline auto encodeEvents(const std::vector<Event> &events) -> std::string
   }
 
   return encoded;
+}
+
+inline auto parseEvents(std::string_view encodedEvents) -> std::vector<Event>
+{
+  std::vector<Event> events;
+  Event current;
+  bool hasCurrentFields = false;
+
+  std::size_t cursor = 0;
+  while (cursor <= encodedEvents.size())
+  {
+    const std::size_t lineEnd = encodedEvents.find('\n', cursor);
+    std::string_view line = lineEnd == std::string_view::npos ? encodedEvents.substr(cursor) : encodedEvents.substr(cursor, lineEnd - cursor);
+
+    if (!line.empty() && line.back() == '\r')
+    {
+      line.remove_suffix(1);
+    }
+
+    if (lineEnd == std::string_view::npos)
+    {
+      cursor = encodedEvents.size() + 1;
+    }
+    else
+    {
+      cursor = lineEnd + 1;
+    }
+
+    if (line.empty())
+    {
+      detail::flushParsedEvent(events, current, hasCurrentFields);
+      hasCurrentFields = false;
+      continue;
+    }
+
+    if (!line.empty() && line.front() == ':')
+    {
+      continue;
+    }
+
+    const std::size_t separator = line.find(':');
+    const std::string_view field = separator == std::string_view::npos ? line : line.substr(0, separator);
+
+    std::string_view value;
+    if (separator != std::string_view::npos)
+    {
+      value = line.substr(separator + 1);
+      if (!value.empty() && value.front() == ' ')
+      {
+        value.remove_prefix(1);
+      }
+    }
+
+    hasCurrentFields = true;
+    if (field == "event")
+    {
+      current.event = std::string(value);
+    }
+    else if (field == "id")
+    {
+      current.id = std::string(value);
+    }
+    else if (field == "retry")
+    {
+      current.retryMilliseconds = detail::parseRetryField(value);
+    }
+    else if (field == "data")
+    {
+      current.data.append(value.data(), value.size());
+      current.data.push_back('\n');
+    }
+  }
+
+  detail::flushParsedEvent(events, current, hasCurrentFields);
+  return events;
 }
 
 }  // namespace sse

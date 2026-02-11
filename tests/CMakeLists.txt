@@ -110,3 +110,13 @@ target_link_libraries(mcp_sdk_test_transport_http_server
 )
 
 add_test(NAME mcp_sdk_transport_http_server_test COMMAND mcp_sdk_test_transport_http_server)
+
+add_executable(mcp_sdk_test_transport_http_client transport_http_client_test.cpp)
+
+target_link_libraries(mcp_sdk_test_transport_http_client
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_transport_http_client_test COMMAND mcp_sdk_test_transport_http_client)
