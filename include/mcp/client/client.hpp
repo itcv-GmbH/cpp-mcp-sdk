@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include <mcp/client/roots.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/prompts.hpp>
@@ -88,6 +89,9 @@ public:
   auto listResourceTemplates(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListResourceTemplatesResult;
   auto listPrompts(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListPromptsResult;
   auto getPrompt(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), RequestOptions options = {}) -> PromptGetResult;
+  auto setRootsProvider(RootsProvider provider) -> void;
+  auto clearRootsProvider() -> void;
+  auto notifyRootsListChanged() -> bool;
 
   template<typename FetchPage, typename ConsumePage>
   auto forEachPage(FetchPage fetchPage, ConsumePage consumePage, std::optional<std::string> cursor = std::nullopt, std::size_t maxPages = kDefaultMaxPaginationPages) -> void
@@ -176,6 +180,7 @@ private:
   jsonrpc::Router router_;
   std::shared_ptr<transport::Transport> transport_;
   ClientInitializeConfiguration initializeConfiguration_;
+  std::optional<RootsProvider> rootsProvider_;
   std::optional<jsonrpc::RequestId> pendingInitializeRequestId_;
   std::int64_t nextRequestId_ = 1;
 };

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include <mcp/client/client.hpp>
+#include <mcp/client/roots.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -43,6 +44,8 @@ static constexpr std::string_view kResourcesReadMethod = "resources/read";
 static constexpr std::string_view kResourcesTemplatesListMethod = "resources/templates/list";
 static constexpr std::string_view kPromptsListMethod = "prompts/list";
 static constexpr std::string_view kPromptsGetMethod = "prompts/get";
+static constexpr std::string_view kRootsListMethod = "roots/list";
+static constexpr std::string_view kRootsListChangedNotificationMethod = "notifications/roots/list_changed";
 
 static auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>
 {
@@ -410,6 +413,19 @@ static auto ensureServerCapabilityAvailable(const Client &client, std::string_vi
   }
 
   throw CapabilityError("Server capability '" + std::string(capabilityName) + "' is required for method '" + std::string(method) + "'");
+}
+
+static auto makeRootsUnsupportedResponse(const jsonrpc::RequestId &requestId, const std::string &reason) -> jsonrpc::Response
+{
+  jsonrpc::JsonValue errorData = jsonrpc::JsonValue::object();
+  errorData["reason"] = reason;
+  return jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::move(errorData), "Roots not supported"), requestId);
+}
+
+static auto isFileUri(std::string_view uri) -> bool
+{
+  static constexpr std::string_view kFileUriPrefix = "file://";
+  return uri.size() >= kFileUriPrefix.size() && uri.compare(0, kFileUriPrefix.size(), kFileUriPrefix) == 0;
 }
 
 static auto iconToJson(const Icon &icon) -> jsonrpc::JsonValue
@@ -802,6 +818,67 @@ Client::Client(std::shared_ptr<Session> session)
                                    response.result = jsonrpc::JsonValue::object();
                                    return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
                                  });
+
+  router_.registerRequestHandler(
+    std::string(kRootsListMethod),
+    [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+    {
+      const auto negotiatedCapabilities = negotiatedClientCapabilities();
+      if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->roots().has_value())
+      {
+        return makeReadyResponseFuture(makeRootsUnsupportedResponse(request.id, "Client does not have roots capability"));
+      }
+
+      std::optional<RootsProvider> rootsProvider;
+      {
+        const std::scoped_lock lock(mutex_);
+        rootsProvider = rootsProvider_;
+      }
+
+      if (!rootsProvider.has_value())
+      {
+        return makeReadyResponseFuture(makeRootsUnsupportedResponse(request.id, "Client does not have a registered roots provider"));
+      }
+
+      std::vector<RootEntry> roots;
+      try
+      {
+        roots = (*rootsProvider)(RootsListContext {context});
+      }
+      catch (const std::exception &error)
+      {
+        return makeReadyResponseFuture(jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string("roots/list failed: ") + error.what()), request.id));
+      }
+
+      jsonrpc::JsonValue rootsJson = jsonrpc::JsonValue::array();
+      for (const auto &root : roots)
+      {
+        if (!isFileUri(root.uri))
+        {
+          return makeReadyResponseFuture(
+            jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "roots/list provider returned invalid root URI; expected file://"), request.id));
+        }
+
+        jsonrpc::JsonValue rootJson = jsonrpc::JsonValue::object();
+        rootJson["uri"] = root.uri;
+        if (root.name.has_value())
+        {
+          rootJson["name"] = *root.name;
+        }
+        if (root.metadata.has_value())
+        {
+          rootJson["_meta"] = *root.metadata;
+        }
+
+        rootsJson.push_back(std::move(rootJson));
+      }
+
+      jsonrpc::SuccessResponse response;
+      response.id = request.id;
+      response.result = jsonrpc::JsonValue::object();
+      response.result["roots"] = std::move(rootsJson);
+      return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
+    });
 }
 
 auto Client::session() const noexcept -> const std::shared_ptr<Session> &
@@ -1113,6 +1190,35 @@ auto Client::getPrompt(const std::string &name, jsonrpc::JsonValue arguments, Re
   }
 
   return parsedResult;
+}
+
+auto Client::setRootsProvider(RootsProvider provider) -> void
+{
+  const std::scoped_lock lock(mutex_);
+  rootsProvider_ = std::move(provider);
+}
+
+auto Client::clearRootsProvider() -> void
+{
+  const std::scoped_lock lock(mutex_);
+  rootsProvider_.reset();
+}
+
+auto Client::notifyRootsListChanged() -> bool
+{
+  const auto negotiatedCapabilities = negotiatedClientCapabilities();
+  if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->roots().has_value() || !negotiatedCapabilities->roots()->listChanged)
+  {
+    return false;
+  }
+
+  if (!session_->canSendNotification(kRootsListChangedNotificationMethod))
+  {
+    return false;
+  }
+
+  sendNotification(std::string(kRootsListChangedNotificationMethod), jsonrpc::JsonValue::object());
+  return true;
 }
 
 auto Client::start() -> void

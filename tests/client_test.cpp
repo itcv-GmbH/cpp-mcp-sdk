@@ -593,6 +593,219 @@ TEST_CASE("Client convenience APIs enforce negotiated capability gating", "[clie
   REQUIRE_THROWS_AS(client->getPrompt("example", mcp::jsonrpc::JsonValue::object()), mcp::CapabilityError);
 }
 
+TEST_CASE("Client roots/list enforces negotiated capability and provider gating", "[client][roots][capabilities]")
+{
+  SECTION("roots/list returns method not found when roots capability is not negotiated")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    mcp::jsonrpc::Request listRootsRequest;
+    listRootsRequest.id = std::int64_t {9001};
+    listRootsRequest.method = "roots/list";
+    listRootsRequest.params = mcp::jsonrpc::JsonValue::object();
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, listRootsRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kMethodNotFound));
+    REQUIRE(error.error.message == "Roots not supported");
+    REQUIRE(error.error.data.has_value());
+    if (error.error.data.has_value())
+    {
+      REQUIRE((*error.error.data)["reason"].as<std::string>() == "Client does not have roots capability");
+    }
+  }
+
+  SECTION("roots/list returns method not found when no roots provider is registered")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::RootsCapability rootsCapability;
+    rootsCapability.listChanged = true;
+    mcp::ClientInitializeConfiguration configuration;
+    configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(configuration));
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    mcp::jsonrpc::Request listRootsRequest;
+    listRootsRequest.id = std::int64_t {9002};
+    listRootsRequest.method = "roots/list";
+    listRootsRequest.params = mcp::jsonrpc::JsonValue::object();
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, listRootsRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kMethodNotFound));
+    REQUIRE(error.error.message == "Roots not supported");
+    REQUIRE(error.error.data.has_value());
+    if (error.error.data.has_value())
+    {
+      REQUIRE((*error.error.data)["reason"].as<std::string>() == "Client does not have a registered roots provider");
+    }
+  }
+}
+
+TEST_CASE("Client roots/list validates root URI scheme", "[client][roots][validation]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::RootsCapability rootsCapability;
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setRootsProvider(
+    [](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry>
+    {
+      return {
+        mcp::RootEntry {"https://example.com/not-file", std::optional<std::string> {"invalid"}, std::nullopt},
+      };
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  mcp::jsonrpc::Request listRootsRequest;
+  listRootsRequest.id = std::int64_t {9003};
+  listRootsRequest.method = "roots/list";
+
+  const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, listRootsRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+  const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+  REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInternalError));
+  REQUIRE(error.error.message == "roots/list provider returned invalid root URI; expected file://");
+}
+
+TEST_CASE("Client roots/list returns file roots from provider", "[client][roots][handler]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::RootsCapability rootsCapability;
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setRootsProvider(
+    [](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry>
+    {
+      mcp::jsonrpc::JsonValue metadata = mcp::jsonrpc::JsonValue::object();
+      metadata["source"] = "unit-test";
+      return {
+        mcp::RootEntry {"file:///workspace/project-a", std::optional<std::string> {"Project A"}, std::move(metadata)},
+        mcp::RootEntry {"file:///workspace/project-b", std::nullopt, std::nullopt},
+      };
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  mcp::jsonrpc::Request listRootsRequest;
+  listRootsRequest.id = std::int64_t {9004};
+  listRootsRequest.method = "roots/list";
+
+  const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, listRootsRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
+  const auto &success = std::get<mcp::jsonrpc::SuccessResponse>(response);
+  REQUIRE(success.result.contains("roots"));
+  REQUIRE(success.result["roots"].is_array());
+  REQUIRE(success.result["roots"].size() == 2);
+  REQUIRE(success.result["roots"][0]["uri"].as<std::string>() == "file:///workspace/project-a");
+  REQUIRE(success.result["roots"][0]["name"].as<std::string>() == "Project A");
+  REQUIRE(success.result["roots"][0]["_meta"]["source"].as<std::string>() == "unit-test");
+  REQUIRE(success.result["roots"][1]["uri"].as<std::string>() == "file:///workspace/project-b");
+}
+
+TEST_CASE("Client notifyRootsListChanged is gated by roots.listChanged", "[client][roots][notifications]")
+{
+  SECTION("notifyRootsListChanged returns false when listChanged is not enabled")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::RootsCapability rootsCapability;
+    rootsCapability.listChanged = false;
+    mcp::ClientInitializeConfiguration configuration;
+    configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(configuration));
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    const std::size_t messageCountBeforeNotify = transport->messages().size();
+    REQUIRE_FALSE(client->notifyRootsListChanged());
+    REQUIRE(transport->messages().size() == messageCountBeforeNotify);
+  }
+
+  SECTION("notifyRootsListChanged sends notification when listChanged is enabled")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::RootsCapability rootsCapability;
+    rootsCapability.listChanged = true;
+    mcp::ClientInitializeConfiguration configuration;
+    configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(configuration));
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    const std::size_t messageCountBeforeNotify = transport->messages().size();
+    REQUIRE(client->notifyRootsListChanged());
+
+    const auto finalMessages = transport->messages();
+    REQUIRE(finalMessages.size() == messageCountBeforeNotify + 1);
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::Notification>(finalMessages.back()));
+    const auto &notification = std::get<mcp::jsonrpc::Notification>(finalMessages.back());
+    REQUIRE(notification.method == "notifications/roots/list_changed");
+  }
+}
+
 TEST_CASE("Client pagination helpers detect cursor cycles", "[client][pagination][helpers]")
 {
   auto client = mcp::Client::create();
