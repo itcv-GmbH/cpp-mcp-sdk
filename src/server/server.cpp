@@ -40,9 +40,18 @@ constexpr std::string_view kCompletionCompleteMethod = "completion/complete";
 constexpr std::string_view kToolsListMethod = "tools/list";
 constexpr std::string_view kToolsCallMethod = "tools/call";
 constexpr std::string_view kToolsListChangedNotificationMethod = "notifications/tools/list_changed";
+constexpr std::string_view kResourcesListMethod = "resources/list";
+constexpr std::string_view kResourcesReadMethod = "resources/read";
+constexpr std::string_view kResourcesTemplatesListMethod = "resources/templates/list";
+constexpr std::string_view kResourcesSubscribeMethod = "resources/subscribe";
+constexpr std::string_view kResourcesUnsubscribeMethod = "resources/unsubscribe";
+constexpr std::string_view kResourcesUpdatedNotificationMethod = "notifications/resources/updated";
+constexpr std::string_view kResourcesListChangedNotificationMethod = "notifications/resources/list_changed";
 constexpr std::string_view kDefaultServerName = "mcp-cpp-sdk";
 constexpr std::string_view kCursorPrefix = "mcp:v1:";
 constexpr std::size_t kToolsPageSize = 50;
+constexpr std::size_t kResourcesPageSize = 50;
+constexpr std::size_t kResourceTemplatesPageSize = 50;
 
 using JsonSchema = jsoncons::jsonschema::json_schema<jsonrpc::JsonValue>;
 using WalkResult = jsoncons::jsonschema::walk_result;
@@ -88,6 +97,60 @@ auto makeMethodNotFoundResponse(const jsonrpc::RequestId &requestId, std::string
 auto makeInvalidParamsResponse(const jsonrpc::RequestId &requestId, std::string message, std::optional<jsonrpc::JsonValue> data = std::nullopt) -> jsonrpc::Response
 {
   return jsonrpc::makeErrorResponse(jsonrpc::makeInvalidParamsError(std::move(data), std::move(message)), requestId);
+}
+
+auto makeResourceNotFoundResponse(const jsonrpc::RequestId &requestId, const std::string &uri) -> jsonrpc::Response
+{
+  jsonrpc::JsonValue data = jsonrpc::JsonValue::object();
+  data["uri"] = uri;
+  return jsonrpc::makeErrorResponse(jsonrpc::makeJsonRpcError(JsonRpcErrorCode::kResourceNotFound, "Resource not found", std::move(data)), requestId);
+}
+
+auto sessionKeyForContext(const jsonrpc::RequestContext &context) -> std::string
+{
+  return context.sessionId.value_or(std::string {});
+}
+
+auto encodeStandardBase64(std::string_view bytes) -> std::string
+{
+  constexpr std::string_view alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+  std::string encoded;
+  encoded.reserve(((bytes.size() + 2) / 3) * 4);
+
+  std::size_t index = 0;
+  while (index + 3 <= bytes.size())
+  {
+    const std::uint32_t chunk = (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << 16U)
+      | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 1])) << 8U) | static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 2]));
+
+    encoded.push_back(alphabet[(chunk >> 18U) & 0x3FU]);
+    encoded.push_back(alphabet[(chunk >> 12U) & 0x3FU]);
+    encoded.push_back(alphabet[(chunk >> 6U) & 0x3FU]);
+    encoded.push_back(alphabet[chunk & 0x3FU]);
+    index += 3;
+  }
+
+  const std::size_t remaining = bytes.size() - index;
+  if (remaining == 1)
+  {
+    const std::uint32_t chunk = static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << 16U;
+    encoded.push_back(alphabet[(chunk >> 18U) & 0x3FU]);
+    encoded.push_back(alphabet[(chunk >> 12U) & 0x3FU]);
+    encoded.push_back('=');
+    encoded.push_back('=');
+  }
+  else if (remaining == 2)
+  {
+    const std::uint32_t chunk =
+      (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << 16U) | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 1])) << 8U);
+    encoded.push_back(alphabet[(chunk >> 18U) & 0x3FU]);
+    encoded.push_back(alphabet[(chunk >> 12U) & 0x3FU]);
+    encoded.push_back(alphabet[(chunk >> 6U) & 0x3FU]);
+    encoded.push_back('=');
+  }
+
+  return encoded;
 }
 
 auto makeTextContentBlock(std::string text) -> jsonrpc::JsonValue
@@ -192,6 +255,8 @@ auto endpointToCursorLabel(ListEndpoint endpoint) -> std::string_view
       return "tools";
     case ListEndpoint::kResources:
       return "resources";
+    case ListEndpoint::kResourceTemplates:
+      return "resource_templates";
     case ListEndpoint::kPrompts:
       return "prompts";
     case ListEndpoint::kTasks:
@@ -478,6 +543,48 @@ auto capabilityForMethod(std::string_view method) -> std::optional<std::string_v
 
 }  // namespace detail
 
+auto ResourceContent::text(std::string uri,
+                           std::string text,
+                           std::optional<std::string> mimeType,
+                           std::optional<jsonrpc::JsonValue> annotations,
+                           std::optional<jsonrpc::JsonValue> metadata) -> ResourceContent
+{
+  ResourceContent content;
+  content.uri = std::move(uri);
+  content.mimeType = std::move(mimeType);
+  content.kind = ResourceContentKind::kText;
+  content.value = std::move(text);
+  content.annotations = std::move(annotations);
+  content.metadata = std::move(metadata);
+  return content;
+}
+
+auto ResourceContent::blobBase64(std::string uri,
+                                 std::string blobBase64,
+                                 std::optional<std::string> mimeType,
+                                 std::optional<jsonrpc::JsonValue> annotations,
+                                 std::optional<jsonrpc::JsonValue> metadata) -> ResourceContent
+{
+  ResourceContent content;
+  content.uri = std::move(uri);
+  content.mimeType = std::move(mimeType);
+  content.kind = ResourceContentKind::kBlobBase64;
+  content.value = std::move(blobBase64);
+  content.annotations = std::move(annotations);
+  content.metadata = std::move(metadata);
+  return content;
+}
+
+auto ResourceContent::blobBytes(std::string uri,
+                                const std::vector<std::uint8_t> &blobBytes,
+                                std::optional<std::string> mimeType,
+                                std::optional<jsonrpc::JsonValue> annotations,
+                                std::optional<jsonrpc::JsonValue> metadata) -> ResourceContent
+{
+  const std::string byteView(blobBytes.begin(), blobBytes.end());
+  return blobBase64(std::move(uri), detail::encodeStandardBase64(byteView), std::move(mimeType), std::move(annotations), std::move(metadata));
+}
+
 auto Server::create(SessionOptions options) -> std::shared_ptr<Server>
 {
   ServerConfiguration configuration;
@@ -713,6 +820,172 @@ auto Server::notifyToolsListChanged(const jsonrpc::RequestContext &context) -> b
   return true;
 }
 
+auto Server::registerResource(ResourceDefinition definition, ResourceReadHandler handler) -> void
+{
+  if (handler == nullptr)
+  {
+    throw std::invalid_argument("Resource handler must not be null");
+  }
+
+  if (definition.uri.empty())
+  {
+    throw std::invalid_argument("Resource URI must not be empty");
+  }
+
+  if (definition.name.empty())
+  {
+    throw std::invalid_argument("Resource name must not be empty");
+  }
+
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    const auto existingResource = std::find_if(
+      resources_.begin(), resources_.end(), [&definition](const RegisteredResource &registeredResource) -> bool { return registeredResource.definition.uri == definition.uri; });
+    if (existingResource != resources_.end())
+    {
+      throw std::invalid_argument("Resource already registered: " + definition.uri);
+    }
+
+    resources_.push_back(RegisteredResource {std::move(definition), std::move(handler)});
+  }
+
+  static_cast<void>(notifyResourcesListChanged());
+}
+
+auto Server::unregisterResource(std::string_view uri) -> bool
+{
+  bool removed = false;
+
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    const auto resourceIter =
+      std::find_if(resources_.begin(), resources_.end(), [uri](const RegisteredResource &registeredResource) -> bool { return registeredResource.definition.uri == uri; });
+
+    if (resourceIter != resources_.end())
+    {
+      resources_.erase(resourceIter);
+
+      resourceSubscriptions_.erase(
+        std::remove_if(resourceSubscriptions_.begin(), resourceSubscriptions_.end(), [uri](const ResourceSubscription &subscription) -> bool { return subscription.uri == uri; }),
+        resourceSubscriptions_.end());
+      removed = true;
+    }
+  }
+
+  if (removed)
+  {
+    static_cast<void>(notifyResourcesListChanged());
+  }
+
+  return removed;
+}
+
+auto Server::registerResourceTemplate(ResourceTemplateDefinition definition) -> void
+{
+  if (definition.uriTemplate.empty())
+  {
+    throw std::invalid_argument("Resource template URI template must not be empty");
+  }
+
+  if (definition.name.empty())
+  {
+    throw std::invalid_argument("Resource template name must not be empty");
+  }
+
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    const auto existingTemplate =
+      std::find_if(resourceTemplates_.begin(),
+                   resourceTemplates_.end(),
+                   [&definition](const ResourceTemplateDefinition &templateDefinition) -> bool { return templateDefinition.uriTemplate == definition.uriTemplate; });
+    if (existingTemplate != resourceTemplates_.end())
+    {
+      throw std::invalid_argument("Resource template already registered: " + definition.uriTemplate);
+    }
+
+    resourceTemplates_.push_back(std::move(definition));
+  }
+
+  static_cast<void>(notifyResourcesListChanged());
+}
+
+auto Server::unregisterResourceTemplate(std::string_view uriTemplate) -> bool
+{
+  bool removed = false;
+
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    const auto templateIter = std::find_if(resourceTemplates_.begin(),
+                                           resourceTemplates_.end(),
+                                           [uriTemplate](const ResourceTemplateDefinition &templateDefinition) -> bool { return templateDefinition.uriTemplate == uriTemplate; });
+    if (templateIter != resourceTemplates_.end())
+    {
+      resourceTemplates_.erase(templateIter);
+      removed = true;
+    }
+  }
+
+  if (removed)
+  {
+    static_cast<void>(notifyResourcesListChanged());
+  }
+
+  return removed;
+}
+
+auto Server::notifyResourceUpdated(std::string uri, const jsonrpc::RequestContext &context) -> bool
+{
+  if (!configuration_.capabilities.resources().has_value() || !configuration_.capabilities.resources()->subscribe)
+  {
+    return false;
+  }
+
+  const std::string sessionKey = detail::sessionKeyForContext(context);
+
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    const auto subscribed =
+      std::find_if(resourceSubscriptions_.begin(),
+                   resourceSubscriptions_.end(),
+                   [&sessionKey, &uri](const ResourceSubscription &subscription) -> bool { return subscription.sessionKey == sessionKey && subscription.uri == uri; });
+    if (subscribed == resourceSubscriptions_.end())
+    {
+      return false;
+    }
+  }
+
+  if (!session_->canSendNotification(detail::kResourcesUpdatedNotificationMethod))
+  {
+    return false;
+  }
+
+  jsonrpc::Notification notification;
+  notification.method = std::string(detail::kResourcesUpdatedNotificationMethod);
+  notification.params = jsonrpc::JsonValue::object();
+  (*notification.params)["uri"] = std::move(uri);
+  sendNotification(context, std::move(notification));
+  return true;
+}
+
+auto Server::notifyResourcesListChanged(const jsonrpc::RequestContext &context) -> bool
+{
+  if (!configuration_.capabilities.resources().has_value() || !configuration_.capabilities.resources()->listChanged)
+  {
+    return false;
+  }
+
+  if (!session_->canSendNotification(detail::kResourcesListChangedNotificationMethod))
+  {
+    return false;
+  }
+
+  jsonrpc::Notification notification;
+  notification.method = std::string(detail::kResourcesListChangedNotificationMethod);
+  notification.params = jsonrpc::JsonValue::object();
+  sendNotification(context, std::move(notification));
+  return true;
+}
+
 auto Server::emitLogMessage(const jsonrpc::RequestContext &context, LogLevel level, jsonrpc::JsonValue data, std::optional<std::string> logger) -> bool
 {
   if (!configuration_.capabilities.hasCapability("logging"))
@@ -821,6 +1094,26 @@ auto Server::registerCoreHandlers() -> void
   router_.registerRequestHandler(std::string(detail::kToolsCallMethod),
                                  [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
                                  { return detail::makeReadyResponseFuture(handleToolsCallRequest(context, request)); });
+
+  router_.registerRequestHandler(std::string(detail::kResourcesListMethod),
+                                 [this](const jsonrpc::RequestContext &, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleResourcesListRequest(request)); });
+
+  router_.registerRequestHandler(std::string(detail::kResourcesReadMethod),
+                                 [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleResourcesReadRequest(context, request)); });
+
+  router_.registerRequestHandler(std::string(detail::kResourcesTemplatesListMethod),
+                                 [this](const jsonrpc::RequestContext &, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleResourceTemplatesListRequest(request)); });
+
+  router_.registerRequestHandler(std::string(detail::kResourcesSubscribeMethod),
+                                 [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleResourcesSubscribeRequest(context, request)); });
+
+  router_.registerRequestHandler(std::string(detail::kResourcesUnsubscribeMethod),
+                                 [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleResourcesUnsubscribeRequest(context, request)); });
 }
 
 auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
@@ -1044,6 +1337,341 @@ auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, cons
   return response;
 }
 
+auto Server::handleResourcesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  std::optional<std::string> cursor;
+  if (request.params.has_value())
+  {
+    if (!request.params->is_object())
+    {
+      return detail::makeInvalidParamsResponse(request.id, "resources/list requires params to be an object when provided");
+    }
+
+    if (request.params->contains("cursor"))
+    {
+      if (!(*request.params)["cursor"].is_string())
+      {
+        return detail::makeInvalidParamsResponse(request.id, "resources/list requires params.cursor to be a string");
+      }
+
+      cursor = (*request.params)["cursor"].as<std::string>();
+    }
+  }
+
+  std::vector<ResourceDefinition> definitions;
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    definitions.reserve(resources_.size());
+    for (const auto &registeredResource : resources_)
+    {
+      definitions.push_back(registeredResource.definition);
+    }
+  }
+
+  PaginationWindow window;
+  try
+  {
+    window = paginateList(ListEndpoint::kResources, cursor, definitions.size(), detail::kResourcesPageSize);
+  }
+  catch (const std::invalid_argument &)
+  {
+    return detail::makeInvalidParamsResponse(request.id, "Invalid resources/list cursor");
+  }
+
+  jsonrpc::JsonValue resourcesJson = jsonrpc::JsonValue::array();
+  for (std::size_t index = window.startIndex; index < window.endIndex; ++index)
+  {
+    const auto &definition = definitions[index];
+    jsonrpc::JsonValue resourceJson = jsonrpc::JsonValue::object();
+    resourceJson["uri"] = definition.uri;
+    resourceJson["name"] = definition.name;
+    if (definition.title.has_value())
+    {
+      resourceJson["title"] = *definition.title;
+    }
+    if (definition.description.has_value())
+    {
+      resourceJson["description"] = *definition.description;
+    }
+    if (definition.icons.has_value())
+    {
+      resourceJson["icons"] = *definition.icons;
+    }
+    if (definition.mimeType.has_value())
+    {
+      resourceJson["mimeType"] = *definition.mimeType;
+    }
+    if (definition.size.has_value())
+    {
+      resourceJson["size"] = *definition.size;
+    }
+    if (definition.annotations.has_value())
+    {
+      resourceJson["annotations"] = *definition.annotations;
+    }
+    if (definition.metadata.has_value())
+    {
+      resourceJson["_meta"] = *definition.metadata;
+    }
+
+    resourcesJson.push_back(std::move(resourceJson));
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = request.id;
+  response.result = jsonrpc::JsonValue::object();
+  response.result["resources"] = std::move(resourcesJson);
+  if (window.nextCursor.has_value())
+  {
+    response.result["nextCursor"] = *window.nextCursor;
+  }
+
+  return response;
+}
+
+auto Server::handleResourcesReadRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  if (!request.params.has_value() || !request.params->is_object())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "resources/read requires params object");
+  }
+
+  const auto &params = *request.params;
+  if (!params.contains("uri") || !params["uri"].is_string())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "resources/read requires string params.uri");
+  }
+
+  const std::string uri = params["uri"].as<std::string>();
+
+  ResourceReadHandler handler;
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    const auto resourceIter =
+      std::find_if(resources_.begin(), resources_.end(), [&uri](const RegisteredResource &registeredResource) -> bool { return registeredResource.definition.uri == uri; });
+    if (resourceIter == resources_.end())
+    {
+      return detail::makeResourceNotFoundResponse(request.id, uri);
+    }
+
+    handler = resourceIter->handler;
+  }
+
+  if (handler == nullptr)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Resource registration is incomplete"), request.id);
+  }
+
+  std::vector<ResourceContent> contents;
+  try
+  {
+    ResourceReadContext readContext;
+    readContext.requestContext = context;
+    readContext.uri = uri;
+    contents = handler(readContext);
+  }
+  catch (const std::exception &exception)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string("resources/read failed: ") + exception.what()), request.id);
+  }
+  catch (...)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "resources/read failed: unknown error"), request.id);
+  }
+
+  jsonrpc::JsonValue contentsJson = jsonrpc::JsonValue::array();
+  for (auto &content : contents)
+  {
+    jsonrpc::JsonValue contentJson = jsonrpc::JsonValue::object();
+    contentJson["uri"] = content.uri.empty() ? uri : content.uri;
+    if (content.mimeType.has_value())
+    {
+      contentJson["mimeType"] = *content.mimeType;
+    }
+    if (content.annotations.has_value())
+    {
+      contentJson["annotations"] = *content.annotations;
+    }
+    if (content.metadata.has_value())
+    {
+      contentJson["_meta"] = *content.metadata;
+    }
+
+    if (content.kind == ResourceContentKind::kText)
+    {
+      contentJson["text"] = std::move(content.value);
+    }
+    else
+    {
+      contentJson["blob"] = std::move(content.value);
+    }
+
+    contentsJson.push_back(std::move(contentJson));
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = request.id;
+  response.result = jsonrpc::JsonValue::object();
+  response.result["contents"] = std::move(contentsJson);
+  return response;
+}
+
+auto Server::handleResourceTemplatesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  std::optional<std::string> cursor;
+  if (request.params.has_value())
+  {
+    if (!request.params->is_object())
+    {
+      return detail::makeInvalidParamsResponse(request.id, "resources/templates/list requires params to be an object when provided");
+    }
+
+    if (request.params->contains("cursor"))
+    {
+      if (!(*request.params)["cursor"].is_string())
+      {
+        return detail::makeInvalidParamsResponse(request.id, "resources/templates/list requires params.cursor to be a string");
+      }
+
+      cursor = (*request.params)["cursor"].as<std::string>();
+    }
+  }
+
+  std::vector<ResourceTemplateDefinition> templates;
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    templates = resourceTemplates_;
+  }
+
+  PaginationWindow window;
+  try
+  {
+    window = paginateList(ListEndpoint::kResourceTemplates, cursor, templates.size(), detail::kResourceTemplatesPageSize);
+  }
+  catch (const std::invalid_argument &)
+  {
+    return detail::makeInvalidParamsResponse(request.id, "Invalid resources/templates/list cursor");
+  }
+
+  jsonrpc::JsonValue templatesJson = jsonrpc::JsonValue::array();
+  for (std::size_t index = window.startIndex; index < window.endIndex; ++index)
+  {
+    const auto &templateDefinition = templates[index];
+    jsonrpc::JsonValue templateJson = jsonrpc::JsonValue::object();
+    templateJson["uriTemplate"] = templateDefinition.uriTemplate;
+    templateJson["name"] = templateDefinition.name;
+    if (templateDefinition.title.has_value())
+    {
+      templateJson["title"] = *templateDefinition.title;
+    }
+    if (templateDefinition.description.has_value())
+    {
+      templateJson["description"] = *templateDefinition.description;
+    }
+    if (templateDefinition.icons.has_value())
+    {
+      templateJson["icons"] = *templateDefinition.icons;
+    }
+    if (templateDefinition.mimeType.has_value())
+    {
+      templateJson["mimeType"] = *templateDefinition.mimeType;
+    }
+    if (templateDefinition.annotations.has_value())
+    {
+      templateJson["annotations"] = *templateDefinition.annotations;
+    }
+    if (templateDefinition.metadata.has_value())
+    {
+      templateJson["_meta"] = *templateDefinition.metadata;
+    }
+
+    templatesJson.push_back(std::move(templateJson));
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = request.id;
+  response.result = jsonrpc::JsonValue::object();
+  response.result["resourceTemplates"] = std::move(templatesJson);
+  if (window.nextCursor.has_value())
+  {
+    response.result["nextCursor"] = *window.nextCursor;
+  }
+
+  return response;
+}
+
+auto Server::handleResourcesSubscribeRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  if (!request.params.has_value() || !request.params->is_object())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "resources/subscribe requires params object");
+  }
+
+  const auto &params = *request.params;
+  if (!params.contains("uri") || !params["uri"].is_string())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "resources/subscribe requires string params.uri");
+  }
+
+  const std::string uri = params["uri"].as<std::string>();
+  const std::string sessionKey = detail::sessionKeyForContext(context);
+
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    const auto resourceIter =
+      std::find_if(resources_.begin(), resources_.end(), [&uri](const RegisteredResource &registeredResource) -> bool { return registeredResource.definition.uri == uri; });
+    if (resourceIter == resources_.end())
+    {
+      return detail::makeResourceNotFoundResponse(request.id, uri);
+    }
+
+    const auto existingSubscription =
+      std::find_if(resourceSubscriptions_.begin(),
+                   resourceSubscriptions_.end(),
+                   [&sessionKey, &uri](const ResourceSubscription &subscription) -> bool { return subscription.sessionKey == sessionKey && subscription.uri == uri; });
+    if (existingSubscription == resourceSubscriptions_.end())
+    {
+      resourceSubscriptions_.push_back(ResourceSubscription {sessionKey, uri});
+    }
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = request.id;
+  response.result = jsonrpc::JsonValue::object();
+  return response;
+}
+
+auto Server::handleResourcesUnsubscribeRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  if (!request.params.has_value() || !request.params->is_object())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "resources/unsubscribe requires params object");
+  }
+
+  const auto &params = *request.params;
+  if (!params.contains("uri") || !params["uri"].is_string())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "resources/unsubscribe requires string params.uri");
+  }
+
+  const std::string uri = params["uri"].as<std::string>();
+  const std::string sessionKey = detail::sessionKeyForContext(context);
+
+  {
+    const std::scoped_lock lock(resourcesMutex_);
+    resourceSubscriptions_.erase(
+      std::remove_if(resourceSubscriptions_.begin(),
+                     resourceSubscriptions_.end(),
+                     [&sessionKey, &uri](const ResourceSubscription &subscription) -> bool { return subscription.sessionKey == sessionKey && subscription.uri == uri; }),
+      resourceSubscriptions_.end());
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = request.id;
+  response.result = jsonrpc::JsonValue::object();
+  return response;
+}
+
 auto Server::handleLoggingSetLevelRequest(const jsonrpc::Request &request) -> jsonrpc::Response
 {
   if (!request.params.has_value() || !request.params->is_object())
@@ -1196,6 +1824,11 @@ auto Server::handleCompletionCompleteRequest(const jsonrpc::Request &request) ->
 
 auto Server::isMethodEnabledByCapability(std::string_view method) const -> bool
 {
+  if (method == detail::kResourcesSubscribeMethod || method == detail::kResourcesUnsubscribeMethod)
+  {
+    return configuration_.capabilities.resources().has_value() && configuration_.capabilities.resources()->subscribe;
+  }
+
   const auto capability = detail::capabilityForMethod(method);
   if (!capability.has_value())
   {

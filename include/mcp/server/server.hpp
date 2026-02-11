@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
 
 namespace mcp
@@ -62,6 +63,7 @@ enum class ListEndpoint
 {
   kTools,
   kResources,
+  kResourceTemplates,
   kPrompts,
   kTasks,
 };
@@ -107,6 +109,12 @@ public:
   auto registerTool(ToolDefinition definition, ToolHandler handler) -> void;
   auto unregisterTool(std::string_view name) -> bool;
   auto notifyToolsListChanged(const jsonrpc::RequestContext &context = {}) -> bool;
+  auto registerResource(ResourceDefinition definition, ResourceReadHandler handler) -> void;
+  auto unregisterResource(std::string_view uri) -> bool;
+  auto registerResourceTemplate(ResourceTemplateDefinition definition) -> void;
+  auto unregisterResourceTemplate(std::string_view uriTemplate) -> bool;
+  auto notifyResourceUpdated(std::string uri, const jsonrpc::RequestContext &context = {}) -> bool;
+  auto notifyResourcesListChanged(const jsonrpc::RequestContext &context = {}) -> bool;
   auto emitLogMessage(const jsonrpc::RequestContext &context, LogLevel level, jsonrpc::JsonValue data, std::optional<std::string> logger = std::nullopt) -> bool;
   auto logLevel() const -> LogLevel;
 
@@ -117,6 +125,11 @@ private:
   auto registerCoreHandlers() -> void;
   auto handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleToolsCallRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleResourcesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleResourcesReadRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleResourceTemplatesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleResourcesSubscribeRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleResourcesUnsubscribeRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleLoggingSetLevelRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleCompletionCompleteRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
 
@@ -128,8 +141,12 @@ private:
   jsonrpc::Router router_;
   mutable std::mutex utilityMutex_;
   mutable std::mutex toolsMutex_;
+  mutable std::mutex resourcesMutex_;
   CompletionHandler completionHandler_;
   std::vector<RegisteredTool> tools_;
+  std::vector<RegisteredResource> resources_;
+  std::vector<ResourceTemplateDefinition> resourceTemplates_;
+  std::vector<ResourceSubscription> resourceSubscriptions_;
   LogLevel logLevel_ = LogLevel::kDebug;
 };
 

@@ -31,8 +31,17 @@ static constexpr std::int64_t kToolsCallUnknownRequestId = 12;
 static constexpr std::int64_t kToolsCallSchemaFailureRequestId = 13;
 static constexpr std::int64_t kToolsCallSuccessRequestId = 14;
 static constexpr std::int64_t kToolsCallOutputValidationRequestId = 15;
+static constexpr std::int64_t kResourcesListPaginationRequestId = 100;
+static constexpr std::int64_t kResourcesReadRequestId = 110;
+static constexpr std::int64_t kResourcesMissingReadRequestId = 120;
+static constexpr std::int64_t kResourceTemplatesListPaginationRequestId = 130;
+static constexpr std::int64_t kResourcesSubscribeRequestId = 140;
+static constexpr std::int64_t kResourcesUnsubscribeRequestId = 141;
+static constexpr std::int64_t kResourcesSubscribeGatingRequestId = 142;
 
 static constexpr std::size_t kToolsListPageSize = 50;
+static constexpr std::size_t kResourcesListPageSize = 50;
+static constexpr std::size_t kResourceTemplatesListPageSize = 50;
 
 static auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::future<mcp::jsonrpc::Response>
 {
@@ -55,9 +64,8 @@ static auto makeInitializeRequest(std::int64_t requestId = 1) -> mcp::jsonrpc::R
   return request;
 }
 
-static auto dispatchRequest(mcp::Server &server, const mcp::jsonrpc::Request &request) -> mcp::jsonrpc::Response
+static auto dispatchRequest(mcp::Server &server, const mcp::jsonrpc::Request &request, const mcp::jsonrpc::RequestContext &context = {}) -> mcp::jsonrpc::Response
 {
-  const mcp::jsonrpc::RequestContext context;
   return server.handleRequest(context, request).get();
 }
 
@@ -90,6 +98,25 @@ static auto makeToolDefinition(std::string name) -> mcp::ToolDefinition
   definition.inputSchema["properties"]["value"]["type"] = "string";
   definition.inputSchema["required"] = mcp::jsonrpc::JsonValue::array();
   definition.inputSchema["required"].push_back("value");
+  return definition;
+}
+
+static auto makeResourceDefinition(std::string uri, std::string name) -> mcp::ResourceDefinition
+{
+  mcp::ResourceDefinition definition;
+  definition.uri = std::move(uri);
+  definition.name = std::move(name);
+  definition.description = "test resource";
+  definition.mimeType = "text/plain";
+  return definition;
+}
+
+static auto makeResourceTemplate(std::string uriTemplate, std::string name) -> mcp::ResourceTemplateDefinition
+{
+  mcp::ResourceTemplateDefinition definition;
+  definition.uriTemplate = std::move(uriTemplate);
+  definition.name = std::move(name);
+  definition.description = "test template";
   return definition;
 }
 
@@ -561,6 +588,253 @@ TEST_CASE("Server emits tools list_changed notifications when enabled", "[server
   }
 
   REQUIRE(listChangedNotifications == 2);
+}
+
+TEST_CASE("Server resources list/read/templates support pagination and blob encoding", "[server][resources][core]")
+{
+  mcp::ResourcesCapability resourcesCapability;
+  resourcesCapability.subscribe = true;
+  resourcesCapability.listChanged = true;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  for (std::size_t index = 0; index < kResourcesListPageSize + 5; ++index)
+  {
+    const std::string uri = "resource://item-" + std::to_string(index);
+    server->registerResource(makeResourceDefinition(uri, "item-" + std::to_string(index)),
+                             [uri](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                             {
+                               return {
+                                 mcp::ResourceContent::text(uri, "text-content", std::string("text/plain")),
+                               };
+                             });
+  }
+
+  server->registerResource(makeResourceDefinition("resource://blob", "blob-resource"),
+                           [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                           {
+                             return {
+                               mcp::ResourceContent::blobBytes("resource://blob", std::vector<std::uint8_t> {0x01, 0x02, 0x03, 0x04}, std::string("application/octet-stream")),
+                             };
+                           });
+
+  for (std::size_t index = 0; index < kResourceTemplatesListPageSize + 5; ++index)
+  {
+    server->registerResourceTemplate(makeResourceTemplate("resource://template/{id-" + std::to_string(index) + "}", "template-" + std::to_string(index)));
+  }
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request listFirstPage;
+  listFirstPage.id = kResourcesListPaginationRequestId;
+  listFirstPage.method = "resources/list";
+  listFirstPage.params = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response firstListResponse = dispatchRequest(*server, listFirstPage);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(firstListResponse));
+  const auto &firstList = std::get<mcp::jsonrpc::SuccessResponse>(firstListResponse);
+  REQUIRE(firstList.result["resources"].size() == kResourcesListPageSize);
+  REQUIRE(firstList.result.contains("nextCursor"));
+
+  mcp::jsonrpc::Request listSecondPage;
+  listSecondPage.id = kResourcesListPaginationRequestId + 1;
+  listSecondPage.method = "resources/list";
+  listSecondPage.params = mcp::jsonrpc::JsonValue::object();
+  (*listSecondPage.params)["cursor"] = firstList.result["nextCursor"];
+
+  const mcp::jsonrpc::Response secondListResponse = dispatchRequest(*server, listSecondPage);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(secondListResponse));
+  const auto &secondList = std::get<mcp::jsonrpc::SuccessResponse>(secondListResponse);
+  REQUIRE(secondList.result["resources"].size() == 6);
+  REQUIRE_FALSE(secondList.result.contains("nextCursor"));
+
+  mcp::jsonrpc::Request readTextRequest;
+  readTextRequest.id = kResourcesReadRequestId;
+  readTextRequest.method = "resources/read";
+  readTextRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*readTextRequest.params)["uri"] = "resource://item-0";
+
+  const mcp::jsonrpc::Response readTextResponse = dispatchRequest(*server, readTextRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(readTextResponse));
+  const auto &readText = std::get<mcp::jsonrpc::SuccessResponse>(readTextResponse);
+  REQUIRE(readText.result["contents"].size() == 1);
+  REQUIRE(readText.result["contents"][0]["uri"].as<std::string>() == "resource://item-0");
+  REQUIRE(readText.result["contents"][0]["text"].as<std::string>() == "text-content");
+
+  mcp::jsonrpc::Request readBlobRequest;
+  readBlobRequest.id = kResourcesReadRequestId + 1;
+  readBlobRequest.method = "resources/read";
+  readBlobRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*readBlobRequest.params)["uri"] = "resource://blob";
+
+  const mcp::jsonrpc::Response readBlobResponse = dispatchRequest(*server, readBlobRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(readBlobResponse));
+  const auto &readBlob = std::get<mcp::jsonrpc::SuccessResponse>(readBlobResponse);
+  REQUIRE(readBlob.result["contents"].size() == 1);
+  REQUIRE(readBlob.result["contents"][0]["uri"].as<std::string>() == "resource://blob");
+  REQUIRE(readBlob.result["contents"][0]["blob"].as<std::string>() == "AQIDBA==");
+  REQUIRE(readBlob.result["contents"][0]["mimeType"].as<std::string>() == "application/octet-stream");
+
+  mcp::jsonrpc::Request templatesFirstPage;
+  templatesFirstPage.id = kResourceTemplatesListPaginationRequestId;
+  templatesFirstPage.method = "resources/templates/list";
+  templatesFirstPage.params = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response firstTemplateResponse = dispatchRequest(*server, templatesFirstPage);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(firstTemplateResponse));
+  const auto &firstTemplatePage = std::get<mcp::jsonrpc::SuccessResponse>(firstTemplateResponse);
+  REQUIRE(firstTemplatePage.result["resourceTemplates"].size() == kResourceTemplatesListPageSize);
+  REQUIRE(firstTemplatePage.result.contains("nextCursor"));
+
+  mcp::jsonrpc::Request templatesSecondPage;
+  templatesSecondPage.id = kResourceTemplatesListPaginationRequestId + 1;
+  templatesSecondPage.method = "resources/templates/list";
+  templatesSecondPage.params = mcp::jsonrpc::JsonValue::object();
+  (*templatesSecondPage.params)["cursor"] = firstTemplatePage.result["nextCursor"];
+
+  const mcp::jsonrpc::Response secondTemplateResponse = dispatchRequest(*server, templatesSecondPage);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(secondTemplateResponse));
+  const auto &secondTemplatePage = std::get<mcp::jsonrpc::SuccessResponse>(secondTemplateResponse);
+  REQUIRE(secondTemplatePage.result["resourceTemplates"].size() == 5);
+  REQUIRE_FALSE(secondTemplatePage.result.contains("nextCursor"));
+}
+
+TEST_CASE("Server resources/read missing URI returns resource not found", "[server][resources][errors]")
+{
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, mcp::ResourcesCapability {}, std::nullopt, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request request;
+  request.id = kResourcesMissingReadRequestId;
+  request.method = "resources/read";
+  request.params = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["uri"] = "resource://missing";
+
+  const mcp::jsonrpc::Response response = dispatchRequest(*server, request);
+  assertErrorCode(response, mcp::JsonRpcErrorCode::kResourceNotFound);
+
+  const auto &errorResponse = std::get<mcp::jsonrpc::ErrorResponse>(response);
+  REQUIRE(errorResponse.error.data.has_value());
+  if (errorResponse.error.data.has_value())
+  {
+    REQUIRE((*errorResponse.error.data)["uri"].as<std::string>() == "resource://missing");
+  }
+}
+
+TEST_CASE("Server resource subscriptions are capability-gated and emit update notifications", "[server][resources][subscriptions]")
+{
+  SECTION("Subscription methods are unavailable when resources.subscribe is not declared")
+  {
+    mcp::ResourcesCapability resourcesCapability;
+    resourcesCapability.subscribe = false;
+
+    mcp::ServerConfiguration configuration;
+    configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
+
+    auto server = mcp::Server::create(std::move(configuration));
+    completeInitialization(*server);
+
+    mcp::jsonrpc::Request subscribeRequest;
+    subscribeRequest.id = kResourcesSubscribeGatingRequestId;
+    subscribeRequest.method = "resources/subscribe";
+    subscribeRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*subscribeRequest.params)["uri"] = "resource://anything";
+
+    const mcp::jsonrpc::Response subscribeResponse = dispatchRequest(*server, subscribeRequest);
+    assertErrorCode(subscribeResponse, mcp::JsonRpcErrorCode::kMethodNotFound);
+  }
+
+  SECTION("When enabled, subscribe and unsubscribe control resources/updated delivery")
+  {
+    mcp::ResourcesCapability resourcesCapability;
+    resourcesCapability.subscribe = true;
+    resourcesCapability.listChanged = true;
+
+    mcp::ServerConfiguration configuration;
+    configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
+
+    auto server = mcp::Server::create(std::move(configuration));
+
+    std::mutex messagesMutex;
+    std::vector<mcp::jsonrpc::Message> outboundMessages;
+    server->setOutboundMessageSender(
+      [&messagesMutex, &outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+      {
+        const std::scoped_lock lock(messagesMutex);
+        outboundMessages.push_back(std::move(message));
+      });
+
+    completeInitialization(*server);
+
+    server->registerResource(makeResourceDefinition("resource://subscribed", "subscribed"),
+                             [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                             {
+                               return {
+                                 mcp::ResourceContent::text("resource://subscribed", "value"),
+                               };
+                             });
+
+    mcp::jsonrpc::RequestContext subscriberContext;
+    subscriberContext.sessionId = "session-a";
+
+    mcp::jsonrpc::Request subscribeRequest;
+    subscribeRequest.id = kResourcesSubscribeRequestId;
+    subscribeRequest.method = "resources/subscribe";
+    subscribeRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*subscribeRequest.params)["uri"] = "resource://subscribed";
+
+    const mcp::jsonrpc::Response subscribeResponse = dispatchRequest(*server, subscribeRequest, subscriberContext);
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(subscribeResponse));
+
+    REQUIRE(server->notifyResourceUpdated("resource://subscribed", subscriberContext));
+
+    mcp::jsonrpc::RequestContext otherContext;
+    otherContext.sessionId = "session-b";
+    REQUIRE_FALSE(server->notifyResourceUpdated("resource://subscribed", otherContext));
+
+    mcp::jsonrpc::Request unsubscribeRequest;
+    unsubscribeRequest.id = kResourcesUnsubscribeRequestId;
+    unsubscribeRequest.method = "resources/unsubscribe";
+    unsubscribeRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*unsubscribeRequest.params)["uri"] = "resource://subscribed";
+
+    const mcp::jsonrpc::Response unsubscribeResponse = dispatchRequest(*server, unsubscribeRequest, subscriberContext);
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(unsubscribeResponse));
+
+    REQUIRE_FALSE(server->notifyResourceUpdated("resource://subscribed", subscriberContext));
+
+    std::size_t updatedNotifications = 0;
+    std::size_t listChangedNotifications = 0;
+    {
+      const std::scoped_lock lock(messagesMutex);
+      for (const auto &message : outboundMessages)
+      {
+        if (!std::holds_alternative<mcp::jsonrpc::Notification>(message))
+        {
+          continue;
+        }
+
+        const auto &notification = std::get<mcp::jsonrpc::Notification>(message);
+        if (notification.method == "notifications/resources/updated")
+        {
+          ++updatedNotifications;
+        }
+        if (notification.method == "notifications/resources/list_changed")
+        {
+          ++listChangedNotifications;
+        }
+      }
+    }
+
+    REQUIRE(updatedNotifications == 1);
+    REQUIRE(listChangedNotifications == 1);
+  }
 }
 
 TEST_CASE("Server returns method not found for unregistered methods", "[server][core][dispatch]")

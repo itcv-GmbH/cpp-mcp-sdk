@@ -16,6 +16,7 @@ enum class JsonRpcErrorCode : std::int32_t
   kMethodNotFound = -32601,
   kInvalidParams = -32602,
   kInternalError = -32603,
+  kResourceNotFound = -32002,
   kUrlElicitationRequired = -32042,
 };
 
