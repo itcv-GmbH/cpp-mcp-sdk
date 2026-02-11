@@ -33,6 +33,8 @@ Prepare this SDK to be published to the upstream vcpkg registry later by validat
    - CI evidence and reproducible builds
 
 ## Verification
-* `vcpkg install mcp-cpp-sdk --overlay-ports=./vcpkg/ports`
+* `vcpkg install mcp-cpp-sdk --overlay-ports=./vcpkg/ports --classic`
+  `--classic` is required here because this repository has a root `vcpkg.json` (manifest mode).
+  When passing explicit package arguments (like `mcp-cpp-sdk`), vcpkg requires classic mode instead of manifest mode.
 * `cmake -S examples/consumer_find_package -B build-consumer -DCMAKE_TOOLCHAIN_FILE="${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"`
 * `cmake --build build-consumer`
