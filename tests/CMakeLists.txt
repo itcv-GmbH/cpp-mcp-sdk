@@ -286,3 +286,7 @@ target_compile_definitions(mcp_sdk_test_transport_http_tls
 )
 
 add_test(NAME mcp_sdk_transport_http_tls_test COMMAND mcp_sdk_test_transport_http_tls)
+
+if(MCP_SDK_INTEGRATION_TESTS)
+    add_subdirectory(integration)
+endif()

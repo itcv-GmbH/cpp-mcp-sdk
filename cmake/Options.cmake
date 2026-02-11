@@ -6,6 +6,7 @@ option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 # Feature options
 option(MCP_SDK_BUILD_TESTS "Build tests" ON)
 option(MCP_SDK_BUILD_EXAMPLES "Build examples" ON)
+option(MCP_SDK_INTEGRATION_TESTS "Build integration tests that use reference SDKs" OFF)
 option(MCP_SDK_ENABLE_TLS "Enable TLS support" ON)
 option(MCP_SDK_ENABLE_AUTH "Enable authorization features" ON)
 
