@@ -145,10 +145,9 @@ TEST_CASE("Task lifecycle supports transition path and terminal immutability", "
   REQUIRE(operation.moveToInputRequired().error == mcp::util::TaskStoreError::kNone);
   const mcp::jsonrpc::Response inputRequiredGet = receiver.handleTasksGetRequest(context, makeTaskRequest(20, "tasks/get", createdTask.task.taskId));
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(inputRequiredGet));
-  REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(inputRequiredGet).result["task"]["status"].as<std::string>() == "input-required");
+  REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(inputRequiredGet).result["status"].as<std::string>() == "input_required");
 
-  REQUIRE(operation.moveBackToWorking().error == mcp::util::TaskStoreError::kNone);
-  REQUIRE(operation.completeWithSuccess().error == mcp::util::TaskStoreError::kNone);
+  REQUIRE(operation.runToCompletion().error == mcp::util::TaskStoreError::kNone);
 
   const mcp::util::TaskRecordResult immutable = receiver.updateTaskStatus(context, createdTask.task.taskId, mcp::util::TaskStatus::kWorking, std::nullopt);
   REQUIRE(immutable.error == mcp::util::TaskStoreError::kTerminalImmutable);
