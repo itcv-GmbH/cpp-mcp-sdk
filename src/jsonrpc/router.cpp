@@ -137,6 +137,8 @@ Router::~Router() noexcept
 {
   try
   {
+    waitForInboundWorkers();
+
     std::vector<std::shared_ptr<InFlightRequestState>> inFlightRequests;
     {
       const std::scoped_lock lock(mutex_);
@@ -148,6 +150,7 @@ Router::~Router() noexcept
 
       inFlightRequests_.clear();
       requestIdsByProgressToken_.clear();
+      pendingTaskCancellationByRequestId_.clear();
       inboundRequestsBySender_.clear();
       inboundRequestIdsByProgressTokenBySender_.clear();
     }
@@ -230,6 +233,12 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
   auto responsePromise = std::make_shared<std::promise<Response>>();
   std::future<Response> responseFuture = responsePromise->get_future();
 
+  if (!markInboundWorkerStarted())
+  {
+    completeInboundRequest(context, request.id);
+    return detail::makeReadyFuture(Response {makeErrorResponse(makeInternalError(std::nullopt, "Router is shutting down."), request.id)});
+  }
+
   try
   {
     std::future<Response> handlerFuture = handler(context, request);
@@ -240,13 +249,15 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
         {
           Response response = handlerFuture.get();
           completeInboundRequest(context, requestId);
-          responsePromise->set_value(std::move(response));
+          detail::setPromiseValueNoThrow(*responsePromise, std::move(response));
         }
         catch (...)
         {
           completeInboundRequest(context, requestId);
-          responsePromise->set_value(Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
+          detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
         }
+
+        markInboundWorkerFinished();
       })
       .detach();
 
@@ -254,6 +265,7 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
   }
   catch (...)
   {
+    markInboundWorkerFinished();
     completeInboundRequest(context, request.id);
     return detail::makeReadyFuture(Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), request.id)});
   }
@@ -425,6 +437,11 @@ auto Router::handleRequestTimeout(const RequestId &requestId) -> void
       Request cancelRequest = util::cancellation::makeTasksCancelRequest(RequestId {std::string("cancel:") + detail::requestIdToString(requestId)}, *timedOutRequest->taskId);
       static_cast<void>(dispatchOutboundMessage(timedOutRequest->context, Message {std::move(cancelRequest)}));
     }
+    else
+    {
+      const std::scoped_lock lock(mutex_);
+      pendingTaskCancellationByRequestId_[requestId] = timedOutRequest->context;
+    }
 
     return;
   }
@@ -442,7 +459,6 @@ auto Router::sendRequest(const RequestContext &context, Request request, Outboun
   inFlightRequest->progressCallback = std::move(options.onProgress);
   inFlightRequest->progressToken = util::progress::extractProgressToken(inFlightRequest->request);
   inFlightRequest->taskAugmented = util::cancellation::isTaskAugmentedRequest(inFlightRequest->request);
-  inFlightRequest->taskId = util::cancellation::extractTaskId(inFlightRequest->request);
 
   std::future<Response> responseFuture = inFlightRequest->promise.get_future();
 
@@ -492,8 +508,30 @@ auto Router::dispatchResponse(const RequestContext &context, const Response &res
   const std::shared_ptr<InFlightRequestState> inFlightRequest = popInFlightRequest(*responseId, MarkIgnoredResponseId::kNo);
   if (inFlightRequest == nullptr)
   {
-    const std::scoped_lock lock(mutex_);
-    ignoredResponseIds_.erase(*responseId);
+    std::optional<RequestContext> pendingTaskCancellationContext;
+    {
+      const std::scoped_lock lock(mutex_);
+      if (ignoredResponseIds_.erase(*responseId) > 0)
+      {
+        const auto pendingTaskCancellationIt = pendingTaskCancellationByRequestId_.find(*responseId);
+        if (pendingTaskCancellationIt != pendingTaskCancellationByRequestId_.end())
+        {
+          pendingTaskCancellationContext = pendingTaskCancellationIt->second;
+          pendingTaskCancellationByRequestId_.erase(pendingTaskCancellationIt);
+        }
+      }
+    }
+
+    if (pendingTaskCancellationContext.has_value())
+    {
+      const std::optional<std::string> taskId = util::cancellation::extractCreateTaskResultTaskId(response);
+      if (taskId.has_value())
+      {
+        Request cancelRequest = util::cancellation::makeTasksCancelRequest(RequestId {std::string("cancel:") + detail::requestIdToString(*responseId)}, *taskId);
+        static_cast<void>(dispatchOutboundMessage(*pendingTaskCancellationContext, Message {std::move(cancelRequest)}));
+      }
+    }
+
     return false;
   }
 
@@ -589,6 +627,40 @@ auto Router::markInboundRequestActive(const RequestContext &context, const Reque
   }
 
   return true;
+}
+
+auto Router::markInboundWorkerStarted() -> bool
+{
+  const std::scoped_lock lock(mutex_);
+  if (shuttingDown_)
+  {
+    return false;
+  }
+
+  ++activeInboundWorkers_;
+  return true;
+}
+
+auto Router::markInboundWorkerFinished() -> void
+{
+  const std::scoped_lock lock(mutex_);
+  if (activeInboundWorkers_ == 0)
+  {
+    return;
+  }
+
+  --activeInboundWorkers_;
+  if (activeInboundWorkers_ == 0)
+  {
+    inboundWorkersDone_.notify_all();
+  }
+}
+
+auto Router::waitForInboundWorkers() -> void
+{
+  std::unique_lock<std::mutex> lock(mutex_);
+  shuttingDown_ = true;
+  inboundWorkersDone_.wait(lock, [this]() -> bool { return activeInboundWorkers_ == 0; });
 }
 
 auto Router::completeInboundRequest(const RequestContext &context, const RequestId &requestId) -> void

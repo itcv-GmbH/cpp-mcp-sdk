@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <functional>
 #include <future>
@@ -118,11 +119,15 @@ private:
   using InFlightRequestMap = std::unordered_map<RequestId, std::shared_ptr<InFlightRequestState>, RequestIdHash, RequestIdEqual>;
   using InboundRequestMap = std::unordered_map<RequestId, InboundRequestState, RequestIdHash, RequestIdEqual>;
   using RequestIdByProgressTokenMap = std::unordered_map<RequestId, RequestId, RequestIdHash, RequestIdEqual>;
+  using PendingTaskCancellationMap = std::unordered_map<RequestId, RequestContext, RequestIdHash, RequestIdEqual>;
 
   auto addInFlightRequest(const std::shared_ptr<InFlightRequestState> &inFlightRequest) -> std::optional<Response>;
   auto popInFlightRequest(const RequestId &requestId, MarkIgnoredResponseId markIgnoredResponseId) -> std::shared_ptr<InFlightRequestState>;
   auto armRequestTimeout(const std::shared_ptr<InFlightRequestState> &inFlightRequest, std::chrono::milliseconds timeout) -> void;
   auto handleRequestTimeout(const RequestId &requestId) -> void;
+  auto markInboundWorkerStarted() -> bool;
+  auto markInboundWorkerFinished() -> void;
+  auto waitForInboundWorkers() -> void;
 
   auto markInboundRequestActive(const RequestContext &context, const Request &request) -> bool;
   auto completeInboundRequest(const RequestContext &context, const RequestId &requestId) -> void;
@@ -138,9 +143,14 @@ private:
   RequestIdSet seenOutboundRequestIds_;
   InFlightRequestMap inFlightRequests_;
   RequestIdSet ignoredResponseIds_;
+  PendingTaskCancellationMap pendingTaskCancellationByRequestId_;
   RequestIdByProgressTokenMap requestIdsByProgressToken_;
   std::unordered_map<std::string, InboundRequestMap> inboundRequestsBySender_;
   std::unordered_map<std::string, RequestIdByProgressTokenMap> inboundRequestIdsByProgressTokenBySender_;
+
+  std::condition_variable inboundWorkersDone_;
+  std::size_t activeInboundWorkers_ = 0;
+  bool shuttingDown_ = false;
 
   std::unique_ptr<boost::asio::thread_pool> timeoutPool_;
 };

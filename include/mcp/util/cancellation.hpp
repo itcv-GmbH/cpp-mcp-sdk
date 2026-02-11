@@ -123,7 +123,40 @@ inline auto extractTaskId(const jsonrpc::Request &request) -> std::optional<std:
     return std::nullopt;
   }
 
-  const std::string taskId = params.at("taskId").as<std::string>();
+  std::string taskId = params.at("taskId").as<std::string>();
+  if (taskId.empty())
+  {
+    return std::nullopt;
+  }
+
+  return taskId;
+}
+
+inline auto extractCreateTaskResultTaskId(const jsonrpc::Response &response) -> std::optional<std::string>
+{
+  if (!std::holds_alternative<jsonrpc::SuccessResponse>(response))
+  {
+    return std::nullopt;
+  }
+
+  const auto &successResponse = std::get<jsonrpc::SuccessResponse>(response);
+  if (!successResponse.result.is_object())
+  {
+    return std::nullopt;
+  }
+
+  if (!successResponse.result.contains("task") || !successResponse.result.at("task").is_object())
+  {
+    return std::nullopt;
+  }
+
+  const jsonrpc::JsonValue &taskObject = successResponse.result.at("task");
+  if (!taskObject.contains("taskId") || !taskObject.at("taskId").is_string())
+  {
+    return std::nullopt;
+  }
+
+  std::string taskId = taskObject.at("taskId").as<std::string>();
   if (taskId.empty())
   {
     return std::nullopt;
