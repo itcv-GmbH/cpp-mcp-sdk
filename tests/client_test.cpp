@@ -19,6 +19,10 @@
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/server/prompts.hpp>
+#include <mcp/server/resources.hpp>
+#include <mcp/server/server.hpp>
+#include <mcp/server/tools.hpp>
 #include <mcp/transport/transport.hpp>
 #include <mcp/version.hpp>
 
@@ -136,6 +140,95 @@ private:
   std::vector<mcp::jsonrpc::Message> messages_;
 };
 
+class InMemoryClientServerTransport final : public mcp::transport::Transport
+{
+public:
+  InMemoryClientServerTransport(std::shared_ptr<mcp::Server> server, std::weak_ptr<mcp::Client> client)
+    : server_(std::move(server))
+    , client_(std::move(client))
+  {
+    if (!server_)
+    {
+      throw std::invalid_argument("In-memory transport requires a server instance");
+    }
+
+    context_.sessionId = "in-memory-session";
+  }
+
+  auto attach(std::weak_ptr<mcp::Session> session) -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    attachedSession_ = std::move(session);
+  }
+
+  auto start() -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    running_ = true;
+  }
+
+  auto stop() -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    running_ = false;
+  }
+
+  auto isRunning() const noexcept -> bool override
+  {
+    const std::scoped_lock lock(mutex_);
+    return running_;
+  }
+
+  auto send(mcp::jsonrpc::Message message) -> void override
+  {
+    std::shared_ptr<mcp::Server> server;
+    std::weak_ptr<mcp::Client> client;
+
+    {
+      const std::scoped_lock lock(mutex_);
+      if (!running_)
+      {
+        throw std::runtime_error("In-memory transport must be running before send().");
+      }
+
+      server = server_;
+      client = client_;
+    }
+
+    if (std::holds_alternative<mcp::jsonrpc::Request>(message))
+    {
+      const auto response = server->handleRequest(context_, std::get<mcp::jsonrpc::Request>(message)).get();
+      if (const auto clientRef = client.lock())
+      {
+        static_cast<void>(clientRef->handleResponse(context_, response));
+      }
+      return;
+    }
+
+    if (std::holds_alternative<mcp::jsonrpc::Notification>(message))
+    {
+      server->handleNotification(context_, std::get<mcp::jsonrpc::Notification>(message));
+      return;
+    }
+
+    if (std::holds_alternative<mcp::jsonrpc::SuccessResponse>(message))
+    {
+      static_cast<void>(server->handleResponse(context_, mcp::jsonrpc::Response {std::get<mcp::jsonrpc::SuccessResponse>(message)}));
+      return;
+    }
+
+    static_cast<void>(server->handleResponse(context_, mcp::jsonrpc::Response {std::get<mcp::jsonrpc::ErrorResponse>(message)}));
+  }
+
+private:
+  mutable std::mutex mutex_;
+  bool running_ = false;
+  mcp::jsonrpc::RequestContext context_;
+  std::weak_ptr<mcp::Session> attachedSession_;
+  std::shared_ptr<mcp::Server> server_;
+  std::weak_ptr<mcp::Client> client_;
+};
+
 static auto requestParamsOrObject(const mcp::jsonrpc::Request &request) -> mcp::jsonrpc::JsonValue
 {
   if (!request.params.has_value())
@@ -160,6 +253,8 @@ static auto makeSuccessfulInitializeResponse(const mcp::jsonrpc::RequestId &requ
   return mcp::jsonrpc::Response {std::move(response)};
 }
 
+static constexpr std::size_t kRoundTripItemCount = 53;
+
 static auto makeFailedInitializeResponse(const mcp::jsonrpc::RequestId &requestId) -> mcp::jsonrpc::Response
 {
   mcp::jsonrpc::ErrorResponse response;
@@ -167,6 +262,34 @@ static auto makeFailedInitializeResponse(const mcp::jsonrpc::RequestId &requestI
   response.error.code = static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams);
   response.error.message = "Initialize rejected";
   return mcp::jsonrpc::Response {std::move(response)};
+}
+
+static auto makeToolDefinition(std::string name) -> mcp::ToolDefinition
+{
+  mcp::ToolDefinition definition;
+  definition.name = std::move(name);
+  definition.description = "tool description";
+  definition.inputSchema = mcp::jsonrpc::JsonValue::object();
+  definition.inputSchema["type"] = "object";
+  definition.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
+  definition.inputSchema["properties"]["value"] = mcp::jsonrpc::JsonValue::object();
+  definition.inputSchema["properties"]["value"]["type"] = "string";
+  definition.inputSchema["required"] = mcp::jsonrpc::JsonValue::array();
+  definition.inputSchema["required"].push_back("value");
+  return definition;
+}
+
+static auto makePromptDefinition(std::string name) -> mcp::PromptDefinition
+{
+  mcp::PromptDefinition definition;
+  definition.name = std::move(name);
+  definition.description = "prompt description";
+
+  mcp::PromptArgumentDefinition argument;
+  argument.name = "topic";
+  argument.required = true;
+  definition.arguments.push_back(std::move(argument));
+  return definition;
 }
 
 TEST_CASE("Client blocks feature requests before initialize", "[client][core][lifecycle]")
@@ -455,4 +578,150 @@ TEST_CASE("Client exposes negotiated capabilities after initialize", "[client][c
   const auto negotiatedTools = negotiatedServerCapabilities.has_value() ? negotiatedServerCapabilities->tools() : std::optional<mcp::ToolsCapability> {};
   REQUIRE(negotiatedTools.has_value());
   REQUIRE(negotiatedTools.value_or(mcp::ToolsCapability {}).listChanged);
+}
+
+TEST_CASE("Client convenience APIs enforce negotiated capability gating", "[client][features][capabilities]")
+{
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<InMemoryClientServerTransport>(server, client);
+  client->attachTransport(transport);
+  client->start();
+
+  const auto initializeResponse = client->initialize().get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initializeResponse));
+
+  REQUIRE_THROWS_AS(client->listTools(), mcp::CapabilityError);
+  REQUIRE_THROWS_AS(client->callTool("echo", mcp::jsonrpc::JsonValue::object()), mcp::CapabilityError);
+  REQUIRE_THROWS_AS(client->listResources(), mcp::CapabilityError);
+  REQUIRE_THROWS_AS(client->readResource("resource://item-0"), mcp::CapabilityError);
+  REQUIRE_THROWS_AS(client->listResourceTemplates(), mcp::CapabilityError);
+  REQUIRE_THROWS_AS(client->listPrompts(), mcp::CapabilityError);
+  REQUIRE_THROWS_AS(client->getPrompt("example", mcp::jsonrpc::JsonValue::object()), mcp::CapabilityError);
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("Client convenience APIs support local in-memory round-trips and pagination helpers", "[client][features][roundtrip]")
+{
+  mcp::ToolsCapability toolsCapability;
+  mcp::ResourcesCapability resourcesCapability;
+  mcp::PromptsCapability promptsCapability;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  for (std::size_t index = 0; index < kRoundTripItemCount; ++index)
+  {
+    const std::string toolName = "tool-" + std::to_string(index);
+    server->registerTool(makeToolDefinition(toolName),
+                         [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                         {
+                           mcp::CallToolResult result;
+                           result.content = mcp::jsonrpc::JsonValue::array();
+
+                           mcp::jsonrpc::JsonValue text = mcp::jsonrpc::JsonValue::object();
+                           text["type"] = "text";
+                           text["text"] = context.arguments["value"].as<std::string>();
+                           result.content.push_back(std::move(text));
+                           return result;
+                         });
+
+    const std::string uri = "resource://item-" + std::to_string(index);
+    mcp::ResourceDefinition resourceDefinition;
+    resourceDefinition.uri = uri;
+    resourceDefinition.name = "resource-" + std::to_string(index);
+    // NOLINTNEXTLINE(bugprone-exception-escape)
+    server->registerResource(resourceDefinition,
+                             [uri](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>  // NOLINT(bugprone-exception-escape)
+                             {
+                               return {
+                                 mcp::ResourceContent::text(uri, "value-" + uri, std::string("text/plain")),
+                               };
+                             });
+
+    mcp::ResourceTemplateDefinition templateDefinition;
+    templateDefinition.uriTemplate = "resource://template/{id-" + std::to_string(index) + "}";
+    templateDefinition.name = "template-" + std::to_string(index);
+    server->registerResourceTemplate(std::move(templateDefinition));
+
+    server->registerPrompt(makePromptDefinition("prompt-" + std::to_string(index)),
+                           [](const mcp::PromptGetContext &context) -> mcp::PromptGetResult
+                           {
+                             mcp::PromptGetResult result;
+                             result.description = "generated prompt";
+
+                             mcp::PromptMessage message;
+                             message.role = "user";
+                             message.content = mcp::jsonrpc::JsonValue::object();
+                             message.content["type"] = "text";
+                             message.content["text"] = "Explain: " + context.arguments["topic"].as<std::string>();
+                             result.messages.push_back(std::move(message));
+                             return result;
+                           });
+  }
+
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<InMemoryClientServerTransport>(server, client);
+  client->attachTransport(transport);
+  client->start();
+
+  const auto initializeResponse = client->initialize().get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initializeResponse));
+
+  const auto firstToolsPage = client->listTools();
+  REQUIRE(firstToolsPage.tools.size() == 50);
+  REQUIRE(firstToolsPage.nextCursor.has_value());
+
+  const auto allTools =
+    client->collectAllPages<mcp::ToolDefinition>([&client](const std::optional<std::string> &cursor) -> mcp::ListToolsResult { return client->listTools(cursor); },
+                                                 [](const mcp::ListToolsResult &page) -> const std::vector<mcp::ToolDefinition> & { return page.tools; });
+  REQUIRE(allTools.size() == kRoundTripItemCount);
+
+  std::size_t resourcePages = 0;
+  std::size_t totalResources = 0;
+  client->forEachPage([&client](const std::optional<std::string> &cursor) -> mcp::ListResourcesResult { return client->listResources(cursor); },
+                      [&resourcePages, &totalResources](const mcp::ListResourcesResult &page) -> void
+                      {
+                        ++resourcePages;
+                        totalResources += page.resources.size();
+                      });
+  REQUIRE(resourcePages == 2);
+  REQUIRE(totalResources == kRoundTripItemCount);
+
+  const auto readResult = client->readResource("resource://item-0");
+  REQUIRE(readResult.contents.size() == 1);
+  REQUIRE(readResult.contents[0].uri == "resource://item-0");
+  REQUIRE(readResult.contents[0].kind == mcp::ResourceContentKind::kText);
+  REQUIRE(readResult.contents[0].value == "value-resource://item-0");
+
+  const auto allTemplates = client->collectAllPages<mcp::ResourceTemplateDefinition>(
+    [&client](const std::optional<std::string> &cursor) -> mcp::ListResourceTemplatesResult { return client->listResourceTemplates(cursor); },
+    [](const mcp::ListResourceTemplatesResult &page) -> const std::vector<mcp::ResourceTemplateDefinition> & { return page.resourceTemplates; });
+  REQUIRE(allTemplates.size() == kRoundTripItemCount);
+
+  const auto allPrompts =
+    client->collectAllPages<mcp::PromptDefinition>([&client](const std::optional<std::string> &cursor) -> mcp::ListPromptsResult { return client->listPrompts(cursor); },
+                                                   [](const mcp::ListPromptsResult &page) -> const std::vector<mcp::PromptDefinition> & { return page.prompts; });
+  REQUIRE(allPrompts.size() == kRoundTripItemCount);
+
+  mcp::jsonrpc::JsonValue toolArgs = mcp::jsonrpc::JsonValue::object();
+  toolArgs["value"] = "hello-tool";
+  const auto toolResult = client->callTool("tool-0", std::move(toolArgs));
+  REQUIRE(toolResult.content.size() == 1);
+  REQUIRE(toolResult.content[0]["type"].as<std::string>() == "text");
+  REQUIRE(toolResult.content[0]["text"].as<std::string>() == "hello-tool");
+
+  mcp::jsonrpc::JsonValue promptArgs = mcp::jsonrpc::JsonValue::object();
+  promptArgs["topic"] = "pagination";
+  const auto promptResult = client->getPrompt("prompt-0", std::move(promptArgs));
+  REQUIRE(promptResult.description.has_value());
+  REQUIRE(promptResult.description.value_or("") == "generated prompt");
+  REQUIRE(promptResult.messages.size() == 1);
+  REQUIRE(promptResult.messages[0].role == "user");
+  REQUIRE(promptResult.messages[0].content["text"].as<std::string>() == "Explain: pagination");
 }

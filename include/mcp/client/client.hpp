@@ -1,16 +1,21 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/server/prompts.hpp>
+#include <mcp/server/resources.hpp>
+#include <mcp/server/tools.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
 #include <mcp/transport/transport.hpp>
@@ -23,6 +28,35 @@ struct ClientInitializeConfiguration
   std::optional<std::string> protocolVersion;
   std::optional<ClientCapabilities> capabilities;
   std::optional<Implementation> clientInfo;
+};
+
+struct ListToolsResult
+{
+  std::vector<ToolDefinition> tools;
+  std::optional<std::string> nextCursor;
+};
+
+struct ListResourcesResult
+{
+  std::vector<ResourceDefinition> resources;
+  std::optional<std::string> nextCursor;
+};
+
+struct ReadResourceResult
+{
+  std::vector<ResourceContent> contents;
+};
+
+struct ListResourceTemplatesResult
+{
+  std::vector<ResourceTemplateDefinition> resourceTemplates;
+  std::optional<std::string> nextCursor;
+};
+
+struct ListPromptsResult
+{
+  std::vector<PromptDefinition> prompts;
+  std::optional<std::string> nextCursor;
 };
 
 class Client
@@ -42,6 +76,48 @@ public:
   auto setInitializeConfiguration(ClientInitializeConfiguration configuration) -> void;
   auto initializeConfiguration() const -> ClientInitializeConfiguration;
   auto initialize(RequestOptions options = {}) -> std::future<jsonrpc::Response>;
+
+  auto listTools(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListToolsResult;
+  auto callTool(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), RequestOptions options = {}) -> CallToolResult;
+  auto listResources(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListResourcesResult;
+  auto readResource(const std::string &uri, RequestOptions options = {}) -> ReadResourceResult;
+  auto listResourceTemplates(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListResourceTemplatesResult;
+  auto listPrompts(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListPromptsResult;
+  auto getPrompt(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), RequestOptions options = {}) -> PromptGetResult;
+
+  template<typename FetchPage, typename ConsumePage>
+  auto forEachPage(FetchPage fetchPage, ConsumePage consumePage, std::optional<std::string> cursor = std::nullopt) -> void
+  {
+    while (true)
+    {
+      const auto page = fetchPage(cursor);
+      consumePage(page);
+
+      if (!page.nextCursor.has_value())
+      {
+        break;
+      }
+
+      cursor = page.nextCursor;
+    }
+  }
+
+  template<typename ItemType, typename FetchPage, typename ExtractItems>
+  auto collectAllPages(FetchPage fetchPage, ExtractItems extractItems, std::optional<std::string> cursor = std::nullopt) -> std::vector<ItemType>
+  {
+    std::vector<ItemType> allItems;
+
+    forEachPage(
+      std::move(fetchPage),
+      [&allItems, &extractItems](const auto &page) -> void
+      {
+        const auto &pageItems = extractItems(page);
+        allItems.insert(allItems.end(), pageItems.begin(), pageItems.end());
+      },
+      std::move(cursor));
+
+    return allItems;
+  }
 
   auto start() -> void;
   auto stop() -> void;

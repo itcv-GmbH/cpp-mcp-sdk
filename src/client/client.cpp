@@ -1,10 +1,12 @@
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -17,6 +19,10 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/schema/validator.hpp>
+#include <mcp/server/prompts.hpp>
+#include <mcp/server/resources.hpp>
+#include <mcp/server/tools.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
 #include <mcp/transport/transport.hpp>
@@ -28,6 +34,13 @@ static constexpr std::string_view kInitializeMethod = "initialize";
 static constexpr std::string_view kPingMethod = "ping";
 static constexpr std::string_view kInitializedNotificationMethod = "notifications/initialized";
 static constexpr std::string_view kDefaultClientName = "mcp-cpp-client";
+static constexpr std::string_view kToolsListMethod = "tools/list";
+static constexpr std::string_view kToolsCallMethod = "tools/call";
+static constexpr std::string_view kResourcesListMethod = "resources/list";
+static constexpr std::string_view kResourcesReadMethod = "resources/read";
+static constexpr std::string_view kResourcesTemplatesListMethod = "resources/templates/list";
+static constexpr std::string_view kPromptsListMethod = "prompts/list";
+static constexpr std::string_view kPromptsGetMethod = "prompts/get";
 
 static auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>
 {
@@ -54,6 +67,347 @@ static auto extractResponseId(const jsonrpc::Response &response) -> std::optiona
   }
 
   return std::get<jsonrpc::ErrorResponse>(response).id;
+}
+
+static auto mcpSchemaValidator() -> const schema::Validator &
+{
+  static const schema::Validator validator = schema::Validator::loadPinnedMcpSchema();
+  return validator;
+}
+
+static auto ensureValidResultSchema(const jsonrpc::JsonValue &result, std::string_view definitionName, std::string_view method) -> void
+{
+  const schema::ValidationResult validationResult = mcpSchemaValidator().validateInstance(result, definitionName);
+  if (!validationResult.valid)
+  {
+    throw std::runtime_error("Schema validation failed for '" + std::string(method) + "' result: " + schema::formatDiagnostics(validationResult));
+  }
+}
+
+static auto responseToResultOrThrow(const jsonrpc::Response &response, std::string_view method) -> const jsonrpc::JsonValue &
+{
+  if (std::holds_alternative<jsonrpc::ErrorResponse>(response))
+  {
+    const auto &errorResponse = std::get<jsonrpc::ErrorResponse>(response);
+    std::ostringstream stream;
+    stream << "Request '" << method << "' failed with code " << errorResponse.error.code;
+    if (!errorResponse.error.message.empty())
+    {
+      stream << ": " << errorResponse.error.message;
+    }
+
+    throw std::runtime_error(stream.str());
+  }
+
+  return std::get<jsonrpc::SuccessResponse>(response).result;
+}
+
+static auto parseCursor(const jsonrpc::JsonValue &result, std::string_view method) -> std::optional<std::string>
+{
+  if (!result.contains("nextCursor"))
+  {
+    return std::nullopt;
+  }
+
+  if (!result["nextCursor"].is_string())
+  {
+    throw std::runtime_error("Invalid '" + std::string(method) + "' response: nextCursor must be a string when present");
+  }
+
+  return result["nextCursor"].as<std::string>();
+}
+
+static auto parseToolDefinition(const jsonrpc::JsonValue &toolJson) -> ToolDefinition
+{
+  if (!toolJson.is_object() || !toolJson.contains("name") || !toolJson["name"].is_string() || !toolJson.contains("inputSchema") || !toolJson["inputSchema"].is_object())
+  {
+    throw std::runtime_error("Invalid tools/list response: tool definition is missing required fields");
+  }
+
+  ToolDefinition definition;
+  definition.name = toolJson["name"].as<std::string>();
+  definition.inputSchema = toolJson["inputSchema"];
+
+  if (toolJson.contains("title") && toolJson["title"].is_string())
+  {
+    definition.title = toolJson["title"].as<std::string>();
+  }
+
+  if (toolJson.contains("description") && toolJson["description"].is_string())
+  {
+    definition.description = toolJson["description"].as<std::string>();
+  }
+
+  if (toolJson.contains("icons"))
+  {
+    definition.icons = toolJson["icons"];
+  }
+
+  if (toolJson.contains("outputSchema") && toolJson["outputSchema"].is_object())
+  {
+    definition.outputSchema = toolJson["outputSchema"];
+  }
+
+  if (toolJson.contains("annotations"))
+  {
+    definition.annotations = toolJson["annotations"];
+  }
+
+  if (toolJson.contains("execution"))
+  {
+    definition.execution = toolJson["execution"];
+  }
+
+  if (toolJson.contains("_meta"))
+  {
+    definition.metadata = toolJson["_meta"];
+  }
+
+  return definition;
+}
+
+static auto parseResourceDefinition(const jsonrpc::JsonValue &resourceJson) -> ResourceDefinition
+{
+  if (!resourceJson.is_object() || !resourceJson.contains("uri") || !resourceJson["uri"].is_string() || !resourceJson.contains("name") || !resourceJson["name"].is_string())
+  {
+    throw std::runtime_error("Invalid resources/list response: resource definition is missing required fields");
+  }
+
+  ResourceDefinition definition;
+  definition.uri = resourceJson["uri"].as<std::string>();
+  definition.name = resourceJson["name"].as<std::string>();
+
+  if (resourceJson.contains("title") && resourceJson["title"].is_string())
+  {
+    definition.title = resourceJson["title"].as<std::string>();
+  }
+
+  if (resourceJson.contains("description") && resourceJson["description"].is_string())
+  {
+    definition.description = resourceJson["description"].as<std::string>();
+  }
+
+  if (resourceJson.contains("icons"))
+  {
+    definition.icons = resourceJson["icons"];
+  }
+
+  if (resourceJson.contains("mimeType") && resourceJson["mimeType"].is_string())
+  {
+    definition.mimeType = resourceJson["mimeType"].as<std::string>();
+  }
+
+  if (resourceJson.contains("size") && (resourceJson["size"].is_uint64() || resourceJson["size"].is_int64()))
+  {
+    definition.size = resourceJson["size"].as<std::uint64_t>();
+  }
+
+  if (resourceJson.contains("annotations"))
+  {
+    definition.annotations = resourceJson["annotations"];
+  }
+
+  if (resourceJson.contains("_meta"))
+  {
+    definition.metadata = resourceJson["_meta"];
+  }
+
+  return definition;
+}
+
+static auto parseResourceContent(const jsonrpc::JsonValue &contentJson) -> ResourceContent
+{
+  if (!contentJson.is_object() || !contentJson.contains("uri") || !contentJson["uri"].is_string())
+  {
+    throw std::runtime_error("Invalid resources/read response: content is missing required uri field");
+  }
+
+  ResourceContent content;
+  content.uri = contentJson["uri"].as<std::string>();
+
+  if (contentJson.contains("mimeType") && contentJson["mimeType"].is_string())
+  {
+    content.mimeType = contentJson["mimeType"].as<std::string>();
+  }
+
+  if (contentJson.contains("annotations"))
+  {
+    content.annotations = contentJson["annotations"];
+  }
+
+  if (contentJson.contains("_meta"))
+  {
+    content.metadata = contentJson["_meta"];
+  }
+
+  if (contentJson.contains("text") && contentJson["text"].is_string())
+  {
+    content.kind = ResourceContentKind::kText;
+    content.value = contentJson["text"].as<std::string>();
+    return content;
+  }
+
+  if (contentJson.contains("blob") && contentJson["blob"].is_string())
+  {
+    content.kind = ResourceContentKind::kBlobBase64;
+    content.value = contentJson["blob"].as<std::string>();
+    return content;
+  }
+
+  throw std::runtime_error("Invalid resources/read response: content must include either text or blob");
+}
+
+static auto parseResourceTemplateDefinition(const jsonrpc::JsonValue &templateJson) -> ResourceTemplateDefinition
+{
+  if (!templateJson.is_object() || !templateJson.contains("uriTemplate") || !templateJson["uriTemplate"].is_string() || !templateJson.contains("name")
+      || !templateJson["name"].is_string())
+  {
+    throw std::runtime_error("Invalid resources/templates/list response: resource template is missing required fields");
+  }
+
+  ResourceTemplateDefinition definition;
+  definition.uriTemplate = templateJson["uriTemplate"].as<std::string>();
+  definition.name = templateJson["name"].as<std::string>();
+
+  if (templateJson.contains("title") && templateJson["title"].is_string())
+  {
+    definition.title = templateJson["title"].as<std::string>();
+  }
+
+  if (templateJson.contains("description") && templateJson["description"].is_string())
+  {
+    definition.description = templateJson["description"].as<std::string>();
+  }
+
+  if (templateJson.contains("icons"))
+  {
+    definition.icons = templateJson["icons"];
+  }
+
+  if (templateJson.contains("mimeType") && templateJson["mimeType"].is_string())
+  {
+    definition.mimeType = templateJson["mimeType"].as<std::string>();
+  }
+
+  if (templateJson.contains("annotations"))
+  {
+    definition.annotations = templateJson["annotations"];
+  }
+
+  if (templateJson.contains("_meta"))
+  {
+    definition.metadata = templateJson["_meta"];
+  }
+
+  return definition;
+}
+
+static auto parsePromptArgument(const jsonrpc::JsonValue &argumentJson) -> PromptArgumentDefinition
+{
+  if (!argumentJson.is_object() || !argumentJson.contains("name") || !argumentJson["name"].is_string())
+  {
+    throw std::runtime_error("Invalid prompts/list response: prompt argument is missing required name field");
+  }
+
+  PromptArgumentDefinition argument;
+  argument.name = argumentJson["name"].as<std::string>();
+
+  if (argumentJson.contains("title") && argumentJson["title"].is_string())
+  {
+    argument.title = argumentJson["title"].as<std::string>();
+  }
+
+  if (argumentJson.contains("description") && argumentJson["description"].is_string())
+  {
+    argument.description = argumentJson["description"].as<std::string>();
+  }
+
+  if (argumentJson.contains("required") && argumentJson["required"].is_bool())
+  {
+    argument.required = argumentJson["required"].as<bool>();
+  }
+
+  if (argumentJson.contains("_meta"))
+  {
+    argument.metadata = argumentJson["_meta"];
+  }
+
+  return argument;
+}
+
+static auto parsePromptDefinition(const jsonrpc::JsonValue &promptJson) -> PromptDefinition
+{
+  if (!promptJson.is_object() || !promptJson.contains("name") || !promptJson["name"].is_string())
+  {
+    throw std::runtime_error("Invalid prompts/list response: prompt definition is missing required name field");
+  }
+
+  PromptDefinition definition;
+  definition.name = promptJson["name"].as<std::string>();
+
+  if (promptJson.contains("title") && promptJson["title"].is_string())
+  {
+    definition.title = promptJson["title"].as<std::string>();
+  }
+
+  if (promptJson.contains("description") && promptJson["description"].is_string())
+  {
+    definition.description = promptJson["description"].as<std::string>();
+  }
+
+  if (promptJson.contains("icons"))
+  {
+    definition.icons = promptJson["icons"];
+  }
+
+  if (promptJson.contains("arguments"))
+  {
+    if (!promptJson["arguments"].is_array())
+    {
+      throw std::runtime_error("Invalid prompts/list response: prompt arguments must be an array when present");
+    }
+
+    for (const auto &argumentJson : promptJson["arguments"].array_range())
+    {
+      definition.arguments.push_back(parsePromptArgument(argumentJson));
+    }
+  }
+
+  if (promptJson.contains("_meta"))
+  {
+    definition.metadata = promptJson["_meta"];
+  }
+
+  return definition;
+}
+
+static auto parsePromptMessage(const jsonrpc::JsonValue &messageJson) -> PromptMessage
+{
+  if (!messageJson.is_object() || !messageJson.contains("role") || !messageJson["role"].is_string() || !messageJson.contains("content") || !messageJson["content"].is_object())
+  {
+    throw std::runtime_error("Invalid prompts/get response: message must include role and object content");
+  }
+
+  PromptMessage message;
+  message.role = messageJson["role"].as<std::string>();
+  message.content = messageJson["content"];
+  return message;
+}
+
+static auto ensureServerCapabilityAvailable(const Client &client, std::string_view capabilityName, std::string_view method) -> void
+{
+  const auto negotiatedCapabilities = client.negotiatedServerCapabilities();
+  if (!negotiatedCapabilities.has_value())
+  {
+    return;
+  }
+
+  if (negotiatedCapabilities->hasCapability(capabilityName))
+  {
+    return;
+  }
+
+  throw CapabilityError("Server capability '" + std::string(capabilityName) + "' is required for method '" + std::string(method) + "'");
 }
 
 static auto iconToJson(const Icon &icon) -> jsonrpc::JsonValue
@@ -359,6 +713,228 @@ auto Client::initializeConfiguration() const -> ClientInitializeConfiguration
 auto Client::initialize(RequestOptions options) -> std::future<jsonrpc::Response>
 {
   return sendRequest(std::string(kInitializeMethod), jsonrpc::JsonValue::object(), options);
+}
+
+auto Client::listTools(std::optional<std::string> cursor, RequestOptions options) -> ListToolsResult
+{
+  ensureServerCapabilityAvailable(*this, "tools", kToolsListMethod);
+
+  jsonrpc::JsonValue params = jsonrpc::JsonValue::object();
+  if (cursor.has_value())
+  {
+    params["cursor"] = *cursor;
+  }
+
+  const jsonrpc::Response response = sendRequest(std::string(kToolsListMethod), std::move(params), options).get();
+  const jsonrpc::JsonValue &result = responseToResultOrThrow(response, kToolsListMethod);
+  ensureValidResultSchema(result, "ListToolsResult", kToolsListMethod);
+
+  if (!result.contains("tools") || !result["tools"].is_array())
+  {
+    throw std::runtime_error("Invalid tools/list response: tools must be an array");
+  }
+
+  ListToolsResult parsedResult;
+  parsedResult.nextCursor = parseCursor(result, kToolsListMethod);
+  parsedResult.tools.reserve(result["tools"].size());
+  for (const auto &toolJson : result["tools"].array_range())
+  {
+    parsedResult.tools.push_back(parseToolDefinition(toolJson));
+  }
+
+  return parsedResult;
+}
+
+auto Client::callTool(const std::string &name, jsonrpc::JsonValue arguments, RequestOptions options) -> CallToolResult
+{
+  ensureServerCapabilityAvailable(*this, "tools", kToolsCallMethod);
+
+  jsonrpc::JsonValue params = jsonrpc::JsonValue::object();
+  params["name"] = name;
+  params["arguments"] = std::move(arguments);
+
+  const jsonrpc::Response response = sendRequest(std::string(kToolsCallMethod), std::move(params), options).get();
+  const jsonrpc::JsonValue &result = responseToResultOrThrow(response, kToolsCallMethod);
+  ensureValidResultSchema(result, "CallToolResult", kToolsCallMethod);
+
+  if (!result.contains("content") || !result["content"].is_array())
+  {
+    throw std::runtime_error("Invalid tools/call response: content must be an array");
+  }
+
+  CallToolResult parsedResult;
+  parsedResult.content = result["content"];
+
+  if (result.contains("structuredContent"))
+  {
+    parsedResult.structuredContent = result["structuredContent"];
+  }
+
+  if (result.contains("isError") && result["isError"].is_bool())
+  {
+    parsedResult.isError = result["isError"].as<bool>();
+  }
+
+  if (result.contains("_meta"))
+  {
+    parsedResult.metadata = result["_meta"];
+  }
+
+  return parsedResult;
+}
+
+auto Client::listResources(std::optional<std::string> cursor, RequestOptions options) -> ListResourcesResult
+{
+  ensureServerCapabilityAvailable(*this, "resources", kResourcesListMethod);
+
+  jsonrpc::JsonValue params = jsonrpc::JsonValue::object();
+  if (cursor.has_value())
+  {
+    params["cursor"] = *cursor;
+  }
+
+  const jsonrpc::Response response = sendRequest(std::string(kResourcesListMethod), std::move(params), options).get();
+  const jsonrpc::JsonValue &result = responseToResultOrThrow(response, kResourcesListMethod);
+  ensureValidResultSchema(result, "ListResourcesResult", kResourcesListMethod);
+
+  if (!result.contains("resources") || !result["resources"].is_array())
+  {
+    throw std::runtime_error("Invalid resources/list response: resources must be an array");
+  }
+
+  ListResourcesResult parsedResult;
+  parsedResult.nextCursor = parseCursor(result, kResourcesListMethod);
+  parsedResult.resources.reserve(result["resources"].size());
+  for (const auto &resourceJson : result["resources"].array_range())
+  {
+    parsedResult.resources.push_back(parseResourceDefinition(resourceJson));
+  }
+
+  return parsedResult;
+}
+
+auto Client::readResource(const std::string &uri, RequestOptions options) -> ReadResourceResult
+{
+  ensureServerCapabilityAvailable(*this, "resources", kResourcesReadMethod);
+
+  jsonrpc::JsonValue params = jsonrpc::JsonValue::object();
+  params["uri"] = uri;
+
+  const jsonrpc::Response response = sendRequest(std::string(kResourcesReadMethod), std::move(params), options).get();
+  const jsonrpc::JsonValue &result = responseToResultOrThrow(response, kResourcesReadMethod);
+  ensureValidResultSchema(result, "ReadResourceResult", kResourcesReadMethod);
+
+  if (!result.contains("contents") || !result["contents"].is_array())
+  {
+    throw std::runtime_error("Invalid resources/read response: contents must be an array");
+  }
+
+  ReadResourceResult parsedResult;
+  parsedResult.contents.reserve(result["contents"].size());
+  for (const auto &contentJson : result["contents"].array_range())
+  {
+    parsedResult.contents.push_back(parseResourceContent(contentJson));
+  }
+
+  return parsedResult;
+}
+
+auto Client::listResourceTemplates(std::optional<std::string> cursor, RequestOptions options) -> ListResourceTemplatesResult
+{
+  ensureServerCapabilityAvailable(*this, "resources", kResourcesTemplatesListMethod);
+
+  jsonrpc::JsonValue params = jsonrpc::JsonValue::object();
+  if (cursor.has_value())
+  {
+    params["cursor"] = *cursor;
+  }
+
+  const jsonrpc::Response response = sendRequest(std::string(kResourcesTemplatesListMethod), std::move(params), options).get();
+  const jsonrpc::JsonValue &result = responseToResultOrThrow(response, kResourcesTemplatesListMethod);
+  ensureValidResultSchema(result, "ListResourceTemplatesResult", kResourcesTemplatesListMethod);
+
+  if (!result.contains("resourceTemplates") || !result["resourceTemplates"].is_array())
+  {
+    throw std::runtime_error("Invalid resources/templates/list response: resourceTemplates must be an array");
+  }
+
+  ListResourceTemplatesResult parsedResult;
+  parsedResult.nextCursor = parseCursor(result, kResourcesTemplatesListMethod);
+  parsedResult.resourceTemplates.reserve(result["resourceTemplates"].size());
+  for (const auto &templateJson : result["resourceTemplates"].array_range())
+  {
+    parsedResult.resourceTemplates.push_back(parseResourceTemplateDefinition(templateJson));
+  }
+
+  return parsedResult;
+}
+
+auto Client::listPrompts(std::optional<std::string> cursor, RequestOptions options) -> ListPromptsResult
+{
+  ensureServerCapabilityAvailable(*this, "prompts", kPromptsListMethod);
+
+  jsonrpc::JsonValue params = jsonrpc::JsonValue::object();
+  if (cursor.has_value())
+  {
+    params["cursor"] = *cursor;
+  }
+
+  const jsonrpc::Response response = sendRequest(std::string(kPromptsListMethod), std::move(params), options).get();
+  const jsonrpc::JsonValue &result = responseToResultOrThrow(response, kPromptsListMethod);
+  ensureValidResultSchema(result, "ListPromptsResult", kPromptsListMethod);
+
+  if (!result.contains("prompts") || !result["prompts"].is_array())
+  {
+    throw std::runtime_error("Invalid prompts/list response: prompts must be an array");
+  }
+
+  ListPromptsResult parsedResult;
+  parsedResult.nextCursor = parseCursor(result, kPromptsListMethod);
+  parsedResult.prompts.reserve(result["prompts"].size());
+  for (const auto &promptJson : result["prompts"].array_range())
+  {
+    parsedResult.prompts.push_back(parsePromptDefinition(promptJson));
+  }
+
+  return parsedResult;
+}
+
+auto Client::getPrompt(const std::string &name, jsonrpc::JsonValue arguments, RequestOptions options) -> PromptGetResult
+{
+  ensureServerCapabilityAvailable(*this, "prompts", kPromptsGetMethod);
+
+  jsonrpc::JsonValue params = jsonrpc::JsonValue::object();
+  params["name"] = name;
+  params["arguments"] = std::move(arguments);
+
+  const jsonrpc::Response response = sendRequest(std::string(kPromptsGetMethod), std::move(params), options).get();
+  const jsonrpc::JsonValue &result = responseToResultOrThrow(response, kPromptsGetMethod);
+  ensureValidResultSchema(result, "GetPromptResult", kPromptsGetMethod);
+
+  if (!result.contains("messages") || !result["messages"].is_array())
+  {
+    throw std::runtime_error("Invalid prompts/get response: messages must be an array");
+  }
+
+  PromptGetResult parsedResult;
+
+  if (result.contains("description") && result["description"].is_string())
+  {
+    parsedResult.description = result["description"].as<std::string>();
+  }
+
+  parsedResult.messages.reserve(result["messages"].size());
+  for (const auto &messageJson : result["messages"].array_range())
+  {
+    parsedResult.messages.push_back(parsePromptMessage(messageJson));
+  }
+
+  if (result.contains("_meta"))
+  {
+    parsedResult.metadata = result["_meta"];
+  }
+
+  return parsedResult;
 }
 
 auto Client::start() -> void
