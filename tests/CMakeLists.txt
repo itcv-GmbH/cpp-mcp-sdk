@@ -10,6 +10,14 @@ target_link_libraries(mcp_sdk_test_smoke
         mcp::sdk
 )
 
+add_executable(mcp_sdk_test_pinned_mirror conformance/test_pinned_mirror.cpp)
+
+target_link_libraries(mcp_sdk_test_pinned_mirror
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
 add_executable(mcp_sdk_test_jsonrpc_messages jsonrpc_messages_test.cpp)
 
 target_link_libraries(mcp_sdk_test_jsonrpc_messages
@@ -20,6 +28,7 @@ target_link_libraries(mcp_sdk_test_jsonrpc_messages
 
 # Register with CTest
 add_test(NAME mcp_sdk_smoke_test COMMAND mcp_sdk_test_smoke)
+add_test(NAME mcp_sdk_pinned_mirror_test COMMAND mcp_sdk_test_pinned_mirror)
 add_test(NAME mcp_sdk_jsonrpc_messages_test COMMAND mcp_sdk_test_jsonrpc_messages)
 
 add_executable(mcp_sdk_test_jsonrpc_router jsonrpc_router_test.cpp)

@@ -12,4 +12,9 @@ auto pinnedSchemaJson() -> std::string_view
 )__mcp_schema__";
 }
 
+auto pinnedSchemaSourcePath() -> std::string_view
+{
+  return "@MCP_SDK_PINNED_MCP_SCHEMA_FILE@";
+}
+
 }  // namespace mcp::schema::detail

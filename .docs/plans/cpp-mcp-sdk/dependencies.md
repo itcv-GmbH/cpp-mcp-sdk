@@ -45,7 +45,7 @@
 - [x] `task-029`: Step-up Auth Retries + Token Storage Interfaces + SSRF/Redirect Hardening (Depends on: `task-028`)
 
 ## Phase 8: Conformance + Delivery (Blocked by prior phases)
-- [ ] `task-030`: Pinned Mirror Verification Tests (Depends on: `task-001`)
+- [x] `task-030`: Pinned Mirror Verification Tests (Depends on: `task-001`)
 - [ ] `task-031`: Conformance: JSON-RPC + Lifecycle + Capability Tests (Depends on: `task-006`, `task-007`)
 - [ ] `task-032`: Conformance: Transports (stdio + Streamable HTTP + TLS) (Depends on: `task-013`)
 - [ ] `task-033`: Conformance: Tasks (Depends on: `task-024`)

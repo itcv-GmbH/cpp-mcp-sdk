@@ -18,8 +18,6 @@ namespace mcp::schema
 using JsonSchema = jsoncons::jsonschema::json_schema<JsonValue>;
 using WalkResult = jsoncons::jsonschema::walk_result;
 
-constexpr std::string_view kPinnedSchemaEmbeddedId = "embedded://mcp-spec-2025-11-25/schema/schema.json";
-
 constexpr std::string_view kPinnedSchemaUpstreamUrl = "https://raw.githubusercontent.com/modelcontextprotocol/specification/main/schema/2025-11-25/schema.json";
 constexpr std::string_view kPinnedSchemaUpstreamRef = "2025-11-25";
 constexpr std::string_view kPinnedSchemaSha256 = "1ffe4c5577974012f5fa02af14ea88df4b7146679df1abaaad497c8d9230ca8a";
@@ -217,7 +215,7 @@ auto Validator::loadPinnedMcpSchema() -> Validator
     throw std::runtime_error(std::string("Failed to parse embedded pinned MCP schema: ") + exception.what());
   }
 
-  validator.metadata_.localPath = std::string(kPinnedSchemaEmbeddedId);
+  validator.metadata_.localPath = std::string(detail::pinnedSchemaSourcePath());
   validator.metadata_.upstreamSchemaUrl = std::string(kPinnedSchemaUpstreamUrl);
   validator.metadata_.upstreamRef = std::string(kPinnedSchemaUpstreamRef);
   validator.metadata_.sha256 = std::string(kPinnedSchemaSha256);
