@@ -31,7 +31,7 @@
 - [x] `task-020`: Client: Tools/Resources/Prompts APIs (Depends on: `task-019`)
 - [x] `task-021`: Client: Roots (handle roots/list + roots/list_changed) (Depends on: `task-019`)
 - [x] `task-022`: Client: Sampling (handle sampling/createMessage constraints) (Depends on: `task-019`)
-- [ ] `task-023`: Client: Elicitation (form+url, URL safety, completion notifications) (Depends on: `task-019`)
+- [x] `task-023`: Client: Elicitation (form+url, URL safety, completion notifications) (Depends on: `task-019`)
 
 ## Phase 6: Tasks + Utilities (Blocked by Phases 4 and 5)
 - [ ] `task-024`: Tasks Utility (task augmentation + tasks/* + status notifications) (Depends on: `task-015`, `task-022`, `task-023`)

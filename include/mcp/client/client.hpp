@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include <mcp/client/elicitation.hpp>
 #include <mcp/client/roots.hpp>
 #include <mcp/client/sampling.hpp>
 #include <mcp/jsonrpc/router.hpp>
@@ -95,6 +96,12 @@ public:
   auto notifyRootsListChanged() -> bool;
   auto setSamplingCreateMessageHandler(SamplingCreateMessageHandler handler) -> void;
   auto clearSamplingCreateMessageHandler() -> void;
+  auto setFormElicitationHandler(FormElicitationHandler handler) -> void;
+  auto clearFormElicitationHandler() -> void;
+  auto setUrlElicitationHandler(UrlElicitationHandler handler) -> void;
+  auto clearUrlElicitationHandler() -> void;
+  auto setUrlElicitationCompletionHandler(UrlElicitationCompletionHandler handler) -> void;
+  auto clearUrlElicitationCompletionHandler() -> void;
 
   template<typename FetchPage, typename ConsumePage>
   auto forEachPage(FetchPage fetchPage, ConsumePage consumePage, std::optional<std::string> cursor = std::nullopt, std::size_t maxPages = kDefaultMaxPaginationPages) -> void
@@ -185,6 +192,10 @@ private:
   ClientInitializeConfiguration initializeConfiguration_;
   std::optional<RootsProvider> rootsProvider_;
   std::optional<SamplingCreateMessageHandler> samplingCreateMessageHandler_;
+  std::optional<FormElicitationHandler> formElicitationHandler_;
+  std::optional<UrlElicitationHandler> urlElicitationHandler_;
+  std::optional<UrlElicitationCompletionHandler> urlElicitationCompletionHandler_;
+  std::unordered_set<std::string> pendingUrlElicitationIds_;
   std::optional<jsonrpc::RequestId> pendingInitializeRequestId_;
   std::int64_t nextRequestId_ = 1;
 };

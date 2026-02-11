@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <functional>
@@ -18,6 +19,7 @@
 #include <vector>
 
 #include <mcp/client/client.hpp>
+#include <mcp/client/elicitation.hpp>
 #include <mcp/client/roots.hpp>
 #include <mcp/client/sampling.hpp>
 #include <mcp/jsonrpc/messages.hpp>
@@ -47,7 +49,9 @@ static constexpr std::string_view kPromptsListMethod = "prompts/list";
 static constexpr std::string_view kPromptsGetMethod = "prompts/get";
 static constexpr std::string_view kRootsListMethod = "roots/list";
 static constexpr std::string_view kSamplingCreateMessageMethod = "sampling/createMessage";
+static constexpr std::string_view kElicitationCreateMethod = "elicitation/create";
 static constexpr std::string_view kRootsListChangedNotificationMethod = "notifications/roots/list_changed";
+static constexpr std::string_view kElicitationCompleteNotificationMethod = "notifications/elicitation/complete";
 
 static auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>
 {
@@ -434,6 +438,103 @@ static auto makeSamplingUnsupportedResponse(const jsonrpc::RequestId &requestId,
 static auto makeSamplingInvalidParamsResponse(const jsonrpc::RequestId &requestId, std::string message) -> jsonrpc::Response
 {
   return jsonrpc::makeErrorResponse(jsonrpc::makeInvalidParamsError(std::nullopt, std::move(message)), requestId);
+}
+
+static auto makeElicitationUnsupportedResponse(const jsonrpc::RequestId &requestId, const std::string &reason) -> jsonrpc::Response
+{
+  jsonrpc::JsonValue errorData = jsonrpc::JsonValue::object();
+  errorData["reason"] = reason;
+  return jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::move(errorData), "Elicitation not supported"), requestId);
+}
+
+static auto makeElicitationInvalidParamsResponse(const jsonrpc::RequestId &requestId, std::string message) -> jsonrpc::Response
+{
+  return jsonrpc::makeErrorResponse(jsonrpc::makeInvalidParamsError(std::nullopt, std::move(message)), requestId);
+}
+
+static auto toActionString(ElicitationAction action) -> const char *
+{
+  switch (action)
+  {
+    case ElicitationAction::kAccept:
+      return "accept";
+    case ElicitationAction::kDecline:
+      return "decline";
+    case ElicitationAction::kCancel:
+      return "cancel";
+  }
+
+  return "cancel";
+}
+
+static auto validateFormSchemaPrimitiveProperty(const jsonrpc::JsonValue &propertySchema) -> bool
+{
+  if (!propertySchema.is_object())
+  {
+    return false;
+  }
+
+  if (propertySchema.contains("properties") || propertySchema.contains("items") || propertySchema.contains("additionalProperties"))
+  {
+    return false;
+  }
+
+  if (!propertySchema.contains("type") || !propertySchema["type"].is_string())
+  {
+    return false;
+  }
+
+  const std::string type = propertySchema["type"].as<std::string>();
+  return type == "string" || type == "integer" || type == "number" || type == "boolean";
+}
+
+static auto validateFormRequestedSchema(const jsonrpc::JsonValue &params) -> std::optional<std::string>
+{
+  if (!params.contains("requestedSchema") || !params["requestedSchema"].is_object())
+  {
+    return "elicitation/create form mode requires object params.requestedSchema";
+  }
+
+  const auto &requestedSchema = params["requestedSchema"];
+  if (!requestedSchema.contains("type") || !requestedSchema["type"].is_string() || requestedSchema["type"].as<std::string>() != "object")
+  {
+    return "elicitation/create form mode requires requestedSchema.type to be 'object'";
+  }
+
+  if (!requestedSchema.contains("properties") || !requestedSchema["properties"].is_object())
+  {
+    return "elicitation/create form mode requires requestedSchema.properties to be an object";
+  }
+
+  for (const auto &property : requestedSchema["properties"].object_range())
+  {
+    if (!validateFormSchemaPrimitiveProperty(property.value()))
+    {
+      return "elicitation/create form mode only supports flat primitive properties";
+    }
+  }
+
+  if (requestedSchema.contains("required") && !requestedSchema["required"].is_array())
+  {
+    return "elicitation/create form mode requires requestedSchema.required to be an array when present";
+  }
+
+  return std::nullopt;
+}
+
+static auto validateFormContentValue(const jsonrpc::JsonValue &value) -> bool
+{
+  return value.is_string() || value.is_int64() || value.is_uint64() || value.is_double() || value.is_bool() || value.is_null();
+}
+
+static auto validateFormResultContent(const jsonrpc::JsonValue &content) -> bool
+{
+  if (!content.is_object())
+  {
+    return false;
+  }
+
+  return std::all_of(content.object_range().begin(), content.object_range().end(), [](const auto &property) -> bool { return validateFormContentValue(property.value()); });
 }
 
 static auto contentType(const jsonrpc::JsonValue &contentBlock) -> std::optional<std::string>
@@ -1200,6 +1301,210 @@ Client::Client(std::shared_ptr<Session> session)
       response.result = std::move(*result);
       return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
     });
+
+  router_.registerRequestHandler(
+    std::string(kElicitationCreateMethod),
+    [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+    {
+      const auto negotiatedCapabilities = negotiatedClientCapabilities();
+      if (!negotiatedCapabilities.has_value() || !negotiatedCapabilities->elicitation().has_value())
+      {
+        return makeReadyResponseFuture(makeElicitationUnsupportedResponse(request.id, "Client does not have elicitation capability"));
+      }
+
+      std::optional<FormElicitationHandler> formElicitationHandler;
+      std::optional<UrlElicitationHandler> urlElicitationHandler;
+      {
+        const std::scoped_lock lock(mutex_);
+        formElicitationHandler = formElicitationHandler_;
+        urlElicitationHandler = urlElicitationHandler_;
+      }
+
+      const jsonrpc::JsonValue params = request.params.has_value() ? *request.params : jsonrpc::JsonValue::object();
+      if (!params.is_object())
+      {
+        return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create requires object params"));
+      }
+
+      std::string mode = "form";
+      if (params.contains("mode"))
+      {
+        if (!params["mode"].is_string())
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create params.mode must be a string when present"));
+        }
+
+        mode = params["mode"].as<std::string>();
+      }
+
+      if (mode == "form")
+      {
+        if (!negotiatedCapabilities->elicitation()->form)
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "Server requested unsupported elicitation mode 'form'"));
+        }
+
+        if (!formElicitationHandler.has_value())
+        {
+          return makeReadyResponseFuture(makeElicitationUnsupportedResponse(request.id, "Client does not have a registered form elicitation handler"));
+        }
+
+        if (!params.contains("message") || !params["message"].is_string())
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create form mode requires string params.message"));
+        }
+
+        if (const auto schemaError = validateFormRequestedSchema(params); schemaError.has_value())
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, *schemaError));
+        }
+
+        FormElicitationRequest formRequest;
+        formRequest.message = params["message"].as<std::string>();
+        formRequest.requestedSchema = params["requestedSchema"];
+        if (params.contains("_meta"))
+        {
+          formRequest.metadata = params["_meta"];
+        }
+
+        FormElicitationResult formResult;
+        try
+        {
+          formResult = (*formElicitationHandler)(ElicitationCreateContext {context}, formRequest);
+        }
+        catch (const std::exception &error)
+        {
+          return makeReadyResponseFuture(
+            jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string("elicitation/create form handling failed: ") + error.what()), request.id));
+        }
+
+        jsonrpc::JsonValue result = jsonrpc::JsonValue::object();
+        result["action"] = toActionString(formResult.action);
+
+        if (formResult.action == ElicitationAction::kAccept)
+        {
+          if (!formResult.content.has_value() || !validateFormResultContent(*formResult.content))
+          {
+            return makeReadyResponseFuture(jsonrpc::makeErrorResponse(
+              jsonrpc::makeInternalError(std::nullopt, "elicitation/create form handler returned invalid accept content; expected flat primitive object"), request.id));
+          }
+
+          result["content"] = *formResult.content;
+        }
+        else if (formResult.content.has_value())
+        {
+          return makeReadyResponseFuture(
+            jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "elicitation/create form handler must omit content unless action is 'accept'"), request.id));
+        }
+
+        ensureValidResultSchema(result, "ElicitResult", kElicitationCreateMethod);
+
+        jsonrpc::SuccessResponse response;
+        response.id = request.id;
+        response.result = std::move(result);
+        return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
+      }
+
+      if (mode == "url")
+      {
+        if (!negotiatedCapabilities->elicitation()->url)
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "Server requested unsupported elicitation mode 'url'"));
+        }
+
+        if (!urlElicitationHandler.has_value())
+        {
+          return makeReadyResponseFuture(makeElicitationUnsupportedResponse(request.id, "Client does not have a registered URL elicitation handler"));
+        }
+
+        if (!params.contains("message") || !params["message"].is_string())
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create url mode requires string params.message"));
+        }
+
+        if (!params.contains("url") || !params["url"].is_string())
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create url mode requires string params.url"));
+        }
+
+        if (!params.contains("elicitationId") || !params["elicitationId"].is_string())
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create url mode requires string params.elicitationId"));
+        }
+
+        const std::string url = params["url"].as<std::string>();
+        if (!formatUrlForConsent(url).has_value())
+        {
+          return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create url mode requires a valid absolute URL"));
+        }
+
+        UrlElicitationRequest urlRequest;
+        urlRequest.elicitationId = params["elicitationId"].as<std::string>();
+        urlRequest.message = params["message"].as<std::string>();
+        urlRequest.url = url;
+        if (params.contains("_meta"))
+        {
+          urlRequest.metadata = params["_meta"];
+        }
+
+        UrlElicitationResult urlResult;
+        try
+        {
+          urlResult = (*urlElicitationHandler)(ElicitationCreateContext {context}, urlRequest);
+        }
+        catch (const std::exception &error)
+        {
+          return makeReadyResponseFuture(
+            jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string("elicitation/create url handling failed: ") + error.what()), request.id));
+        }
+
+        jsonrpc::JsonValue result = jsonrpc::JsonValue::object();
+        result["action"] = toActionString(urlResult.action);
+        ensureValidResultSchema(result, "ElicitResult", kElicitationCreateMethod);
+
+        if (urlResult.action == ElicitationAction::kAccept)
+        {
+          const std::scoped_lock lock(mutex_);
+          pendingUrlElicitationIds_.insert(urlRequest.elicitationId);
+        }
+
+        jsonrpc::SuccessResponse response;
+        response.id = request.id;
+        response.result = std::move(result);
+        return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
+      }
+
+      return makeReadyResponseFuture(makeElicitationInvalidParamsResponse(request.id, "elicitation/create mode must be 'form' or 'url'"));
+    });
+
+  router_.registerNotificationHandler(std::string(kElicitationCompleteNotificationMethod),
+                                      [this](const jsonrpc::RequestContext &context, const jsonrpc::Notification &notification) -> void
+                                      {
+                                        if (!notification.params.has_value() || !notification.params->is_object() || !notification.params->contains("elicitationId")
+                                            || !(*notification.params)["elicitationId"].is_string())
+                                        {
+                                          return;
+                                        }
+
+                                        const std::string elicitationId = (*notification.params)["elicitationId"].as<std::string>();
+                                        std::optional<UrlElicitationCompletionHandler> completionHandler;
+                                        {
+                                          const std::scoped_lock lock(mutex_);
+                                          const auto pendingElicitation = pendingUrlElicitationIds_.find(elicitationId);
+                                          if (pendingElicitation == pendingUrlElicitationIds_.end())
+                                          {
+                                            return;
+                                          }
+
+                                          pendingUrlElicitationIds_.erase(pendingElicitation);
+                                          completionHandler = urlElicitationCompletionHandler_;
+                                        }
+
+                                        if (completionHandler.has_value())
+                                        {
+                                          (*completionHandler)(ElicitationCreateContext {context}, elicitationId);
+                                        }
+                                      });
 }
 
 auto Client::session() const noexcept -> const std::shared_ptr<Session> &
@@ -1552,6 +1857,42 @@ auto Client::clearSamplingCreateMessageHandler() -> void
 {
   const std::scoped_lock lock(mutex_);
   samplingCreateMessageHandler_.reset();
+}
+
+auto Client::setFormElicitationHandler(FormElicitationHandler handler) -> void
+{
+  const std::scoped_lock lock(mutex_);
+  formElicitationHandler_ = std::move(handler);
+}
+
+auto Client::clearFormElicitationHandler() -> void
+{
+  const std::scoped_lock lock(mutex_);
+  formElicitationHandler_.reset();
+}
+
+auto Client::setUrlElicitationHandler(UrlElicitationHandler handler) -> void
+{
+  const std::scoped_lock lock(mutex_);
+  urlElicitationHandler_ = std::move(handler);
+}
+
+auto Client::clearUrlElicitationHandler() -> void
+{
+  const std::scoped_lock lock(mutex_);
+  urlElicitationHandler_.reset();
+}
+
+auto Client::setUrlElicitationCompletionHandler(UrlElicitationCompletionHandler handler) -> void
+{
+  const std::scoped_lock lock(mutex_);
+  urlElicitationCompletionHandler_ = std::move(handler);
+}
+
+auto Client::clearUrlElicitationCompletionHandler() -> void
+{
+  const std::scoped_lock lock(mutex_);
+  urlElicitationCompletionHandler_.reset();
 }
 
 auto Client::start() -> void

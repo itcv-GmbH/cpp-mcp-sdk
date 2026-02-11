@@ -258,6 +258,11 @@ static auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> C
     ElicitationCapability elicitationCapability;
     elicitationCapability.form = capabilitiesJson["elicitation"].contains("form") && capabilitiesJson["elicitation"]["form"].is_object();
     elicitationCapability.url = capabilitiesJson["elicitation"].contains("url") && capabilitiesJson["elicitation"]["url"].is_object();
+    if (!elicitationCapability.form && !elicitationCapability.url)
+    {
+      elicitationCapability.form = true;
+    }
+
     elicitation = elicitationCapability;
   }
 

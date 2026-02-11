@@ -15,6 +15,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/client/client.hpp>
+#include <mcp/client/elicitation.hpp>
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -975,6 +976,394 @@ TEST_CASE("Client sampling/createMessage happy path and user rejection", "[clien
   REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(rejectedResponse));
   const auto &rejectedError = std::get<mcp::jsonrpc::ErrorResponse>(rejectedResponse);
   REQUIRE(rejectedError.error.code == -1);
+}
+
+TEST_CASE("Client elicitation/create enforces capability and mode gating", "[client][elicitation][capabilities]")
+{
+  SECTION("elicitation/create returns method-not-found when elicitation capability is not negotiated")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    mcp::jsonrpc::Request elicitationRequest;
+    elicitationRequest.id = std::int64_t {9201};
+    elicitationRequest.method = "elicitation/create";
+    elicitationRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["message"] = "Collect project name";
+    (*elicitationRequest.params)["requestedSchema"] = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["requestedSchema"]["type"] = "object";
+    (*elicitationRequest.params)["requestedSchema"]["properties"] = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["requestedSchema"]["properties"]["name"] = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["requestedSchema"]["properties"]["name"]["type"] = "string";
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, elicitationRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kMethodNotFound));
+    REQUIRE(error.error.message == "Elicitation not supported");
+  }
+
+  SECTION("elicitation/create rejects mode that was not declared by client")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::ElicitationCapability elicitationCapability;
+    elicitationCapability.form = true;
+
+    mcp::ClientInitializeConfiguration configuration;
+    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(configuration));
+
+    client->setFormElicitationHandler(
+      [](const mcp::ElicitationCreateContext &, const mcp::FormElicitationRequest &) -> mcp::FormElicitationResult
+      {
+        mcp::FormElicitationResult result;
+        result.action = mcp::ElicitationAction::kCancel;
+        return result;
+      });
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    mcp::jsonrpc::Request elicitationRequest;
+    elicitationRequest.id = std::int64_t {9202};
+    elicitationRequest.method = "elicitation/create";
+    elicitationRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["mode"] = "url";
+    (*elicitationRequest.params)["elicitationId"] = "elic-1";
+    (*elicitationRequest.params)["message"] = "Open settings";
+    (*elicitationRequest.params)["url"] = "https://example.com/settings";
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, elicitationRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+  }
+}
+
+TEST_CASE("Client elicitation/create supports accept/decline/cancel action model", "[client][elicitation][actions]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::ElicitationCapability elicitationCapability;
+  elicitationCapability.form = true;
+  elicitationCapability.url = true;
+
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setFormElicitationHandler(
+    [](const mcp::ElicitationCreateContext &, const mcp::FormElicitationRequest &request) -> mcp::FormElicitationResult
+    {
+      mcp::FormElicitationResult result;
+      if (request.message == "accept")
+      {
+        result.action = mcp::ElicitationAction::kAccept;
+        result.content = mcp::jsonrpc::JsonValue::object();
+        (*result.content)["name"] = "octocat";
+        return result;
+      }
+
+      if (request.message == "decline")
+      {
+        result.action = mcp::ElicitationAction::kDecline;
+        return result;
+      }
+
+      result.action = mcp::ElicitationAction::kCancel;
+      return result;
+    });
+
+  client->setUrlElicitationHandler(
+    [](const mcp::ElicitationCreateContext &, const mcp::UrlElicitationRequest &request) -> mcp::UrlElicitationResult
+    {
+      mcp::UrlElicitationResult result;
+      if (request.elicitationId == "url-accept")
+      {
+        result.action = mcp::ElicitationAction::kAccept;
+      }
+      else if (request.elicitationId == "url-decline")
+      {
+        result.action = mcp::ElicitationAction::kDecline;
+      }
+      else
+      {
+        result.action = mcp::ElicitationAction::kCancel;
+      }
+
+      return result;
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  auto makeFormRequest = [](std::int64_t id, std::string message) -> mcp::jsonrpc::Request
+  {
+    mcp::jsonrpc::Request request;
+    request.id = id;
+    request.method = "elicitation/create";
+    request.params = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["mode"] = "form";
+    (*request.params)["message"] = std::move(message);
+    (*request.params)["requestedSchema"] = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["requestedSchema"]["type"] = "object";
+    (*request.params)["requestedSchema"]["properties"] = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["requestedSchema"]["properties"]["name"] = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["requestedSchema"]["properties"]["name"]["type"] = "string";
+    return request;
+  };
+
+  const auto formAccept = client->handleRequest(mcp::jsonrpc::RequestContext {}, makeFormRequest(9210, "accept")).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(formAccept));
+  const auto &formAcceptResult = std::get<mcp::jsonrpc::SuccessResponse>(formAccept).result;
+  REQUIRE(formAcceptResult["action"].as<std::string>() == "accept");
+  REQUIRE(formAcceptResult.contains("content"));
+
+  const auto formDecline = client->handleRequest(mcp::jsonrpc::RequestContext {}, makeFormRequest(9211, "decline")).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(formDecline));
+  const auto &formDeclineResult = std::get<mcp::jsonrpc::SuccessResponse>(formDecline).result;
+  REQUIRE(formDeclineResult["action"].as<std::string>() == "decline");
+  REQUIRE_FALSE(formDeclineResult.contains("content"));
+
+  const auto formCancel = client->handleRequest(mcp::jsonrpc::RequestContext {}, makeFormRequest(9212, "cancel")).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(formCancel));
+  const auto &formCancelResult = std::get<mcp::jsonrpc::SuccessResponse>(formCancel).result;
+  REQUIRE(formCancelResult["action"].as<std::string>() == "cancel");
+  REQUIRE_FALSE(formCancelResult.contains("content"));
+
+  auto makeUrlRequest = [](std::int64_t id, std::string elicitationId) -> mcp::jsonrpc::Request
+  {
+    mcp::jsonrpc::Request request;
+    request.id = id;
+    request.method = "elicitation/create";
+    request.params = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["mode"] = "url";
+    (*request.params)["elicitationId"] = std::move(elicitationId);
+    (*request.params)["message"] = "Open consent page";
+    (*request.params)["url"] = "https://example.com/connect";
+    return request;
+  };
+
+  const auto urlAccept = client->handleRequest(mcp::jsonrpc::RequestContext {}, makeUrlRequest(9220, "url-accept")).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(urlAccept));
+  const auto &urlAcceptResult = std::get<mcp::jsonrpc::SuccessResponse>(urlAccept).result;
+  REQUIRE(urlAcceptResult["action"].as<std::string>() == "accept");
+  REQUIRE_FALSE(urlAcceptResult.contains("content"));
+
+  const auto urlDecline = client->handleRequest(mcp::jsonrpc::RequestContext {}, makeUrlRequest(9221, "url-decline")).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(urlDecline));
+  const auto &urlDeclineResult = std::get<mcp::jsonrpc::SuccessResponse>(urlDecline).result;
+  REQUIRE(urlDeclineResult["action"].as<std::string>() == "decline");
+  REQUIRE_FALSE(urlDeclineResult.contains("content"));
+
+  const auto urlCancel = client->handleRequest(mcp::jsonrpc::RequestContext {}, makeUrlRequest(9222, "url-cancel")).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(urlCancel));
+  const auto &urlCancelResult = std::get<mcp::jsonrpc::SuccessResponse>(urlCancel).result;
+  REQUIRE(urlCancelResult["action"].as<std::string>() == "cancel");
+  REQUIRE_FALSE(urlCancelResult.contains("content"));
+}
+
+TEST_CASE("Client elicitation/create enforces flat primitive form schema restrictions", "[client][elicitation][validation]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::ElicitationCapability elicitationCapability;
+  elicitationCapability.form = true;
+
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setFormElicitationHandler(
+    [](const mcp::ElicitationCreateContext &, const mcp::FormElicitationRequest &) -> mcp::FormElicitationResult
+    {
+      mcp::FormElicitationResult result;
+      result.action = mcp::ElicitationAction::kCancel;
+      return result;
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  auto makeBaseFormRequest = [](std::int64_t id) -> mcp::jsonrpc::Request
+  {
+    mcp::jsonrpc::Request request;
+    request.id = id;
+    request.method = "elicitation/create";
+    request.params = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["mode"] = "form";
+    (*request.params)["message"] = "Collect fields";
+    (*request.params)["requestedSchema"] = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["requestedSchema"]["type"] = "object";
+    (*request.params)["requestedSchema"]["properties"] = mcp::jsonrpc::JsonValue::object();
+    return request;
+  };
+
+  mcp::jsonrpc::Request nestedRequest = makeBaseFormRequest(9230);
+  (*nestedRequest.params)["requestedSchema"]["properties"]["profile"] = mcp::jsonrpc::JsonValue::object();
+  (*nestedRequest.params)["requestedSchema"]["properties"]["profile"]["type"] = "object";
+  const auto nestedResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, nestedRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(nestedResponse));
+  REQUIRE(std::get<mcp::jsonrpc::ErrorResponse>(nestedResponse).error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+
+  mcp::jsonrpc::Request arrayRequest = makeBaseFormRequest(9231);
+  (*arrayRequest.params)["requestedSchema"]["properties"]["tags"] = mcp::jsonrpc::JsonValue::object();
+  (*arrayRequest.params)["requestedSchema"]["properties"]["tags"]["type"] = "array";
+  const auto arrayResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, arrayRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(arrayResponse));
+  REQUIRE(std::get<mcp::jsonrpc::ErrorResponse>(arrayResponse).error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+
+  mcp::jsonrpc::Request primitiveRequest = makeBaseFormRequest(9232);
+  (*primitiveRequest.params)["requestedSchema"]["properties"]["name"] = mcp::jsonrpc::JsonValue::object();
+  (*primitiveRequest.params)["requestedSchema"]["properties"]["name"]["type"] = "string";
+  const auto primitiveResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, primitiveRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(primitiveResponse));
+}
+
+TEST_CASE("Client tracks URL elicitation completion notifications and ignores unknown IDs", "[client][elicitation][notifications]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::ElicitationCapability elicitationCapability;
+  elicitationCapability.url = true;
+
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setUrlElicitationHandler(
+    [](const mcp::ElicitationCreateContext &, const mcp::UrlElicitationRequest &request) -> mcp::UrlElicitationResult
+    {
+      mcp::UrlElicitationResult result;
+      if (request.elicitationId == "known")
+      {
+        result.action = mcp::ElicitationAction::kAccept;
+      }
+      else
+      {
+        result.action = mcp::ElicitationAction::kDecline;
+      }
+
+      return result;
+    });
+
+  std::vector<std::string> completedIds;
+  client->setUrlElicitationCompletionHandler([&completedIds](const mcp::ElicitationCreateContext &, std::string_view elicitationId) -> void
+                                             { completedIds.emplace_back(elicitationId); });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  mcp::jsonrpc::Request urlRequest;
+  urlRequest.id = std::int64_t {9240};
+  urlRequest.method = "elicitation/create";
+  urlRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*urlRequest.params)["mode"] = "url";
+  (*urlRequest.params)["elicitationId"] = "known";
+  (*urlRequest.params)["message"] = "Open consent page";
+  (*urlRequest.params)["url"] = "https://example.com/consent";
+
+  const auto urlResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, urlRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(urlResponse));
+
+  mcp::jsonrpc::Notification unknownNotification;
+  unknownNotification.method = "notifications/elicitation/complete";
+  unknownNotification.params = mcp::jsonrpc::JsonValue::object();
+  (*unknownNotification.params)["elicitationId"] = "unknown";
+  client->handleNotification(mcp::jsonrpc::RequestContext {}, unknownNotification);
+  REQUIRE(completedIds.empty());
+
+  mcp::jsonrpc::Notification knownNotification;
+  knownNotification.method = "notifications/elicitation/complete";
+  knownNotification.params = mcp::jsonrpc::JsonValue::object();
+  (*knownNotification.params)["elicitationId"] = "known";
+  client->handleNotification(mcp::jsonrpc::RequestContext {}, knownNotification);
+  REQUIRE(completedIds.size() == 1);
+  REQUIRE(completedIds[0] == "known");
+
+  client->handleNotification(mcp::jsonrpc::RequestContext {}, knownNotification);
+  REQUIRE(completedIds.size() == 1);
+
+  mcp::jsonrpc::Request declinedRequest = urlRequest;
+  declinedRequest.id = std::int64_t {9241};
+  (*declinedRequest.params)["elicitationId"] = "declined";
+  const auto declinedResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, declinedRequest).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(declinedResponse));
+
+  mcp::jsonrpc::Notification declinedNotification = knownNotification;
+  (*declinedNotification.params)["elicitationId"] = "declined";
+  client->handleNotification(mcp::jsonrpc::RequestContext {}, declinedNotification);
+  REQUIRE(completedIds.size() == 1);
+}
+
+TEST_CASE("Elicitation helper APIs support URL consent and URLElicitationRequiredError", "[client][elicitation][helpers]")
+{
+  const auto displayInfo = mcp::formatUrlForConsent("  https://example.com:8443/connect?token=redacted  ");
+  REQUIRE(displayInfo.has_value());
+  if (displayInfo.has_value())
+  {
+    REQUIRE(displayInfo->fullUrl == "https://example.com:8443/connect?token=redacted");
+    REQUIRE(displayInfo->domain == "example.com");
+  }
+
+  REQUIRE_FALSE(mcp::formatUrlForConsent("/relative/path").has_value());
+
+  mcp::jsonrpc::JsonValue errorData = mcp::jsonrpc::JsonValue::object();
+  errorData["elicitations"] = mcp::jsonrpc::JsonValue::array();
+  mcp::jsonrpc::JsonValue elicitation = mcp::jsonrpc::JsonValue::object();
+  elicitation["mode"] = "url";
+  elicitation["elicitationId"] = "elic-required";
+  elicitation["message"] = "Please connect your account";
+  elicitation["url"] = "https://example.com/connect";
+  errorData["elicitations"].push_back(std::move(elicitation));
+
+  const mcp::JsonRpcError urlRequiredError = mcp::jsonrpc::makeUrlElicitationRequiredError(std::move(errorData), "URL action required");
+  const auto parsed = mcp::parseUrlElicitationRequiredError(urlRequiredError);
+  REQUIRE(parsed.has_value());
+  if (parsed.has_value())
+  {
+    REQUIRE(parsed->elicitations.size() == 1);
+    REQUIRE(parsed->elicitations[0].elicitationId == "elic-required");
+    REQUIRE(parsed->elicitations[0].url == "https://example.com/connect");
+  }
 }
 
 TEST_CASE("Client pagination helpers detect cursor cycles", "[client][pagination][helpers]")
