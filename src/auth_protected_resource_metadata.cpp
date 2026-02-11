@@ -810,8 +810,13 @@ auto resolveHostWithSystemDns(std::string_view host) -> std::vector<std::string>
   return addresses;
 }
 
-auto validateHostAddressability(const ParsedUrl &url, const DiscoveryDnsResolver &resolver) -> void
+auto validateHostAddressability(const ParsedUrl &url, const DiscoveryDnsResolver &resolver, const DiscoverySecurityPolicy &policy) -> void
 {
+  if (policy.allowPrivateAndLocalAddresses)
+  {
+    return;
+  }
+
   if (url.host == "localhost" || endsWithIgnoreCase(url.host, ".localhost"))
   {
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kSecurityPolicyViolation, "Discovery host resolves to localhost");
@@ -899,7 +904,7 @@ auto executeDiscoveryGet(std::string initialUrl, const DiscoveryHttpFetcher &fet
       throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kSecurityPolicyViolation, "Discovery URLs must use HTTPS");
     }
 
-    validateHostAddressability(currentUrl, resolver);
+    validateHostAddressability(currentUrl, resolver, policy);
 
     DiscoveryHttpRequest request;
     request.method = "GET";

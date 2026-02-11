@@ -21,5 +21,6 @@ Provide runnable examples demonstrating required features and recommended usage 
 4. Add README files per example.
 
 ## Verification
-* `cmake -S . -B build -DMCP_SDK_BUILD_EXAMPLES=ON`
-* `cmake --build build`
+* `cmake --preset vcpkg-unix-release -DMCP_SDK_BUILD_EXAMPLES=ON`
+* `cmake --build build/vcpkg-unix-release`
+* Optional (only when dependencies are already discoverable without vcpkg): `cmake -S . -B build -DMCP_SDK_BUILD_EXAMPLES=ON && cmake --build build`

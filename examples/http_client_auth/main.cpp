@@ -27,21 +27,7 @@ constexpr std::uint16_t kHttpStatusBadRequest = 400;
 constexpr std::uint16_t kHttpStatusNotFound = 404;
 constexpr int kLoopbackTimeoutSeconds = 10;
 constexpr int kHexBase = 16;
-
-auto toServerRequestMethod(std::string_view method) -> mcp_http::ServerRequestMethod
-{
-  if (method == "GET")
-  {
-    return mcp_http::ServerRequestMethod::kGet;
-  }
-
-  if (method == "DELETE")
-  {
-    return mcp_http::ServerRequestMethod::kDelete;
-  }
-
-  return mcp_http::ServerRequestMethod::kPost;
-}
+constexpr std::string_view kMockAuthBaseUrl = "https://127.0.0.1:9443";
 
 auto hexValue(char c) -> int
 {
@@ -134,24 +120,95 @@ auto queryParameter(std::string_view pathAndQuery, std::string_view key) -> std:
   return std::nullopt;
 }
 
-auto executeTokenHttpRequest(const mcp::auth::OAuthTokenHttpRequest &request) -> mcp::auth::OAuthHttpResponse
+auto extractPathAndQuery(std::string_view absoluteUrl) -> std::string
 {
-  mcp::transport::HttpClientOptions options;
-  options.endpointUrl = request.url;
-
-  const mcp::transport::HttpClientRuntime runtime(options);
-
-  mcp_http::ServerRequest runtimeRequest;
-  runtimeRequest.method = toServerRequestMethod(request.method);
-  runtimeRequest.path.clear();
-  runtimeRequest.body = request.body;
-  runtimeRequest.headers.reserve(request.headers.size());
-  for (const mcp::auth::OAuthHttpHeader &header : request.headers)
+  const std::size_t schemePos = absoluteUrl.find("://");
+  const std::size_t authorityStart = schemePos == std::string_view::npos ? 0 : schemePos + 3;
+  const std::size_t pathStart = absoluteUrl.find('/', authorityStart);
+  if (pathStart == std::string_view::npos)
   {
-    runtimeRequest.headers.push_back(mcp_http::Header {header.name, header.value});
+    return "/";
   }
 
-  const mcp_http::ServerResponse runtimeResponse = runtime.execute(runtimeRequest);
+  return std::string(absoluteUrl.substr(pathStart));
+}
+
+auto executeMockAuthorizationServerRequest(std::string_view method, std::string_view absoluteUrl, std::string_view body = std::string_view {}) -> mcp_http::ServerResponse
+{
+  static_cast<void>(body);
+  const std::string path = extractPathAndQuery(absoluteUrl);
+  const std::string serverBaseUrl(kMockAuthBaseUrl);
+
+  if (method == "GET" && path == "/.well-known/oauth-protected-resource/mcp")
+  {
+    mcp_http::ServerResponse response;
+    response.statusCode = kHttpStatusOk;
+    mcp::jsonrpc::JsonValue responseBody = mcp::jsonrpc::JsonValue::object();
+    responseBody["resource"] = serverBaseUrl + "/mcp";
+    responseBody["authorization_servers"] = mcp::jsonrpc::JsonValue::array();
+    responseBody["authorization_servers"].push_back(serverBaseUrl);
+    responseBody["scopes_supported"] = mcp::jsonrpc::JsonValue::array();
+    responseBody["scopes_supported"].push_back("mcp:read");
+    responseBody["scopes_supported"].push_back("mcp:write");
+    response.body = toJsonString(responseBody);
+    mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "application/json");
+    return response;
+  }
+
+  if (method == "GET" && path == "/.well-known/oauth-authorization-server")
+  {
+    mcp_http::ServerResponse response;
+    response.statusCode = kHttpStatusOk;
+    mcp::jsonrpc::JsonValue responseBody = mcp::jsonrpc::JsonValue::object();
+    responseBody["issuer"] = serverBaseUrl;
+    responseBody["authorization_endpoint"] = serverBaseUrl + "/oauth/authorize";
+    responseBody["token_endpoint"] = serverBaseUrl + "/oauth/token";
+    responseBody["code_challenge_methods_supported"] = mcp::jsonrpc::JsonValue::array();
+    responseBody["code_challenge_methods_supported"].push_back("S256");
+    response.body = toJsonString(responseBody);
+    mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "application/json");
+    return response;
+  }
+
+  if (method == "GET" && path.rfind("/oauth/authorize", 0) == 0)
+  {
+    const std::optional<std::string> redirectUri = queryParameter(path, "redirect_uri");
+    const std::optional<std::string> state = queryParameter(path, "state");
+    if (!redirectUri.has_value() || !state.has_value())
+    {
+      mcp_http::ServerResponse badRequest;
+      badRequest.statusCode = kHttpStatusBadRequest;
+      badRequest.body = "missing redirect_uri or state";
+      return badRequest;
+    }
+
+    mcp_http::ServerResponse response;
+    response.statusCode = kHttpStatusFound;
+    mcp_http::setHeader(response.headers, "Location", *redirectUri + "?code=example-auth-code&state=" + *state);
+    return response;
+  }
+
+  if (method == "POST" && path == "/oauth/token")
+  {
+    mcp_http::ServerResponse response;
+    response.statusCode = kHttpStatusOk;
+    mcp::jsonrpc::JsonValue responseBody = mcp::jsonrpc::JsonValue::object();
+    responseBody["access_token"] = "example-access-token";
+    responseBody["token_type"] = "Bearer";
+    responseBody["scope"] = "mcp:read mcp:write";
+    response.body = toJsonString(responseBody);
+    mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "application/json");
+    return response;
+  }
+
+  mcp_http::ServerResponse notFound;
+  notFound.statusCode = kHttpStatusNotFound;
+  return notFound;
+}
+
+auto executeTokenHttpRequest(const mcp::auth::OAuthTokenHttpRequest &request) -> mcp::auth::OAuthHttpResponse
+{
+  const mcp_http::ServerResponse runtimeResponse = executeMockAuthorizationServerRequest(request.method, request.url, request.body);
 
   mcp::auth::OAuthHttpResponse response;
   response.statusCode = runtimeResponse.statusCode;
@@ -167,21 +224,7 @@ auto executeTokenHttpRequest(const mcp::auth::OAuthTokenHttpRequest &request) ->
 
 auto executeDiscoveryRequest(const mcp::auth::DiscoveryHttpRequest &request) -> mcp::auth::DiscoveryHttpResponse
 {
-  mcp::transport::HttpClientOptions options;
-  options.endpointUrl = request.url;
-
-  const mcp::transport::HttpClientRuntime runtime(options);
-
-  mcp_http::ServerRequest runtimeRequest;
-  runtimeRequest.method = toServerRequestMethod(request.method);
-  runtimeRequest.path.clear();
-  runtimeRequest.headers.reserve(request.headers.size());
-  for (const mcp::auth::DiscoveryHeader &header : request.headers)
-  {
-    runtimeRequest.headers.push_back(mcp_http::Header {header.name, header.value});
-  }
-
-  const mcp_http::ServerResponse runtimeResponse = runtime.execute(runtimeRequest);
+  const mcp_http::ServerResponse runtimeResponse = executeMockAuthorizationServerRequest(request.method, request.url);
 
   mcp::auth::DiscoveryHttpResponse response;
   response.statusCode = runtimeResponse.statusCode;
@@ -201,87 +244,7 @@ auto main() -> int
 {
   try
   {
-    mcp::transport::HttpServerOptions authServerOptions;
-    authServerOptions.endpoint.bindAddress = "127.0.0.1";
-    authServerOptions.endpoint.bindLocalhostOnly = true;
-    authServerOptions.endpoint.port = 0;
-
-    mcp::transport::HttpServerRuntime authServer(authServerOptions);
-
-    authServer.setRequestHandler(
-      [&authServer](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
-      {
-        const std::string serverBaseUrl = "http://127.0.0.1:" + std::to_string(authServer.localPort());
-
-        if (request.method == mcp_http::ServerRequestMethod::kGet && request.path == "/.well-known/oauth-protected-resource/mcp")
-        {
-          mcp_http::ServerResponse response;
-          response.statusCode = kHttpStatusOk;
-          mcp::jsonrpc::JsonValue body = mcp::jsonrpc::JsonValue::object();
-          body["resource"] = serverBaseUrl + "/mcp";
-          body["authorization_servers"] = mcp::jsonrpc::JsonValue::array();
-          body["authorization_servers"].push_back(serverBaseUrl);
-          body["scopes_supported"] = mcp::jsonrpc::JsonValue::array();
-          body["scopes_supported"].push_back("mcp:read");
-          body["scopes_supported"].push_back("mcp:write");
-          response.body = toJsonString(body);
-          mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "application/json");
-          return response;
-        }
-
-        if (request.method == mcp_http::ServerRequestMethod::kGet && request.path == "/.well-known/oauth-authorization-server")
-        {
-          mcp_http::ServerResponse response;
-          response.statusCode = kHttpStatusOk;
-          mcp::jsonrpc::JsonValue body = mcp::jsonrpc::JsonValue::object();
-          body["issuer"] = serverBaseUrl;
-          body["authorization_endpoint"] = serverBaseUrl + "/oauth/authorize";
-          body["token_endpoint"] = serverBaseUrl + "/oauth/token";
-          body["code_challenge_methods_supported"] = mcp::jsonrpc::JsonValue::array();
-          body["code_challenge_methods_supported"].push_back("S256");
-          response.body = toJsonString(body);
-          mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "application/json");
-          return response;
-        }
-
-        if (request.method == mcp_http::ServerRequestMethod::kGet && request.path.rfind("/oauth/authorize", 0) == 0)
-        {
-          const std::optional<std::string> redirectUri = queryParameter(request.path, "redirect_uri");
-          const std::optional<std::string> state = queryParameter(request.path, "state");
-          if (!redirectUri.has_value() || !state.has_value())
-          {
-            mcp_http::ServerResponse badRequest;
-            badRequest.statusCode = kHttpStatusBadRequest;
-            badRequest.body = "missing redirect_uri or state";
-            return badRequest;
-          }
-
-          mcp_http::ServerResponse response;
-          response.statusCode = kHttpStatusFound;
-          mcp_http::setHeader(response.headers, "Location", *redirectUri + "?code=example-auth-code&state=" + *state);
-          return response;
-        }
-
-        if (request.method == mcp_http::ServerRequestMethod::kPost && request.path == "/oauth/token")
-        {
-          mcp_http::ServerResponse response;
-          response.statusCode = kHttpStatusOk;
-          mcp::jsonrpc::JsonValue body = mcp::jsonrpc::JsonValue::object();
-          body["access_token"] = "example-access-token";
-          body["token_type"] = "Bearer";
-          body["scope"] = "mcp:read mcp:write";
-          response.body = toJsonString(body);
-          mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "application/json");
-          return response;
-        }
-
-        mcp_http::ServerResponse notFound;
-        notFound.statusCode = kHttpStatusNotFound;
-        return notFound;
-      });
-
-    authServer.start();
-    const std::string authBaseUrl = "http://127.0.0.1:" + std::to_string(authServer.localPort());
+    const std::string authBaseUrl(kMockAuthBaseUrl);
     const std::string mcpEndpointUrl = authBaseUrl + "/mcp";
 
     mcp::auth::AuthorizationDiscoveryRequest discoveryRequest;
@@ -290,13 +253,11 @@ auto main() -> int
       "Bearer resource_metadata=\"" + authBaseUrl + "/.well-known/oauth-protected-resource/mcp\"",
     };
     discoveryRequest.httpFetcher = executeDiscoveryRequest;
-    discoveryRequest.dnsResolver = [](std::string_view) -> std::vector<std::string>
-    {
-      return {
-        "93.184.216.34",
-      };
-    };
     discoveryRequest.securityPolicy.requireHttps = false;
+    discoveryRequest.securityPolicy.allowPrivateAndLocalAddresses = true;
+
+    std::cout << "WARNING: enabling local/private discovery addresses for demo only." << '\n';
+    std::cout << "Do not enable this policy in production OAuth clients." << '\n';
 
     const mcp::auth::AuthorizationDiscoveryResult discovery = mcp::auth::discoverAuthorizationMetadata(discoveryRequest);
 
@@ -326,13 +287,7 @@ auto main() -> int
     const std::string authorizationUrl = mcp::auth::buildAuthorizationUrl(authorizationUrlRequest);
     std::cout << "authorization URL: " << authorizationUrl << '\n';
 
-    mcp::transport::HttpClientOptions browserOptions;
-    browserOptions.endpointUrl = authorizationUrl;
-    const mcp::transport::HttpClientRuntime browserRuntime(browserOptions);
-
-    mcp_http::ServerRequest browserRequest;
-    browserRequest.method = mcp_http::ServerRequestMethod::kGet;
-    const mcp_http::ServerResponse authorizationResponse = browserRuntime.execute(browserRequest);
+    const mcp_http::ServerResponse authorizationResponse = executeMockAuthorizationServerRequest("GET", authorizationUrl);
     if (authorizationResponse.statusCode != kHttpStatusFound)
     {
       throw std::runtime_error("authorization endpoint did not return expected redirect");
@@ -344,12 +299,22 @@ auto main() -> int
       throw std::runtime_error("authorization endpoint redirect missing Location header");
     }
 
+    std::string callbackDispatchUrl = *callbackLocation;
+    constexpr std::string_view kLoopbackLocalhostPrefix = "http://localhost:";
+    if (callbackDispatchUrl.rfind(kLoopbackLocalhostPrefix, 0) == 0)
+    {
+      callbackDispatchUrl.replace(0, kLoopbackLocalhostPrefix.size(), "http://127.0.0.1:");
+    }
+
     mcp::transport::HttpClientOptions callbackOptions;
-    callbackOptions.endpointUrl = *callbackLocation;
+    callbackOptions.endpointUrl = callbackDispatchUrl;
     const mcp::transport::HttpClientRuntime callbackRuntime(callbackOptions);
     mcp_http::ServerRequest callbackRequest;
     callbackRequest.method = mcp_http::ServerRequestMethod::kGet;
-    static_cast<void>(callbackRuntime.execute(callbackRequest));
+    callbackRequest.path = extractPathAndQuery(callbackDispatchUrl);
+    const mcp_http::ServerResponse callbackResponse = callbackRuntime.execute(callbackRequest);
+    std::cout << "loopback callback URL: " << callbackDispatchUrl << '\n';
+    std::cout << "loopback callback status: " << callbackResponse.statusCode << '\n';
 
     const mcp::auth::LoopbackAuthorizationCode callbackCode = receiver.waitForAuthorizationCode(state);
 
@@ -376,7 +341,6 @@ auto main() -> int
     std::cout << "token response body: " << tokenResponse.body << '\n';
 
     receiver.stop();
-    authServer.stop();
     return 0;
   }
   catch (const std::exception &error)

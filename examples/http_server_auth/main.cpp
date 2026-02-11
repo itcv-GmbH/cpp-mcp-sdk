@@ -17,7 +17,6 @@
 #include <mcp/server/server.hpp>
 #include <mcp/server/tools.hpp>
 #include <mcp/transport/http.hpp>
-#include <mcp/version.hpp>
 
 namespace
 {
@@ -84,7 +83,7 @@ private:
 struct Options
 {
   std::string bindAddress = "127.0.0.1";
-  std::uint16_t port = 8080;
+  std::uint16_t port = 8443;
   std::string path = "/mcp";
   std::optional<std::string> tlsCert;
   std::optional<std::string> tlsKey;
@@ -159,30 +158,12 @@ auto parseOptions(const std::vector<std::string> &arguments) -> Options
     throw std::invalid_argument("--tls-cert and --tls-key must be used together");
   }
 
+  if (!options.tlsCert.has_value())
+  {
+    throw std::invalid_argument("This example requires HTTPS. Provide --tls-cert and --tls-key.");
+  }
+
   return options;
-}
-
-auto makeInitializeRequest(std::int64_t requestId = 1) -> mcp::jsonrpc::Request
-{
-  mcp::jsonrpc::Request request;
-  request.id = requestId;
-  request.method = "initialize";
-  request.params = mcp::jsonrpc::JsonValue::object();
-  (*request.params)["protocolVersion"] = std::string(mcp::kLatestProtocolVersion);
-  (*request.params)["capabilities"] = mcp::jsonrpc::JsonValue::object();
-  (*request.params)["clientInfo"] = mcp::jsonrpc::JsonValue::object();
-  (*request.params)["clientInfo"]["name"] = "http-server-auth-example-client";
-  (*request.params)["clientInfo"]["version"] = "1.0.0";
-  return request;
-}
-
-auto completeInitialization(mcp::Server &server) -> void
-{
-  static_cast<void>(server.handleRequest(mcp::jsonrpc::RequestContext {}, makeInitializeRequest()).get());
-
-  mcp::jsonrpc::Notification initialized;
-  initialized.method = "notifications/initialized";
-  server.handleNotification(mcp::jsonrpc::RequestContext {}, initialized);
 }
 
 }  // namespace
@@ -293,8 +274,6 @@ auto main(int argc, char **argv) -> int
           std::cerr << "failed to enqueue server-initiated message for active stream" << '\n';
         }
       });
-
-    completeInitialization(*server);
 
     mcp::transport::HttpServerOptions runtimeOptions = streamableOptions.http;
     mcp::transport::HttpServerRuntime runtime(std::move(runtimeOptions));
