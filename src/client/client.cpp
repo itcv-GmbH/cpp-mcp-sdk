@@ -680,9 +680,9 @@ auto Client::attachTransport(std::shared_ptr<transport::Transport> transport) ->
   transport_->attach(session_);
 }
 
-auto Client::connectStdio(transport::StdioClientOptions options) -> void
+auto Client::connectStdio(const transport::StdioClientOptions &options) -> void
 {
-  attachTransport(std::make_shared<transport::StdioTransport>(std::move(options)));
+  attachTransport(std::make_shared<transport::StdioTransport>(options));
 }
 
 auto Client::connectHttp(const transport::HttpClientOptions &options) -> void

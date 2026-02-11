@@ -17,20 +17,23 @@
 #include <thread>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include <boost/process/v1/args.hpp>
-#include <boost/process/v1/child.hpp>
+#include <boost/process/v1/child.hpp>  // NOLINT(misc-include-cleaner)
 #include <boost/process/v1/env.hpp>
 #include <boost/process/v1/environment.hpp>
 #include <boost/process/v1/io.hpp>
+#include <boost/process/v1/pipe.hpp>
 #include <boost/process/v1/start_dir.hpp>
 
-#if !defined(_WIN32)
-#  include <signal.h>
+#ifndef _WIN32
+#  include <signal.h>  // NOLINT(hicpp-deprecated-headers,modernize-deprecated-headers)
 #endif
 
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
+#include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/stdio.hpp>
 
 namespace mcp::transport
@@ -170,7 +173,7 @@ static auto dispatchInboundMessage(jsonrpc::Router &router, const jsonrpc::Messa
 
   if (std::holds_alternative<jsonrpc::Request>(message))
   {
-    const jsonrpc::Request &request = std::get<jsonrpc::Request>(message);
+    const auto &request = std::get<jsonrpc::Request>(message);
 
     jsonrpc::Response response;
     try
@@ -189,7 +192,7 @@ static auto dispatchInboundMessage(jsonrpc::Router &router, const jsonrpc::Messa
 
   if (std::holds_alternative<jsonrpc::Notification>(message))
   {
-    const jsonrpc::Notification &notification = std::get<jsonrpc::Notification>(message);
+    const auto &notification = std::get<jsonrpc::Notification>(message);
     router.dispatchNotification(context, notification);
     return;
   }
@@ -269,7 +272,11 @@ namespace
 
 namespace bp = boost::process::v1;
 
-static auto sanitizeTimeout(std::chrono::milliseconds timeout) -> std::chrono::milliseconds
+constexpr auto kShutdownForceWaitTimeout = std::chrono::milliseconds {500};
+constexpr auto kProcessPollInterval = std::chrono::milliseconds {10};
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+auto sanitizeTimeout(std::chrono::milliseconds timeout) -> std::chrono::milliseconds
 {
   if (timeout < std::chrono::milliseconds::zero())
   {
@@ -279,7 +286,8 @@ static auto sanitizeTimeout(std::chrono::milliseconds timeout) -> std::chrono::m
   return timeout;
 }
 
-static auto buildSubprocessEnvironment(const std::vector<std::string> &envOverrides) -> bp::environment
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+auto buildSubprocessEnvironment(const std::vector<std::string> &envOverrides) -> bp::environment
 {
   bp::environment environment = boost::this_process::environment();
   for (const std::string &entry : envOverrides)
@@ -304,7 +312,8 @@ struct SpawnCommand
   std::vector<std::string> arguments;
 };
 
-static auto buildSpawnCommand(const StdioSubprocessSpawnOptions &options) -> SpawnCommand
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+auto buildSpawnCommand(const StdioSubprocessSpawnOptions &options) -> SpawnCommand
 {
   if (options.argv.empty())
   {
@@ -321,8 +330,10 @@ static auto buildSpawnCommand(const StdioSubprocessSpawnOptions &options) -> Spa
   return command;
 }
 
-#if !defined(_WIN32)
-static auto signalProcess(bp::child &process, int signalNumber) -> void
+#ifndef _WIN32
+template<typename ProcessType>
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+auto signalProcess(ProcessType &process, int signalNumber) -> void
 {
   if (!process.valid())
   {
@@ -340,7 +351,7 @@ static auto signalProcess(bp::child &process, int signalNumber) -> void
 
 struct StdioSubprocess::Impl
 {
-  bp::child process;
+  bp::child process;  // NOLINT(misc-include-cleaner)
   bp::opstream stdinPipe;
   bp::ipstream stdoutPipe;
   bp::ipstream stderrPipe;
@@ -364,7 +375,7 @@ struct StdioSubprocess::Impl
         std::string line;
         while (std::getline(stderrPipe, line))
         {
-          std::lock_guard<std::mutex> lock(stderrMutex);
+          const std::scoped_lock lock(stderrMutex);
           capturedStderr.append(line);
           capturedStderr.push_back('\n');
         }
@@ -393,6 +404,7 @@ struct StdioSubprocess::Impl
     }
     catch (...)
     {
+      stdinPipe.clear();
     }
 
     stdinClosed = true;
@@ -479,13 +491,29 @@ auto StdioSubprocess::waitForExit(std::chrono::milliseconds timeout) -> bool
   }
 
   const auto boundedTimeout = sanitizeTimeout(timeout);
-  if (!impl_->process.wait_for(boundedTimeout))
+  const auto timeoutDeadline = std::chrono::steady_clock::now() + boundedTimeout;
+  while (true)
   {
-    return false;
-  }
+    std::error_code runningError;
+    const bool stillRunning = impl_->process.running(runningError);
+    if (runningError)
+    {
+      throw std::system_error(runningError, "Failed waiting for subprocess exit.");
+    }
 
-  impl_->markExited();
-  return true;
+    if (!stillRunning)
+    {
+      impl_->markExited();
+      return true;
+    }
+
+    if (std::chrono::steady_clock::now() >= timeoutDeadline)
+    {
+      return false;
+    }
+
+    std::this_thread::sleep_for(kProcessPollInterval);
+  }
 }
 
 auto StdioSubprocess::shutdown(StdioSubprocessShutdownOptions options) noexcept -> bool
@@ -504,7 +532,7 @@ auto StdioSubprocess::shutdown(StdioSubprocessShutdownOptions options) noexcept 
       return true;
     }
 
-#if defined(_WIN32)
+#ifdef _WIN32
     std::error_code terminateError;
     impl_->process.terminate(terminateError);
     static_cast<void>(terminateError);
@@ -523,10 +551,10 @@ auto StdioSubprocess::shutdown(StdioSubprocessShutdownOptions options) noexcept 
       return true;
     }
 
-    signalProcess(impl_->process, SIGKILL);
+    signalProcess(impl_->process, SIGKILL);  // NOLINT(misc-include-cleaner)
 #endif
 
-    if (!waitForExit(std::chrono::milliseconds {500}))
+    if (!waitForExit(kShutdownForceWaitTimeout))
     {
       std::error_code waitError;
       impl_->process.wait(waitError);
@@ -585,7 +613,7 @@ auto StdioSubprocess::capturedStderr() const -> std::string
     return {};
   }
 
-  std::lock_guard<std::mutex> lock(impl_->stderrMutex);
+  const std::scoped_lock lock(impl_->stderrMutex);
   return impl_->capturedStderr;
 }
 
@@ -594,7 +622,7 @@ StdioTransport::StdioTransport(StdioServerOptions options)
   static_cast<void>(options);
 }
 
-StdioTransport::StdioTransport(StdioClientOptions options)
+StdioTransport::StdioTransport(const StdioClientOptions &options)
 {
   static_cast<void>(options);
 }
@@ -635,15 +663,14 @@ auto StdioTransport::run(jsonrpc::Router &router, StdioServerOptions options) ->
   attachOptions.allowStderrLogs = options.allowStderrLogs;
   attachOptions.emitParseErrors = true;
 
-  router.setOutboundMessageSender([](const jsonrpc::RequestContext &, jsonrpc::Message outboundMessage) -> void
-                                  { detail::writeFramedMessage(std::cout, std::move(outboundMessage)); });
+  router.setOutboundMessageSender([](const jsonrpc::RequestContext &, const jsonrpc::Message &outboundMessage) -> void { detail::writeFramedMessage(std::cout, outboundMessage); });
 
   detail::routeFramedInput(router, std::cin, std::cout, options.allowStderrLogs ? &std::cerr : nullptr, attachOptions);
 }
 
 auto StdioTransport::attach(jsonrpc::Router &router, std::istream &serverStdout, std::ostream &serverStdin, StdioAttachOptions options) -> void
 {
-  router.setOutboundMessageSender([&serverStdin](const jsonrpc::RequestContext &, jsonrpc::Message outboundMessage) -> void
+  router.setOutboundMessageSender([&serverStdin](const jsonrpc::RequestContext &, const jsonrpc::Message &outboundMessage) -> void
                                   { detail::writeFramedMessage(serverStdin, outboundMessage); });
 
   detail::routeFramedInput(router, serverStdout, serverStdin, options.allowStderrLogs ? &std::cerr : nullptr, options);
@@ -654,7 +681,7 @@ auto StdioTransport::routeIncomingLine(jsonrpc::Router &router, std::string_view
   return detail::routeLine(router, line, output, stderrOutput, options);
 }
 
-auto StdioTransport::spawnSubprocess(StdioSubprocessSpawnOptions options) -> StdioSubprocess
+auto StdioTransport::spawnSubprocess(const StdioSubprocessSpawnOptions &options) -> StdioSubprocess
 {
   const SpawnCommand command = buildSpawnCommand(options);
   const bp::environment environment = buildSubprocessEnvironment(options.envOverrides);
@@ -663,53 +690,27 @@ auto StdioTransport::spawnSubprocess(StdioSubprocessSpawnOptions options) -> Std
   impl->stderrMode = options.stderrMode;
 
   const bool useStartDir = !options.cwd.empty();
+  auto spawnChild = [&](auto &&...ioOptions) -> bp::child
+  {
+    if (useStartDir)
+    {
+      return bp::child(command.executable, bp::args(command.arguments), bp::env(environment), bp::start_dir(options.cwd), std::forward<decltype(ioOptions)>(ioOptions)...);
+    }
+
+    return bp::child(command.executable, bp::args(command.arguments), bp::env(environment), std::forward<decltype(ioOptions)>(ioOptions)...);
+  };
+
   switch (options.stderrMode)
   {
     case StdioClientStderrMode::kCapture:
-      if (useStartDir)
-      {
-        impl->process = bp::child(command.executable,
-                                  bp::args(command.arguments),
-                                  bp::env(environment),
-                                  bp::start_dir(options.cwd),
-                                  bp::std_in = impl->stdinPipe,
-                                  bp::std_out = impl->stdoutPipe,
-                                  bp::std_err = impl->stderrPipe);
-      }
-      else
-      {
-        impl->process = bp::child(
-          command.executable, bp::args(command.arguments), bp::env(environment), bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe, bp::std_err = impl->stderrPipe);
-      }
+      impl->process = spawnChild(bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe, bp::std_err = impl->stderrPipe);
       impl->startStderrCapture();
       break;
     case StdioClientStderrMode::kForward:
-      if (useStartDir)
-      {
-        impl->process = bp::child(
-          command.executable, bp::args(command.arguments), bp::env(environment), bp::start_dir(options.cwd), bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe);
-      }
-      else
-      {
-        impl->process = bp::child(command.executable, bp::args(command.arguments), bp::env(environment), bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe);
-      }
+      impl->process = spawnChild(bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe);
       break;
     case StdioClientStderrMode::kIgnore:
-      if (useStartDir)
-      {
-        impl->process = bp::child(command.executable,
-                                  bp::args(command.arguments),
-                                  bp::env(environment),
-                                  bp::start_dir(options.cwd),
-                                  bp::std_in = impl->stdinPipe,
-                                  bp::std_out = impl->stdoutPipe,
-                                  bp::std_err = bp::null);
-      }
-      else
-      {
-        impl->process =
-          bp::child(command.executable, bp::args(command.arguments), bp::env(environment), bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe, bp::std_err = bp::null);
-      }
+      impl->process = spawnChild(bp::std_in = impl->stdinPipe, bp::std_out = impl->stdoutPipe, bp::std_err = bp::null);
       break;
   }
 

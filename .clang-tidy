@@ -18,11 +18,16 @@ Checks: "*,\
   -google-default-arguments, \
   -fuchsia-multiple-inheritance, \
   -clang-analyzer-optin.performance.Padding, \
+  -clang-analyzer-optin.cplusplus.VirtualCall, \
   -readability-redundant-access-specifiers, \
   -portability-template-virtual-member-function, \
   -bugprone-easily-swappable-parameters, \
-  -boost-use-ranges"
+  -boost-use-ranges,\
+  -portability-avoid-pragma-once"
 WarningsAsErrors: ''
+HeaderFilterRegex: '^(.*\/)?(src|include)\/.*'
+ExcludeHeaderFilterRegex: '.*/(build/.*/vcpkg_installed|vcpkg_installed|third_party|external)/.*'
+SystemHeaders: false
 
 CheckOptions:
   - key: 'bugprone-argument-comment.StrictMode'
@@ -87,6 +92,8 @@ CheckOptions:
     value: 'CamelCase'
   - key: 'readability-identifier-naming.EnumConstantCase'
     value: 'CamelCase'
+  - key: 'readability-identifier-naming.EnumConstantPrefix'
+    value: 'k'
   - key: 'readability-identifier-naming.FunctionCase'
     value: 'camelBack'
   - key: 'readability-identifier-naming.GlobalConstantCase'
@@ -145,6 +152,8 @@ CheckOptions:
     value: 'camelBack'
   - key: 'readability-identifier-naming.ScopedEnumConstantCase'
     value: 'CamelCase'
+  - key: 'readability-identifier-naming.ScopedEnumConstantPrefix'
+    value: 'k'
   - key: 'readability-identifier-naming.StaticConstantCase'
     value: 'camelBack'
   - key: 'readability-identifier-naming.StaticVariableCase'

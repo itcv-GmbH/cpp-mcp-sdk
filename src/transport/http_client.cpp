@@ -28,10 +28,10 @@ constexpr std::string_view kSseContentType = "text/event-stream";
 
 enum class ResponseContentType : std::uint8_t
 {
-  None,
-  Json,
-  Sse,
-  Unknown,
+  kNone,
+  kJson,
+  kSse,
+  kUnknown,
 };
 
 static auto responseContentType(const ServerResponse &response) -> ResponseContentType
@@ -39,7 +39,7 @@ static auto responseContentType(const ServerResponse &response) -> ResponseConte
   const auto contentType = getHeader(response.headers, kHeaderContentType);
   if (!contentType.has_value())
   {
-    return response.body.empty() ? ResponseContentType::None : ResponseContentType::Unknown;
+    return response.body.empty() ? ResponseContentType::kNone : ResponseContentType::kUnknown;
   }
 
   std::string normalized = detail::toLowerAscii(*contentType);
@@ -52,15 +52,15 @@ static auto responseContentType(const ServerResponse &response) -> ResponseConte
   const std::string_view trimmed = detail::trimAsciiWhitespace(normalized);
   if (trimmed == kJsonContentType)
   {
-    return ResponseContentType::Json;
+    return ResponseContentType::kJson;
   }
 
   if (trimmed == kSseContentType)
   {
-    return ResponseContentType::Sse;
+    return ResponseContentType::kSse;
   }
 
-  return ResponseContentType::Unknown;
+  return ResponseContentType::kUnknown;
 }
 
 static auto endpointPathFromUrl(std::string_view endpointUrl) -> std::string
@@ -299,7 +299,7 @@ struct StreamableHttpClient::Impl
     }
 
     const ResponseContentType contentType = responseContentType(response);
-    if (contentType != ResponseContentType::Sse)
+    if (contentType != ResponseContentType::kSse)
     {
       throw std::runtime_error("Expected text/event-stream response while processing SSE stream.");
     }
@@ -375,7 +375,7 @@ struct StreamableHttpClient::Impl
     }
 
     const ResponseContentType contentType = responseContentType(response);
-    if (contentType == ResponseContentType::Json)
+    if (contentType == ResponseContentType::kJson)
     {
       const jsonrpc::Message bodyMessage = jsonrpc::parseMessage(response.body);
       const std::optional<jsonrpc::Response> parsedResponse = asResponse(bodyMessage);
@@ -388,7 +388,7 @@ struct StreamableHttpClient::Impl
       return result;
     }
 
-    if (contentType != ResponseContentType::Sse)
+    if (contentType != ResponseContentType::kSse)
     {
       throw std::runtime_error("HTTP response content type was neither application/json nor text/event-stream.");
     }

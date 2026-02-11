@@ -15,7 +15,12 @@ namespace transport
 class Transport
 {
 public:
+  Transport() = default;
   virtual ~Transport() = default;
+  Transport(const Transport &) = delete;
+  Transport(Transport &&) = delete;
+  auto operator=(const Transport &) -> Transport & = delete;
+  auto operator=(Transport &&) -> Transport & = delete;
 
   virtual auto attach(std::weak_ptr<Session> session) -> void = 0;
   virtual auto start() -> void = 0;

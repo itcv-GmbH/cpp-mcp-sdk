@@ -37,7 +37,7 @@ struct ResourceTemplateDefinition
   std::optional<jsonrpc::JsonValue> metadata;
 };
 
-enum class ResourceContentKind
+enum class ResourceContentKind : std::uint8_t
 {
   kText,
   kBlobBase64,

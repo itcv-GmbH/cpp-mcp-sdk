@@ -1,19 +1,18 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <jsoncons/json.hpp>
 
-namespace mcp
-{
-namespace schema
+namespace mcp::schema
 {
 
 using JsonValue = jsoncons::json;
 
-enum class ToolSchemaKind
+enum class ToolSchemaKind : std::uint8_t
 {
   kInput,
   kOutput,
@@ -60,5 +59,4 @@ private:
 
 auto formatDiagnostics(const ValidationResult &result) -> std::string;
 
-}  // namespace schema
-}  // namespace mcp
+}  // namespace mcp::schema

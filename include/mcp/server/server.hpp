@@ -26,7 +26,7 @@ struct ServerConfiguration
   std::optional<std::string> instructions;
 };
 
-enum class LogLevel
+enum class LogLevel : std::uint8_t
 {
   kDebug,
   kInfo,
@@ -38,7 +38,7 @@ enum class LogLevel
   kEmergency,
 };
 
-enum class CompletionReferenceType
+enum class CompletionReferenceType : std::uint8_t
 {
   kPrompt,
   kResource,
@@ -60,7 +60,7 @@ struct CompletionResult
   std::optional<bool> hasMore;
 };
 
-enum class ListEndpoint
+enum class ListEndpoint : std::uint8_t
 {
   kTools,
   kResources,

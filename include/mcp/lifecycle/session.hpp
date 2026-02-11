@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <future>
 #include <memory>
@@ -21,16 +22,21 @@ namespace mcp
 namespace transport
 {
 class Transport;
-}
+}  // namespace transport
 
 class Executor
 {
 public:
   virtual ~Executor() = default;
+  Executor() = default;
+  Executor(const Executor &) = delete;
+  Executor(Executor &&) = delete;
+  auto operator=(const Executor &) -> Executor & = delete;
+  auto operator=(Executor &&) -> Executor & = delete;
   virtual auto post(std::function<void()> task) -> void = 0;
 };
 
-enum class HandlerThreadingPolicy
+enum class HandlerThreadingPolicy : std::uint8_t
 {
   kIoThread,
   kExecutor,
@@ -59,7 +65,7 @@ struct RequestOptions
 
 using ResponseCallback = std::function<void(const jsonrpc::Response &)>;
 
-enum class SessionState
+enum class SessionState : std::uint8_t
 {
   kCreated,  // Session created, not yet initialized
   kInitializing,  // Initialize request sent/received, waiting for response
@@ -69,7 +75,7 @@ enum class SessionState
   kStopped,  // Session stopped
 };
 
-enum class SessionRole
+enum class SessionRole : std::uint8_t
 {
   kClient,
   kServer,
@@ -99,10 +105,10 @@ class Icon
 {
 public:
   Icon() = default;
-  Icon(std::string src,
-       std::optional<std::string> mimeType = std::nullopt,
-       std::optional<std::vector<std::string>> sizes = std::nullopt,
-       std::optional<std::string> theme = std::nullopt);
+  explicit Icon(std::string src,
+                std::optional<std::string> mimeType = std::nullopt,
+                std::optional<std::vector<std::string>> sizes = std::nullopt,
+                std::optional<std::string> theme = std::nullopt);
 
   auto src() const noexcept -> const std::string & { return src_; }
   auto mimeType() const noexcept -> const std::optional<std::string> & { return mimeType_; }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <optional>
@@ -11,10 +12,10 @@
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/transport/transport.hpp>
 
-namespace mcp
+namespace mcp::transport
 {
-namespace transport
-{
+
+inline constexpr std::int64_t kDefaultStdioShutdownTimeoutMilliseconds = 1500;
 
 struct StdioServerOptions
 {
@@ -28,7 +29,7 @@ struct StdioClientOptions
   std::vector<std::string> environment;
 };
 
-enum class StdioClientStderrMode
+enum class StdioClientStderrMode : std::uint8_t
 {
   kCapture,
   kForward,
@@ -45,8 +46,8 @@ struct StdioSubprocessSpawnOptions
 
 struct StdioSubprocessShutdownOptions
 {
-  std::chrono::milliseconds waitForExitTimeout {1500};
-  std::chrono::milliseconds waitAfterTerminateTimeout {1500};
+  std::chrono::milliseconds waitForExitTimeout {kDefaultStdioShutdownTimeoutMilliseconds};
+  std::chrono::milliseconds waitAfterTerminateTimeout {kDefaultStdioShutdownTimeoutMilliseconds};
 };
 
 class StdioSubprocess final
@@ -88,7 +89,7 @@ class StdioTransport final : public Transport
 {
 public:
   explicit StdioTransport(StdioServerOptions options = {});
-  explicit StdioTransport(StdioClientOptions options);
+  explicit StdioTransport(const StdioClientOptions &options);
 
   auto attach(std::weak_ptr<Session> session) -> void override;
   auto start() -> void override;
@@ -99,11 +100,10 @@ public:
   static auto run(jsonrpc::Router &router, StdioServerOptions options = {}) -> void;
   static auto attach(jsonrpc::Router &router, std::istream &serverStdout, std::ostream &serverStdin, StdioAttachOptions options = {}) -> void;
   static auto routeIncomingLine(jsonrpc::Router &router, std::string_view line, std::ostream &output, std::ostream *stderrOutput, StdioAttachOptions options = {}) -> bool;
-  [[nodiscard]] static auto spawnSubprocess(StdioSubprocessSpawnOptions options) -> StdioSubprocess;
+  [[nodiscard]] static auto spawnSubprocess(const StdioSubprocessSpawnOptions &options) -> StdioSubprocess;
 
 private:
   bool running_ = false;
 };
 
-}  // namespace transport
-}  // namespace mcp
+}  // namespace mcp::transport

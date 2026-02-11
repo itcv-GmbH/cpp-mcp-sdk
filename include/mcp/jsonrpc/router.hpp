@@ -16,9 +16,7 @@
 #include <boost/asio/thread_pool.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 
-namespace mcp
-{
-namespace jsonrpc
+namespace mcp::jsonrpc
 {
 
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;
@@ -101,7 +99,7 @@ private:
     std::shared_ptr<boost::asio::steady_timer> timeoutTimer;
   };
 
-  enum class MarkIgnoredResponseId
+  enum class MarkIgnoredResponseId : std::uint8_t
   {
     kNo,
     kYes,
@@ -131,5 +129,4 @@ private:
   std::unique_ptr<boost::asio::thread_pool> timeoutPool_;
 };
 
-}  // namespace jsonrpc
-}  // namespace mcp
+}  // namespace mcp::jsonrpc

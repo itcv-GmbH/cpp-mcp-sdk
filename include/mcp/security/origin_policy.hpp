@@ -8,9 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace mcp
-{
-namespace security
+namespace mcp::security
 {
 
 struct OriginPolicy
@@ -28,6 +26,9 @@ struct OriginPolicy
 
 namespace detail
 {
+
+inline constexpr std::uint32_t kPortDecimalBase = 10U;
+inline constexpr std::uint32_t kMaxTcpPort = 65535U;
 
 struct ParsedOrigin
 {
@@ -69,7 +70,7 @@ inline auto trimAsciiWhitespace(std::string_view value) -> std::string_view
 
 inline auto isValidScheme(std::string_view scheme) -> bool
 {
-  if (scheme.empty() || !std::isalpha(static_cast<unsigned char>(scheme.front())))
+  if (scheme.empty() || std::isalpha(static_cast<unsigned char>(scheme.front())) == 0)
   {
     return false;
   }
@@ -93,8 +94,8 @@ inline auto parsePort(std::string_view portText) -> std::optional<std::uint16_t>
   std::uint32_t port = 0;
   for (const char character : portText)
   {
-    port = (port * 10U) + static_cast<std::uint32_t>(character - '0');
-    if (port > 65535U)
+    port = (port * kPortDecimalBase) + static_cast<std::uint32_t>(character - '0');
+    if (port > kMaxTcpPort)
     {
       return std::nullopt;
     }
@@ -268,16 +269,9 @@ inline auto isOriginAllowed(std::string_view origin, const OriginPolicy &policy 
     }
   }
 
-  for (const std::string &allowedHost : policy.allowedHosts)
-  {
-    if (detail::normalizeHost(allowedHost) == parsedOrigin->host)
-    {
-      return true;
-    }
-  }
-
-  return false;
+  return std::any_of(policy.allowedHosts.begin(),
+                     policy.allowedHosts.end(),
+                     [parsedHost = parsedOrigin->host](const std::string &allowedHost) -> bool { return detail::normalizeHost(allowedHost) == parsedHost; });
 }
 
-}  // namespace security
-}  // namespace mcp
+}  // namespace mcp::security

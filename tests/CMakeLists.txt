@@ -1,5 +1,8 @@
 # Tests CMakeLists.txt
 
+# Exclude unit test targets from clang-tidy; keep analysis focused on SDK sources.
+set(CMAKE_CXX_CLANG_TIDY "")
+
 add_executable(mcp_sdk_test_smoke smoke_test.cpp)
 
 target_link_libraries(mcp_sdk_test_smoke

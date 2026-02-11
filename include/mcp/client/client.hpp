@@ -25,6 +25,8 @@
 namespace mcp
 {
 
+inline constexpr std::size_t kDefaultMaxPaginationPages = 1024U;
+
 struct ClientInitializeConfiguration
 {
   std::optional<std::string> protocolVersion;
@@ -71,7 +73,7 @@ public:
   auto session() const noexcept -> const std::shared_ptr<Session> &;
 
   auto attachTransport(std::shared_ptr<transport::Transport> transport) -> void;
-  auto connectStdio(transport::StdioClientOptions options) -> void;
+  auto connectStdio(const transport::StdioClientOptions &options) -> void;
   auto connectHttp(const transport::HttpClientOptions &options) -> void;
   auto connectHttp(transport::http::StreamableHttpClientOptions options, transport::http::StreamableHttpClient::RequestExecutor requestExecutor) -> void;
 
@@ -88,7 +90,7 @@ public:
   auto getPrompt(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), RequestOptions options = {}) -> PromptGetResult;
 
   template<typename FetchPage, typename ConsumePage>
-  auto forEachPage(FetchPage fetchPage, ConsumePage consumePage, std::optional<std::string> cursor = std::nullopt, std::size_t maxPages = 1024) -> void
+  auto forEachPage(FetchPage fetchPage, ConsumePage consumePage, std::optional<std::string> cursor = std::nullopt, std::size_t maxPages = kDefaultMaxPaginationPages) -> void
   {
     std::unordered_set<std::string> seenCursors;
     std::size_t fetchedPages = 0;
@@ -123,7 +125,8 @@ public:
   }
 
   template<typename ItemType, typename FetchPage, typename ExtractItems>
-  auto collectAllPages(FetchPage fetchPage, ExtractItems extractItems, std::optional<std::string> cursor = std::nullopt, std::size_t maxPages = 1024) -> std::vector<ItemType>
+  auto collectAllPages(FetchPage fetchPage, ExtractItems extractItems, std::optional<std::string> cursor = std::nullopt, std::size_t maxPages = kDefaultMaxPaginationPages)
+    -> std::vector<ItemType>
   {
     std::vector<ItemType> allItems;
 

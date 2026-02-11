@@ -18,9 +18,7 @@
 #include <mcp/transport/transport.hpp>
 #include <mcp/version.hpp>
 
-namespace mcp
-{
-namespace transport
+namespace mcp::transport
 {
 
 namespace http
@@ -41,7 +39,7 @@ struct Header
 
 using HeaderList = std::vector<Header>;
 
-enum class TlsClientAuthenticationMode
+enum class TlsClientAuthenticationMode : std::uint8_t
 {
   kNone,
   kOptional,
@@ -68,6 +66,17 @@ struct ClientTlsConfiguration
 
 namespace detail
 {
+
+inline constexpr unsigned char kVisibleAsciiFirst = 0x21U;
+inline constexpr unsigned char kVisibleAsciiLast = 0x7EU;
+inline constexpr std::size_t kProtocolVersionLength = 10U;
+inline constexpr std::size_t kProtocolVersionFirstDash = 4U;
+inline constexpr std::size_t kProtocolVersionSecondDash = 7U;
+inline constexpr std::uint16_t kHttpStatusOk = 200;
+inline constexpr std::uint16_t kHttpStatusBadRequest = 400;
+inline constexpr std::uint16_t kHttpStatusForbidden = 403;
+inline constexpr std::uint16_t kHttpStatusNotFound = 404;
+inline constexpr std::uint32_t kDefaultRetryMilliseconds = 1000U;
 
 inline auto toLowerAscii(std::string_view text) -> std::string
 {
@@ -156,20 +165,20 @@ inline auto isValidSessionId(std::string_view sessionId) -> bool
                      [](char character) -> bool
                      {
                        const auto byte = static_cast<unsigned char>(character);
-                       return byte >= 0x21U && byte <= 0x7EU;
+                       return byte >= detail::kVisibleAsciiFirst && byte <= detail::kVisibleAsciiLast;
                      });
 }
 
 inline auto isValidProtocolVersion(std::string_view version) -> bool
 {
-  if (version.size() != 10 || version[4] != '-' || version[7] != '-')
+  if (version.size() != detail::kProtocolVersionLength || version[detail::kProtocolVersionFirstDash] != '-' || version[detail::kProtocolVersionSecondDash] != '-')
   {
     return false;
   }
 
   for (std::size_t index = 0; index < version.size(); ++index)
   {
-    if (index == 4 || index == 7)
+    if (index == detail::kProtocolVersionFirstDash || index == detail::kProtocolVersionSecondDash)
     {
       continue;
     }
@@ -233,7 +242,10 @@ public:
       return;
     }
 
-    setHeader(headers, kHeaderMcpSessionId, *sessionId_);
+    if (sessionId_.has_value())
+    {
+      setHeader(headers, kHeaderMcpSessionId, *sessionId_);
+    }
   }
 
 private:
@@ -244,7 +256,7 @@ private:
 class ProtocolVersionHeaderState
 {
 public:
-  auto setNegotiatedProtocolVersion(std::string protocolVersion) -> bool
+  auto setNegotiatedProtocolVersion(std::string_view protocolVersion) -> bool
   {
     const std::string_view normalizedVersion = detail::trimAsciiWhitespace(protocolVersion);
     if (!isValidProtocolVersion(normalizedVersion))
@@ -275,13 +287,13 @@ private:
   std::optional<std::string> negotiatedProtocolVersion_;
 };
 
-enum class RequestKind
+enum class RequestKind : std::uint8_t
 {
   kInitialize,
   kOther,
 };
 
-enum class SessionLookupState
+enum class SessionLookupState : std::uint8_t
 {
   kUnknown,
   kActive,
@@ -314,7 +326,7 @@ struct RequestValidationOptions
 struct RequestValidationResult
 {
   bool accepted = true;
-  std::uint16_t statusCode = 200;
+  std::uint16_t statusCode = detail::kHttpStatusOk;
   std::string reason;
   std::optional<std::string> sessionId;
   std::string effectiveProtocolVersion;
@@ -329,6 +341,7 @@ inline auto rejectRequest(std::uint16_t statusCode, std::string reason) -> Reque
   return result;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 inline auto validateServerRequest(const HeaderList &headers, RequestValidationOptions options = {}) -> RequestValidationResult
 {
   if (options.originPolicy.validateOrigin)
@@ -336,12 +349,12 @@ inline auto validateServerRequest(const HeaderList &headers, RequestValidationOp
     const auto origin = getHeader(headers, kHeaderOrigin);
     if (!origin.has_value() && !options.originPolicy.allowRequestsWithoutOrigin)
     {
-      return rejectRequest(403, "Origin is required");
+      return rejectRequest(detail::kHttpStatusForbidden, "Origin is required");
     }
 
     if (origin.has_value() && !security::isOriginAllowed(*origin, options.originPolicy))
     {
-      return rejectRequest(403, "Origin is not allowed");
+      return rejectRequest(detail::kHttpStatusForbidden, "Origin is not allowed");
     }
   }
 
@@ -353,14 +366,14 @@ inline auto validateServerRequest(const HeaderList &headers, RequestValidationOp
     const std::string_view normalizedSessionId = detail::trimAsciiWhitespace(*sessionIdHeader);
     if (!isValidSessionId(normalizedSessionId))
     {
-      return rejectRequest(400, "Invalid MCP-Session-Id");
+      return rejectRequest(detail::kHttpStatusBadRequest, "Invalid MCP-Session-Id");
     }
 
     accepted.sessionId = std::string(normalizedSessionId);
   }
   else if (options.sessionRequired && options.requestKind != RequestKind::kInitialize)
   {
-    return rejectRequest(400, "Missing required MCP-Session-Id");
+    return rejectRequest(detail::kHttpStatusBadRequest, "Missing required MCP-Session-Id");
   }
 
   if (accepted.sessionId.has_value() && options.sessionResolver)
@@ -368,7 +381,7 @@ inline auto validateServerRequest(const HeaderList &headers, RequestValidationOp
     const SessionResolution resolution = options.sessionResolver(*accepted.sessionId);
     if (resolution.state == SessionLookupState::kExpired || resolution.state == SessionLookupState::kTerminated || resolution.state == SessionLookupState::kUnknown)
     {
-      return rejectRequest(404, "Session is not active");
+      return rejectRequest(detail::kHttpStatusNotFound, "Session is not active");
     }
 
     if (!options.inferredProtocolVersion.has_value() && resolution.negotiatedProtocolVersion.has_value())
@@ -383,12 +396,12 @@ inline auto validateServerRequest(const HeaderList &headers, RequestValidationOp
     const std::string_view normalizedVersion = detail::trimAsciiWhitespace(*headerProtocolVersion);
     if (!isValidProtocolVersion(normalizedVersion))
     {
-      return rejectRequest(400, "Invalid MCP-Protocol-Version");
+      return rejectRequest(detail::kHttpStatusBadRequest, "Invalid MCP-Protocol-Version");
     }
 
     if (!isSupportedProtocolVersion(normalizedVersion, options.supportedProtocolVersions))
     {
-      return rejectRequest(400, "Unsupported MCP-Protocol-Version");
+      return rejectRequest(detail::kHttpStatusBadRequest, "Unsupported MCP-Protocol-Version");
     }
 
     accepted.effectiveProtocolVersion = std::string(normalizedVersion);
@@ -400,7 +413,7 @@ inline auto validateServerRequest(const HeaderList &headers, RequestValidationOp
     const std::string_view normalizedVersion = detail::trimAsciiWhitespace(*options.inferredProtocolVersion);
     if (!isValidProtocolVersion(normalizedVersion) || !isSupportedProtocolVersion(normalizedVersion, options.supportedProtocolVersions))
     {
-      return rejectRequest(400, "Inferred protocol version is invalid or unsupported");
+      return rejectRequest(detail::kHttpStatusBadRequest, "Inferred protocol version is invalid or unsupported");
     }
 
     accepted.effectiveProtocolVersion = std::string(normalizedVersion);
@@ -437,7 +450,7 @@ struct HttpServerOptions
 namespace http
 {
 
-enum class ServerRequestMethod
+enum class ServerRequestMethod : std::uint8_t
 {
   kGet,
   kPost,
@@ -461,7 +474,7 @@ struct SseStreamResponse
 
 struct ServerResponse
 {
-  std::uint16_t statusCode = 200;
+  std::uint16_t statusCode = detail::kHttpStatusOk;
   HeaderList headers;
   std::string body;
   std::optional<SseStreamResponse> sse;
@@ -538,7 +551,7 @@ struct StreamableHttpClientOptions
   ClientTlsConfiguration tls;
   SessionHeaderState sessionState;
   ProtocolVersionHeaderState protocolVersionState;
-  std::uint32_t defaultRetryMilliseconds = 1000;
+  std::uint32_t defaultRetryMilliseconds = detail::kDefaultRetryMilliseconds;
   std::function<void(std::uint32_t)> waitBeforeReconnect;
 };
 
@@ -634,5 +647,4 @@ private:
   bool running_ = false;
 };
 
-}  // namespace transport
-}  // namespace mcp
+}  // namespace mcp::transport

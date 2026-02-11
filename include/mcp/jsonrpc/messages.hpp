@@ -11,9 +11,7 @@
 #include <mcp/errors.hpp>
 #include <mcp/version.hpp>
 
-namespace mcp
-{
-namespace jsonrpc
+namespace mcp::jsonrpc
 {
 
 using RequestId = std::variant<std::int64_t, std::string>;
@@ -90,5 +88,4 @@ auto makeUrlElicitationRequiredError(std::optional<JsonValue> data = std::nullop
 auto makeErrorResponse(JsonRpcError error, std::optional<RequestId> id = std::nullopt) -> ErrorResponse;
 auto makeUnknownIdErrorResponse(JsonRpcError error) -> ErrorResponse;
 
-}  // namespace jsonrpc
-}  // namespace mcp
+}  // namespace mcp::jsonrpc

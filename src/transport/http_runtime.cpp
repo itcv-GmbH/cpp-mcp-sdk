@@ -10,14 +10,14 @@
 #include <thread>
 #include <utility>
 
-#include <boost/asio/connect.hpp>
+#include <boost/asio/connect.hpp>  // NOLINT(misc-include-cleaner)
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/ssl.hpp>
-#include <boost/beast/core.hpp>
-#include <boost/beast/http.hpp>
+#include <boost/asio/ssl.hpp>  // NOLINT(misc-include-cleaner)
+#include <boost/beast/core.hpp>  // NOLINT(misc-include-cleaner)
+#include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/transport/http.hpp>
 
 // NOLINTBEGIN(misc-include-cleaner, llvm-prefer-static-over-anonymous-namespace, readability-identifier-naming,

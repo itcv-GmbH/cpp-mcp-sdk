@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -7,11 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace mcp
-{
-namespace http
-{
-namespace sse
+namespace mcp::http::sse
 {
 
 struct EventIdCursor
@@ -31,36 +28,26 @@ struct Event
 namespace detail
 {
 
+inline constexpr unsigned char kVisibleAsciiFirst = 0x21U;
+inline constexpr unsigned char kVisibleAsciiLast = 0x7EU;
+inline constexpr std::uint64_t kDecimalBase = 10U;
+inline constexpr std::size_t kMaxCursorDigits = 20U;
+
 inline auto isVisibleAscii(std::string_view value) -> bool
 {
-  if (value.empty())
-  {
-    return false;
-  }
-
-  for (const char character : value)
-  {
-    const auto byte = static_cast<unsigned char>(character);
-    if (byte < 0x21U || byte > 0x7EU)
-    {
-      return false;
-    }
-  }
-
-  return true;
+  return !value.empty()
+    && std::all_of(value.begin(),
+                   value.end(),
+                   [](char character) -> bool
+                   {
+                     const auto byte = static_cast<unsigned char>(character);
+                     return byte >= kVisibleAsciiFirst && byte <= kVisibleAsciiLast;
+                   });
 }
 
 inline auto isValidSseFieldValue(std::string_view value) -> bool
 {
-  for (const char character : value)
-  {
-    if (character == '\n' || character == '\r')
-    {
-      return false;
-    }
-  }
-
-  return true;
+  return std::all_of(value.begin(), value.end(), [](char character) -> bool { return character != '\n' && character != '\r'; });
 }
 
 inline auto appendDataLines(std::string &encoded, std::string_view data) -> void
@@ -110,12 +97,12 @@ inline auto parseRetryField(std::string_view value) -> std::optional<std::uint32
     }
 
     const auto digit = static_cast<std::uint64_t>(character - '0');
-    if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / 10U)
+    if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / kDecimalBase)
     {
       return std::nullopt;
     }
 
-    parsed = (parsed * 10U) + digit;
+    parsed = (parsed * kDecimalBase) + digit;
     if (parsed > std::numeric_limits<std::uint32_t>::max())
     {
       return std::nullopt;
@@ -151,7 +138,7 @@ inline auto makeEventId(std::string_view streamId, std::uint64_t cursor) -> std:
   }
 
   std::string eventId;
-  eventId.reserve(streamId.size() + 1 + 20);
+  eventId.reserve(streamId.size() + 1 + detail::kMaxCursorDigits);
   eventId.append(streamId.data(), streamId.size());
   eventId.push_back(':');
   eventId += std::to_string(cursor);
@@ -182,12 +169,12 @@ inline auto parseEventId(std::string_view eventId) -> std::optional<EventIdCurso
     }
 
     const auto digit = static_cast<std::uint64_t>(character - '0');
-    if (cursor > (std::numeric_limits<std::uint64_t>::max() - digit) / 10U)
+    if (cursor > (std::numeric_limits<std::uint64_t>::max() - digit) / detail::kDecimalBase)
     {
       return std::nullopt;
     }
 
-    cursor = (cursor * 10U) + digit;
+    cursor = (cursor * detail::kDecimalBase) + digit;
   }
 
   if (cursor == 0)
@@ -239,6 +226,7 @@ inline auto encodeEvents(const std::vector<Event> &events) -> std::string
   return encoded;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 inline auto parseEvents(std::string_view encodedEvents) -> std::vector<Event>
 {
   std::vector<Event> events;
@@ -314,6 +302,4 @@ inline auto parseEvents(std::string_view encodedEvents) -> std::vector<Event>
   return events;
 }
 
-}  // namespace sse
-}  // namespace http
-}  // namespace mcp
+}  // namespace mcp::http::sse

@@ -22,8 +22,8 @@ namespace http
 {
 enum class StreamKind : std::uint8_t
 {
-  Get,
-  Post,
+  kGet,
+  kPost,
 };
 
 static constexpr std::uint16_t kStatusOk = 200;
@@ -46,7 +46,7 @@ struct StreamState
 {
   std::string streamId;
   std::optional<std::string> sessionId;
-  StreamKind kind = StreamKind::Get;
+  StreamKind kind = StreamKind::kGet;
   std::uint64_t nextCursor = 1;
   bool terminated = false;
   std::vector<StreamEventRecord> events;
@@ -174,6 +174,7 @@ struct StreamableHttpServer::Impl
   {
     const bool routeToPostStream = isResponseMessage(message);
 
+    // NOLINTNEXTLINE(misc-const-correctness)
     StreamState *postFallback = nullptr;
     for (const std::string &streamId : streamOrder)
     {
@@ -196,7 +197,7 @@ struct StreamableHttpServer::Impl
 
       if (routeToPostStream)
       {
-        if (stream.kind == StreamKind::Post)
+        if (stream.kind == StreamKind::kPost)
         {
           return &stream;
         }
@@ -204,7 +205,7 @@ struct StreamableHttpServer::Impl
         continue;
       }
 
-      if (stream.kind == StreamKind::Get)
+      if (stream.kind == StreamKind::kGet)
       {
         return &stream;
       }
@@ -293,6 +294,7 @@ struct StreamableHttpServer::Impl
     return jsonResponse(validation.statusCode, makeJsonRpcErrorBody(validation.reason));
   }
 
+  // NOLINTNEXTLINE(readability-function-cognitive-complexity)
   auto handlePost(const ServerRequest &request) -> ServerResponse
   {
     jsonrpc::Message message;
@@ -353,7 +355,7 @@ struct StreamableHttpServer::Impl
       return jsonResponse(kStatusOk, jsonrpc::serializeMessage(responseMessage));
     }
 
-    StreamState &stream = createStream(validation.sessionId, StreamKind::Post);
+    StreamState &stream = createStream(validation.sessionId, StreamKind::kPost);
     for (const jsonrpc::Message &preResponse : requestResult.preResponseMessages)
     {
       appendMessageEvent(stream, preResponse);
@@ -394,7 +396,7 @@ struct StreamableHttpServer::Impl
     const auto lastEventId = getHeader(request.headers, kHeaderLastEventId);
     if (!lastEventId.has_value())
     {
-      StreamState &stream = createStream(validation.sessionId, StreamKind::Get);
+      StreamState &stream = createStream(validation.sessionId, StreamKind::kGet);
       emitPendingMessages(stream);
 
       std::vector<mcp::http::sse::Event> outboundEvents = replayFromCursor(stream, 0);
@@ -499,7 +501,7 @@ struct StreamableHttpServer::Impl
     {
       appendMessageEvent(*stream, message);
 
-      if (isResponseMessage(message) && stream->kind == StreamKind::Post)
+      if (isResponseMessage(message) && stream->kind == StreamKind::kPost)
       {
         stream->terminated = true;
       }

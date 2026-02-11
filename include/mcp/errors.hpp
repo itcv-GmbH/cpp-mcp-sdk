@@ -9,7 +9,7 @@
 namespace mcp
 {
 
-enum class JsonRpcErrorCode : std::int32_t
+enum class JsonRpcErrorCode : std::int16_t
 {
   kParseError = -32700,
   kInvalidRequest = -32600,

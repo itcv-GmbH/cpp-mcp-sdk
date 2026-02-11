@@ -13,17 +13,22 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <jsoncons_ext/jsonschema/common/validator.hpp>
 #include <jsoncons_ext/jsonschema/evaluation_options.hpp>
 #include <jsoncons_ext/jsonschema/json_schema.hpp>
 #include <jsoncons_ext/jsonschema/json_schema_factory.hpp>
 #include <jsoncons_ext/jsonschema/validation_message.hpp>
+#include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/schema/validator.hpp>
+#include <mcp/server/prompts.hpp>
+#include <mcp/server/resources.hpp>
 #include <mcp/server/server.hpp>
+#include <mcp/server/tools.hpp>
 #include <mcp/version.hpp>
 
 namespace mcp
@@ -56,6 +61,29 @@ constexpr std::size_t kToolsPageSize = 50;
 constexpr std::size_t kResourcesPageSize = 50;
 constexpr std::size_t kResourceTemplatesPageSize = 50;
 constexpr std::size_t kPromptsPageSize = 50;
+constexpr std::size_t kCompletionMaxValues = 100;
+
+constexpr std::uint32_t kBase64Shift18 = 18U;
+constexpr std::uint32_t kBase64Shift16 = 16U;
+constexpr std::uint32_t kBase64Shift12 = 12U;
+constexpr std::uint32_t kBase64Shift8 = 8U;
+constexpr std::uint32_t kBase64Shift6 = 6U;
+constexpr std::uint32_t kBase64Mask6Bit = 0x3FU;
+constexpr std::uint32_t kBase64Mask8Bit = 0xFFU;
+
+constexpr std::uint32_t kBase64LowercaseOffset = 26U;
+constexpr std::uint32_t kBase64DigitOffset = 52U;
+constexpr std::uint32_t kBase64DashValue = 62U;
+constexpr std::uint32_t kBase64UnderscoreValue = 63U;
+
+constexpr int kLogLevelWeightDebug = 0;
+constexpr int kLogLevelWeightInfo = 1;
+constexpr int kLogLevelWeightNotice = 2;
+constexpr int kLogLevelWeightWarning = 3;
+constexpr int kLogLevelWeightError = 4;
+constexpr int kLogLevelWeightCritical = 5;
+constexpr int kLogLevelWeightAlert = 6;
+constexpr int kLogLevelWeightEmergency = 7;
 
 using JsonSchema = jsoncons::jsonschema::json_schema<jsonrpc::JsonValue>;
 using WalkResult = jsoncons::jsonschema::walk_result;
@@ -125,52 +153,52 @@ auto encodeStandardBase64(std::string_view bytes) -> std::string
   std::size_t index = 0;
   while (index + 3 <= bytes.size())
   {
-    const std::uint32_t chunk = (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << 16U)
-      | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 1])) << 8U) | static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 2]));
+    const std::uint32_t chunk = (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << kBase64Shift16)
+      | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 1])) << kBase64Shift8) | static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 2]));
 
-    encoded.push_back(alphabet[(chunk >> 18U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 12U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 6U) & 0x3FU]);
-    encoded.push_back(alphabet[chunk & 0x3FU]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift18) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift12) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift6) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[chunk & kBase64Mask6Bit]);
     index += 3;
   }
 
   const std::size_t remaining = bytes.size() - index;
   if (remaining == 1)
   {
-    const std::uint32_t chunk = static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << 16U;
-    encoded.push_back(alphabet[(chunk >> 18U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 12U) & 0x3FU]);
+    const std::uint32_t chunk = static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << kBase64Shift16;
+    encoded.push_back(alphabet[(chunk >> kBase64Shift18) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift12) & kBase64Mask6Bit]);
     encoded.push_back('=');
     encoded.push_back('=');
   }
   else if (remaining == 2)
   {
-    const std::uint32_t chunk =
-      (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << 16U) | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 1])) << 8U);
-    encoded.push_back(alphabet[(chunk >> 18U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 12U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 6U) & 0x3FU]);
+    const std::uint32_t chunk = (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << kBase64Shift16)
+      | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 1])) << kBase64Shift8);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift18) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift12) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift6) & kBase64Mask6Bit]);
     encoded.push_back('=');
   }
 
   return encoded;
 }
 
-auto makeTextContentBlock(std::string text) -> jsonrpc::JsonValue
+auto makeTextContentBlock(std::string_view text) -> jsonrpc::JsonValue
 {
   jsonrpc::JsonValue content = jsonrpc::JsonValue::array();
   jsonrpc::JsonValue textBlock = jsonrpc::JsonValue::object();
   textBlock["type"] = "text";
-  textBlock["text"] = std::move(text);
+  textBlock["text"] = text;
   content.push_back(std::move(textBlock));
   return content;
 }
 
-auto makeSchemaValidationErrorResult(std::string message, const std::vector<schema::ValidationDiagnostic> &diagnostics) -> mcp::CallToolResult
+auto makeSchemaValidationErrorResult(std::string_view message, const std::vector<schema::ValidationDiagnostic> &diagnostics) -> mcp::CallToolResult
 {
   mcp::CallToolResult result;
-  result.content = makeTextContentBlock(std::move(message));
+  result.content = makeTextContentBlock(message);
   result.isError = true;
 
   if (!diagnostics.empty())
@@ -284,36 +312,36 @@ auto encodeCursorPayload(std::string_view payload) -> std::string
   std::size_t index = 0;
   while (index + 3 <= payload.size())
   {
-    const std::uint32_t chunk = (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index])) << 16U)
-      | (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index + 1])) << 8U) | static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index + 2]));
+    const std::uint32_t chunk = (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index])) << kBase64Shift16)
+      | (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index + 1])) << kBase64Shift8) | static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index + 2]));
 
-    encoded.push_back(alphabet[(chunk >> 18U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 12U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 6U) & 0x3FU]);
-    encoded.push_back(alphabet[chunk & 0x3FU]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift18) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift12) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift6) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[chunk & kBase64Mask6Bit]);
     index += 3;
   }
 
   const std::size_t remaining = payload.size() - index;
   if (remaining == 1)
   {
-    const std::uint32_t chunk = static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index])) << 16U;
-    encoded.push_back(alphabet[(chunk >> 18U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 12U) & 0x3FU]);
+    const std::uint32_t chunk = static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index])) << kBase64Shift16;
+    encoded.push_back(alphabet[(chunk >> kBase64Shift18) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift12) & kBase64Mask6Bit]);
   }
   else if (remaining == 2)
   {
-    const std::uint32_t chunk =
-      (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index])) << 16U) | (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index + 1])) << 8U);
-    encoded.push_back(alphabet[(chunk >> 18U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 12U) & 0x3FU]);
-    encoded.push_back(alphabet[(chunk >> 6U) & 0x3FU]);
+    const std::uint32_t chunk = (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index])) << kBase64Shift16)
+      | (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index + 1])) << kBase64Shift8);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift18) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift12) & kBase64Mask6Bit]);
+    encoded.push_back(alphabet[(chunk >> kBase64Shift6) & kBase64Mask6Bit]);
   }
 
   return encoded;
 }
 
-auto decodeCursorPayload(std::string_view encoded) -> std::optional<std::string>
+auto decodeCursorPayload(std::string_view encoded) -> std::optional<std::string>  // NOLINT(readability-function-cognitive-complexity)
 {
   if (encoded.empty())
   {
@@ -328,19 +356,19 @@ auto decodeCursorPayload(std::string_view encoded) -> std::optional<std::string>
     }
     if (value >= 'a' && value <= 'z')
     {
-      return static_cast<std::uint32_t>(value - 'a') + 26U;
+      return static_cast<std::uint32_t>(value - 'a') + kBase64LowercaseOffset;
     }
     if (value >= '0' && value <= '9')
     {
-      return static_cast<std::uint32_t>(value - '0') + 52U;
+      return static_cast<std::uint32_t>(value - '0') + kBase64DigitOffset;
     }
     if (value == '-')
     {
-      return 62U;
+      return kBase64DashValue;
     }
     if (value == '_')
     {
-      return 63U;
+      return kBase64UnderscoreValue;
     }
 
     return std::nullopt;
@@ -358,47 +386,47 @@ auto decodeCursorPayload(std::string_view encoded) -> std::optional<std::string>
   std::size_t index = 0;
   while (index + 4 <= encoded.size())
   {
-    const auto a = decodeChar(encoded[index]);
-    const auto b = decodeChar(encoded[index + 1]);
-    const auto c = decodeChar(encoded[index + 2]);
-    const auto d = decodeChar(encoded[index + 3]);
-    if (!a.has_value() || !b.has_value() || !c.has_value() || !d.has_value())
+    const auto firstValue = decodeChar(encoded[index]);
+    const auto secondValue = decodeChar(encoded[index + 1]);
+    const auto thirdValue = decodeChar(encoded[index + 2]);
+    const auto fourthValue = decodeChar(encoded[index + 3]);
+    if (!firstValue.has_value() || !secondValue.has_value() || !thirdValue.has_value() || !fourthValue.has_value())
     {
       return std::nullopt;
     }
 
-    const std::uint32_t chunk = (*a << 18U) | (*b << 12U) | (*c << 6U) | *d;
-    decoded.push_back(static_cast<char>((chunk >> 16U) & 0xFFU));
-    decoded.push_back(static_cast<char>((chunk >> 8U) & 0xFFU));
-    decoded.push_back(static_cast<char>(chunk & 0xFFU));
+    const std::uint32_t chunk = (*firstValue << kBase64Shift18) | (*secondValue << kBase64Shift12) | (*thirdValue << kBase64Shift6) | *fourthValue;
+    decoded.push_back(static_cast<char>((chunk >> kBase64Shift16) & kBase64Mask8Bit));
+    decoded.push_back(static_cast<char>((chunk >> kBase64Shift8) & kBase64Mask8Bit));
+    decoded.push_back(static_cast<char>(chunk & kBase64Mask8Bit));
     index += 4;
   }
 
   if (remainder == 2)
   {
-    const auto a = decodeChar(encoded[index]);
-    const auto b = decodeChar(encoded[index + 1]);
-    if (!a.has_value() || !b.has_value())
+    const auto firstValue = decodeChar(encoded[index]);
+    const auto secondValue = decodeChar(encoded[index + 1]);
+    if (!firstValue.has_value() || !secondValue.has_value())
     {
       return std::nullopt;
     }
 
-    const std::uint32_t chunk = (*a << 18U) | (*b << 12U);
-    decoded.push_back(static_cast<char>((chunk >> 16U) & 0xFFU));
+    const std::uint32_t chunk = (*firstValue << kBase64Shift18) | (*secondValue << kBase64Shift12);
+    decoded.push_back(static_cast<char>((chunk >> kBase64Shift16) & kBase64Mask8Bit));
   }
   else if (remainder == 3)
   {
-    const auto a = decodeChar(encoded[index]);
-    const auto b = decodeChar(encoded[index + 1]);
-    const auto c = decodeChar(encoded[index + 2]);
-    if (!a.has_value() || !b.has_value() || !c.has_value())
+    const auto firstValue = decodeChar(encoded[index]);
+    const auto secondValue = decodeChar(encoded[index + 1]);
+    const auto thirdValue = decodeChar(encoded[index + 2]);
+    if (!firstValue.has_value() || !secondValue.has_value() || !thirdValue.has_value())
     {
       return std::nullopt;
     }
 
-    const std::uint32_t chunk = (*a << 18U) | (*b << 12U) | (*c << 6U);
-    decoded.push_back(static_cast<char>((chunk >> 16U) & 0xFFU));
-    decoded.push_back(static_cast<char>((chunk >> 8U) & 0xFFU));
+    const std::uint32_t chunk = (*firstValue << kBase64Shift18) | (*secondValue << kBase64Shift12) | (*thirdValue << kBase64Shift6);
+    decoded.push_back(static_cast<char>((chunk >> kBase64Shift16) & kBase64Mask8Bit));
+    decoded.push_back(static_cast<char>((chunk >> kBase64Shift8) & kBase64Mask8Bit));
   }
 
   return decoded;
@@ -490,24 +518,24 @@ auto logLevelWeight(LogLevel level) -> int
   switch (level)
   {
     case LogLevel::kDebug:
-      return 0;
+      return kLogLevelWeightDebug;
     case LogLevel::kInfo:
-      return 1;
+      return kLogLevelWeightInfo;
     case LogLevel::kNotice:
-      return 2;
+      return kLogLevelWeightNotice;
     case LogLevel::kWarning:
-      return 3;
+      return kLogLevelWeightWarning;
     case LogLevel::kError:
-      return 4;
+      return kLogLevelWeightError;
     case LogLevel::kCritical:
-      return 5;
+      return kLogLevelWeightCritical;
     case LogLevel::kAlert:
-      return 6;
+      return kLogLevelWeightAlert;
     case LogLevel::kEmergency:
-      return 7;
+      return kLogLevelWeightEmergency;
   }
 
-  return 0;
+  return kLogLevelWeightDebug;
 }
 
 auto capabilityForMethod(std::string_view method) -> std::optional<std::string_view>
@@ -662,8 +690,9 @@ auto Server::registerRequestHandler(std::string method, jsonrpc::RequestHandler 
 
   const std::string methodName = method;
   router_.registerRequestHandler(std::move(method),
-                                 [this, methodName, handler = std::move(handler)](
-                                   const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>  // NOLINT(bugprone-exception-escape)
+                                 [this, methodName, handler = std::move(handler)](  // NOLINT(bugprone-exception-escape)
+                                   const jsonrpc::RequestContext &context,
+                                   const jsonrpc::Request &request) -> std::future<jsonrpc::Response>  // NOLINT(bugprone-exception-escape)
                                  {
                                    if (!isMethodEnabledByCapability(methodName))
                                    {
@@ -1055,7 +1084,7 @@ auto Server::notifyResourceUpdated(std::string uri, const jsonrpc::RequestContex
   jsonrpc::Notification notification;
   notification.method = std::string(detail::kResourcesUpdatedNotificationMethod);
   notification.params = jsonrpc::JsonValue::object();
-  (*notification.params)["uri"] = std::move(uri);
+  (*notification.params)["uri"] = uri;
   sendNotification(context, std::move(notification));
   return true;
 }
@@ -1103,7 +1132,7 @@ auto Server::emitLogMessage(const jsonrpc::RequestContext &context, LogLevel lev
   (*notification.params)["level"] = std::string(detail::logLevelToString(level));
   if (logger.has_value())
   {
-    (*notification.params)["logger"] = std::move(*logger);
+    (*notification.params)["logger"] = *logger;
   }
   (*notification.params)["data"] = std::move(data);
 
@@ -1217,7 +1246,7 @@ auto Server::registerCoreHandlers() -> void
                                  { return detail::makeReadyResponseFuture(handlePromptsGetRequest(context, request)); });
 }
 
-auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
+auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
 {
   std::optional<std::string> cursor;
   if (request.params.has_value())
@@ -1309,7 +1338,9 @@ auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc:
   return response;
 }
 
-auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request)
+  -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
 {
   if (!request.params.has_value() || !request.params->is_object())
   {
@@ -1438,7 +1469,7 @@ auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, cons
   return response;
 }
 
-auto Server::handleResourcesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
+auto Server::handleResourcesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
 {
   std::optional<std::string> cursor;
   if (request.params.has_value())
@@ -1600,11 +1631,11 @@ auto Server::handleResourcesReadRequest(const jsonrpc::RequestContext &context, 
 
     if (content.kind == ResourceContentKind::kText)
     {
-      contentJson["text"] = std::move(content.value);
+      contentJson["text"] = content.value;
     }
     else
     {
-      contentJson["blob"] = std::move(content.value);
+      contentJson["blob"] = content.value;
     }
 
     contentsJson.push_back(std::move(contentJson));
@@ -1773,7 +1804,7 @@ auto Server::handleResourcesUnsubscribeRequest(const jsonrpc::RequestContext &co
   return response;
 }
 
-auto Server::handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
+auto Server::handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
 {
   std::optional<std::string> cursor;
   if (request.params.has_value())
@@ -1880,7 +1911,9 @@ auto Server::handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrp
   return response;
 }
 
-auto Server::handlePromptsGetRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+auto Server::handlePromptsGetRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request)
+  -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
 {
   if (!request.params.has_value() || !request.params->is_object())
   {
@@ -2040,7 +2073,7 @@ auto Server::handleLoggingSetLevelRequest(const jsonrpc::Request &request) -> js
   return response;
 }
 
-auto Server::handleCompletionCompleteRequest(const jsonrpc::Request &request) -> jsonrpc::Response
+auto Server::handleCompletionCompleteRequest(const jsonrpc::Request &request) -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
 {
   if (!request.params.has_value() || !request.params->is_object())
   {
@@ -2126,10 +2159,10 @@ auto Server::handleCompletionCompleteRequest(const jsonrpc::Request &request) ->
     }
   }
 
-  const bool truncated = completionResult.values.size() > 100;
+  const bool truncated = completionResult.values.size() > detail::kCompletionMaxValues;
   if (truncated)
   {
-    completionResult.values.resize(100);
+    completionResult.values.resize(detail::kCompletionMaxValues);
   }
 
   jsonrpc::JsonValue completionJson = jsonrpc::JsonValue::object();
