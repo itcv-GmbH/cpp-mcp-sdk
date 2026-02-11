@@ -24,6 +24,7 @@ static constexpr std::int64_t kProgressRequestId = 404;
 static constexpr std::int64_t kUnknownResponseId = 999;
 static constexpr std::int64_t kInitializeRequestId = 808;
 static constexpr std::int64_t kInboundProgressRequestId = 5150;
+static constexpr std::int64_t kTaskTimeoutRequestId = 6160;
 
 static constexpr double kProgressQuarter = 0.25;
 static constexpr double kProgressLate = 0.8;
@@ -338,6 +339,11 @@ TEST_CASE("Router forwards active progress notifications and stops after complet
   router.dispatchNotification(context, lateProgressNotification);
   REQUIRE(updates.size() == 1);
 
+  mcp::jsonrpc::Notification nonMonotonicProgress = progressNotification;
+  (*nonMonotonicProgress.params)["progress"] = 0.1;
+  router.dispatchNotification(context, nonMonotonicProgress);
+  REQUIRE(updates.size() == 1);
+
   const mcp::jsonrpc::Response finalResponse = responseFuture.get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(finalResponse));
 }
@@ -350,6 +356,22 @@ TEST_CASE("Router can emit progress notifications from an inbound request progre
   router.setOutboundMessageSender([&outboundMessages, &outboundMessagesMutex](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
                                   { recordMessage(outboundMessages, outboundMessagesMutex, std::move(message)); });
 
+  std::promise<void> unblockHandler;
+  auto unblockFuture = unblockHandler.get_future();
+  router.registerRequestHandler("tools/call",
+                                [&unblockFuture](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
+                                {
+                                  return std::async(std::launch::async,
+                                                    [&unblockFuture, request]() -> mcp::jsonrpc::Response
+                                                    {
+                                                      unblockFuture.wait();
+                                                      mcp::jsonrpc::SuccessResponse success;
+                                                      success.id = request.id;
+                                                      success.result = mcp::jsonrpc::JsonValue::object();
+                                                      return mcp::jsonrpc::Response {success};
+                                                    });
+                                });
+
   const mcp::jsonrpc::RequestContext context;
   mcp::jsonrpc::Request inboundRequest;
   inboundRequest.id = kInboundProgressRequestId;
@@ -358,8 +380,19 @@ TEST_CASE("Router can emit progress notifications from an inbound request progre
   (*inboundRequest.params)["_meta"] = mcp::jsonrpc::JsonValue::object();
   (*inboundRequest.params)["_meta"]["progressToken"] = "progress-5150";
 
+  std::future<mcp::jsonrpc::Response> responseFuture = router.dispatchRequest(context, inboundRequest);
+
   REQUIRE(router.emitProgress(context, inboundRequest, kProgressHalf, 1.0, "halfway"));
   REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 1);
+
+  REQUIRE_FALSE(router.emitProgress(context, inboundRequest, 0.4, 1.0, "backwards"));
+  REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 1);
+
+  unblockHandler.set_value();
+  REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
+  static_cast<void>(responseFuture.get());
+
+  REQUIRE_FALSE(router.emitProgress(context, inboundRequest, kProgressLate, 1.0, "late"));
 
   const std::vector<mcp::jsonrpc::Message> snapshot = copyMessages(outboundMessages, outboundMessagesMutex);
   REQUIRE(std::holds_alternative<mcp::jsonrpc::Notification>(snapshot[0]));
@@ -371,6 +404,45 @@ TEST_CASE("Router can emit progress notifications from an inbound request progre
   {
     REQUIRE(progressNotification.params->at("progressToken").as<std::string>() == "progress-5150");
     REQUIRE(progressNotification.params->at("progress").as<double>() == Catch::Approx(kProgressHalf));
+  }
+}
+
+TEST_CASE("Router timeout uses tasks/cancel for task-augmented requests", "[jsonrpc][router]")
+{
+  mcp::jsonrpc::Router router;
+  std::mutex outboundMessagesMutex;
+  std::vector<mcp::jsonrpc::Message> outboundMessages;
+  router.setOutboundMessageSender([&outboundMessages, &outboundMessagesMutex](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+                                  { recordMessage(outboundMessages, outboundMessagesMutex, std::move(message)); });
+
+  const mcp::jsonrpc::RequestContext context;
+
+  mcp::jsonrpc::Request request;
+  request.id = kTaskTimeoutRequestId;
+  request.method = "tools/call";
+  request.params = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["name"] = "long-running";
+  (*request.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["task"] = mcp::jsonrpc::JsonValue::object();
+  (*request.params)["taskId"] = "task-6160";
+
+  mcp::jsonrpc::OutboundRequestOptions options;
+  options.timeout = std::chrono::milliseconds(kRequestTimeoutMillis);
+
+  std::future<mcp::jsonrpc::Response> responseFuture = router.sendRequest(context, request, options);
+  REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
+
+  waitForMessageCount(outboundMessages, outboundMessagesMutex, 2);
+  REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 2);
+
+  const std::vector<mcp::jsonrpc::Message> snapshot = copyMessages(outboundMessages, outboundMessagesMutex);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(snapshot[1]));
+  const auto &cancelRequest = std::get<mcp::jsonrpc::Request>(snapshot[1]);
+  REQUIRE(cancelRequest.method == "tasks/cancel");
+  REQUIRE(cancelRequest.params.has_value());
+  if (cancelRequest.params.has_value())
+  {
+    REQUIRE(cancelRequest.params->at("taskId").as<std::string>() == "task-6160");
   }
 }
 // NOLINTEND(readability-function-cognitive-complexity)

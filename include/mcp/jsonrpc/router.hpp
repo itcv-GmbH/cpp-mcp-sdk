@@ -58,24 +58,21 @@ public:
   auto registerNotificationHandler(std::string method, NotificationHandler handler) -> void;
   auto unregisterHandler(const std::string &method) -> bool;
 
-  auto dispatchRequest(const RequestContext &context, const Request &request) const -> std::future<Response>;
-  auto dispatchNotification(const RequestContext &context, const Notification &notification) const -> void;
+  auto dispatchRequest(const RequestContext &context, const Request &request) -> std::future<Response>;
+  auto dispatchNotification(const RequestContext &context, const Notification &notification) -> void;
 
   auto sendRequest(const RequestContext &context, Request request, OutboundRequestOptions options = {}) -> std::future<Response>;
   auto sendNotification(const RequestContext &context, Notification notification) const -> void;
   auto dispatchResponse(const RequestContext &context, const Response &response) -> bool;
 
-  auto emitProgress(const RequestContext &context,
-                    const Request &request,
-                    double progress,
-                    std::optional<double> total = std::nullopt,
-                    std::optional<std::string> message = std::nullopt) const -> bool;
+  auto emitProgress(
+    const RequestContext &context, const Request &request, double progress, std::optional<double> total = std::nullopt, std::optional<std::string> message = std::nullopt) -> bool;
 
   auto emitProgress(const RequestContext &context,
                     const RequestId &progressToken,
                     double progress,
                     std::optional<double> total = std::nullopt,
-                    std::optional<std::string> message = std::nullopt) const -> bool;
+                    std::optional<std::string> message = std::nullopt) -> bool;
 
 private:
   struct RequestIdHash
@@ -95,8 +92,20 @@ private:
     bool cancelOnTimeout = true;
     ProgressCallback progressCallback;
     std::optional<RequestId> progressToken;
+    bool taskAugmented = false;
+    std::optional<std::string> taskId;
+    std::optional<double> lastObservedProgress;
     std::promise<Response> promise;
     std::shared_ptr<boost::asio::steady_timer> timeoutTimer;
+  };
+
+  struct InboundRequestState
+  {
+    std::string method;
+    bool taskAugmented = false;
+    std::optional<RequestId> progressToken;
+    std::optional<double> lastEmittedProgress;
+    bool cancelled = false;
   };
 
   enum class MarkIgnoredResponseId : std::uint8_t
@@ -107,11 +116,16 @@ private:
 
   using RequestIdSet = std::unordered_set<RequestId, RequestIdHash, RequestIdEqual>;
   using InFlightRequestMap = std::unordered_map<RequestId, std::shared_ptr<InFlightRequestState>, RequestIdHash, RequestIdEqual>;
+  using InboundRequestMap = std::unordered_map<RequestId, InboundRequestState, RequestIdHash, RequestIdEqual>;
+  using RequestIdByProgressTokenMap = std::unordered_map<RequestId, RequestId, RequestIdHash, RequestIdEqual>;
 
   auto addInFlightRequest(const std::shared_ptr<InFlightRequestState> &inFlightRequest) -> std::optional<Response>;
   auto popInFlightRequest(const RequestId &requestId, MarkIgnoredResponseId markIgnoredResponseId) -> std::shared_ptr<InFlightRequestState>;
   auto armRequestTimeout(const std::shared_ptr<InFlightRequestState> &inFlightRequest, std::chrono::milliseconds timeout) -> void;
   auto handleRequestTimeout(const RequestId &requestId) -> void;
+
+  auto markInboundRequestActive(const RequestContext &context, const Request &request) -> bool;
+  auto completeInboundRequest(const RequestContext &context, const RequestId &requestId) -> void;
 
   auto dispatchOutboundMessage(const RequestContext &context, Message message) const -> bool;
 
@@ -124,7 +138,9 @@ private:
   RequestIdSet seenOutboundRequestIds_;
   InFlightRequestMap inFlightRequests_;
   RequestIdSet ignoredResponseIds_;
-  std::unordered_map<RequestId, RequestId, RequestIdHash, RequestIdEqual> requestIdsByProgressToken_;
+  RequestIdByProgressTokenMap requestIdsByProgressToken_;
+  std::unordered_map<std::string, InboundRequestMap> inboundRequestsBySender_;
+  std::unordered_map<std::string, RequestIdByProgressTokenMap> inboundRequestIdsByProgressTokenBySender_;
 
   std::unique_ptr<boost::asio::thread_pool> timeoutPool_;
 };

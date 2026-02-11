@@ -9,6 +9,8 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -18,14 +20,14 @@
 #include <boost/asio/thread_pool.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
+#include <mcp/util/cancellation.hpp>
+#include <mcp/util/progress.hpp>
 
 namespace mcp::jsonrpc
 {
 namespace detail
 {
 
-static constexpr const char *kCancelledNotificationMethod = "notifications/cancelled";
-static constexpr const char *kProgressNotificationMethod = "notifications/progress";
 static constexpr const char *kDefaultSender = "__default_sender__";
 static constexpr std::size_t kIntegralRequestIdHashSeed = 0x9e3779b97f4a7c15ULL;
 static constexpr std::size_t kStringRequestIdHashSeed = 0x85ebca6bULL;
@@ -40,58 +42,14 @@ static auto senderKey(const RequestContext &context) -> std::string
   return kDefaultSender;
 }
 
-static auto requestIdToJson(const RequestId &requestId) -> JsonValue
+static auto requestIdToString(const RequestId &requestId) -> std::string
 {
   if (std::holds_alternative<std::int64_t>(requestId))
   {
-    return {std::get<std::int64_t>(requestId)};
+    return std::to_string(std::get<std::int64_t>(requestId));
   }
 
-  return {std::get<std::string>(requestId)};
-}
-
-static auto jsonToRequestId(const JsonValue &value) -> std::optional<RequestId>
-{
-  if (value.is_string())
-  {
-    return RequestId {value.as<std::string>()};
-  }
-
-  if (value.is_int64())
-  {
-    return RequestId {value.as<std::int64_t>()};
-  }
-
-  if (value.is_uint64())
-  {
-    const std::uint64_t unsignedValue = value.as<std::uint64_t>();
-    if (unsignedValue <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
-    {
-      return RequestId {static_cast<std::int64_t>(unsignedValue)};
-    }
-  }
-
-  return std::nullopt;
-}
-
-static auto jsonToNumber(const JsonValue &value) -> std::optional<double>
-{
-  if (value.is_double())
-  {
-    return value.as<double>();
-  }
-
-  if (value.is_int64())
-  {
-    return static_cast<double>(value.as<std::int64_t>());
-  }
-
-  if (value.is_uint64())
-  {
-    return static_cast<double>(value.as<std::uint64_t>());
-  }
-
-  return std::nullopt;
+  return std::get<std::string>(requestId);
 }
 
 template<typename T>
@@ -102,66 +60,20 @@ static auto makeReadyFuture(T value) -> std::future<T>
   return promise.get_future();
 }
 
-static auto extractProgressToken(const Request &request) -> std::optional<RequestId>
-{
-  if (!request.params.has_value())
-  {
-    return std::nullopt;
-  }
-
-  const JsonValue &params = *request.params;
-  if (!params.is_object() || !params.contains("_meta"))
-  {
-    return std::nullopt;
-  }
-
-  const JsonValue &meta = params.at("_meta");
-  if (!meta.is_object() || !meta.contains("progressToken"))
-  {
-    return std::nullopt;
-  }
-
-  return jsonToRequestId(meta.at("progressToken"));
-}
-
 static auto parseProgressNotification(const Notification &notification) -> std::optional<ProgressUpdate>
 {
-  if (notification.method != kProgressNotificationMethod || !notification.params.has_value())
-  {
-    return std::nullopt;
-  }
-
-  const JsonValue &params = *notification.params;
-  if (!params.is_object() || !params.contains("progressToken") || !params.contains("progress"))
-  {
-    return std::nullopt;
-  }
-
-  const std::optional<RequestId> progressToken = jsonToRequestId(params.at("progressToken"));
-  const std::optional<double> progress = jsonToNumber(params.at("progress"));
-  if (!progressToken.has_value() || !progress.has_value())
+  const std::optional<util::progress::ProgressNotification> parsed = util::progress::parseProgressNotification(notification);
+  if (!parsed.has_value())
   {
     return std::nullopt;
   }
 
   ProgressUpdate update;
-  update.progressToken = *progressToken;
-  update.progress = *progress;
-  if (params.contains("total"))
-  {
-    update.total = jsonToNumber(params.at("total"));
-  }
-
-  if (params.contains("message") && params.at("message").is_string())
-  {
-    update.message = params.at("message").as<std::string>();
-  }
-
-  update.additionalProperties = params;
-  update.additionalProperties.erase("progressToken");
-  update.additionalProperties.erase("progress");
-  update.additionalProperties.erase("total");
-  update.additionalProperties.erase("message");
+  update.progressToken = parsed->progressToken;
+  update.progress = parsed->progress;
+  update.total = parsed->total;
+  update.message = parsed->message;
+  update.additionalProperties = parsed->additionalProperties;
   return update;
 }
 
@@ -236,6 +148,8 @@ Router::~Router() noexcept
 
       inFlightRequests_.clear();
       requestIdsByProgressToken_.clear();
+      inboundRequestsBySender_.clear();
+      inboundRequestIdsByProgressTokenBySender_.clear();
     }
 
     for (const auto &requestState : inFlightRequests)
@@ -284,14 +198,14 @@ auto Router::unregisterHandler(const std::string &method) -> bool
   return removedRequestHandler || removedNotificationHandler;
 }
 
-auto Router::dispatchRequest(const RequestContext &context, const Request &request) const -> std::future<Response>
+auto Router::dispatchRequest(const RequestContext &context, const Request &request) -> std::future<Response>
 {
   RequestHandler handler;
+  const std::string sender = detail::senderKey(context);
 
   {
     const std::scoped_lock lock(mutex_);
 
-    const std::string sender = detail::senderKey(context);
     auto &senderIds = seenRequestIdsBySender_[sender];
     const bool isNewId = senderIds.insert(request.id).second;
     if (!isNewId)
@@ -308,19 +222,47 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
     handler = requestHandlerIt->second;
   }
 
+  if (!markInboundRequestActive(context, request))
+  {
+    return detail::makeReadyFuture(Response {makeErrorResponse(makeInvalidRequestError(std::nullopt, "Duplicate progress token for active inbound request."), request.id)});
+  }
+
+  auto responsePromise = std::make_shared<std::promise<Response>>();
+  std::future<Response> responseFuture = responsePromise->get_future();
+
   try
   {
-    return handler(context, request);
+    std::future<Response> handlerFuture = handler(context, request);
+    std::thread(
+      [this, context, requestId = request.id, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable -> void
+      {
+        try
+        {
+          Response response = handlerFuture.get();
+          completeInboundRequest(context, requestId);
+          responsePromise->set_value(std::move(response));
+        }
+        catch (...)
+        {
+          completeInboundRequest(context, requestId);
+          responsePromise->set_value(Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
+        }
+      })
+      .detach();
+
+    return responseFuture;
   }
   catch (...)
   {
+    completeInboundRequest(context, request.id);
     return detail::makeReadyFuture(Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), request.id)});
   }
 }
 
-auto Router::dispatchNotification(const RequestContext &context, const Notification &notification) const -> void
+auto Router::dispatchNotification(const RequestContext &context, const Notification &notification) -> void
 {
   const std::optional<ProgressUpdate> progressUpdate = detail::parseProgressNotification(notification);
+  const std::optional<util::cancellation::CancelledNotification> cancelledNotification = util::cancellation::parseCancelledNotification(notification);
 
   ProgressCallback progressCallback;
   NotificationHandler methodHandler;
@@ -335,7 +277,27 @@ auto Router::dispatchNotification(const RequestContext &context, const Notificat
         const auto inFlightRequestIt = inFlightRequests_.find(requestIdByTokenIt->second);
         if (inFlightRequestIt != inFlightRequests_.end())
         {
-          progressCallback = inFlightRequestIt->second->progressCallback;
+          std::shared_ptr<InFlightRequestState> requestState = inFlightRequestIt->second;
+          const bool monotonic = !requestState->lastObservedProgress.has_value() || progressUpdate->progress > *requestState->lastObservedProgress;
+          if (monotonic)
+          {
+            requestState->lastObservedProgress = progressUpdate->progress;
+            progressCallback = requestState->progressCallback;
+          }
+        }
+      }
+    }
+
+    if (cancelledNotification.has_value())
+    {
+      const std::string sender = detail::senderKey(context);
+      const auto senderRequestsIt = inboundRequestsBySender_.find(sender);
+      if (senderRequestsIt != inboundRequestsBySender_.end())
+      {
+        const auto inboundRequestIt = senderRequestsIt->second.find(cancelledNotification->requestId);
+        if (inboundRequestIt != senderRequestsIt->second.end() && inboundRequestIt->second.method != "initialize" && !inboundRequestIt->second.taskAugmented)
+        {
+          inboundRequestIt->second.cancelled = true;
         }
       }
     }
@@ -456,15 +418,19 @@ auto Router::handleRequestTimeout(const RequestId &requestId) -> void
     return;
   }
 
-  Notification cancelNotification;
-  cancelNotification.method = detail::kCancelledNotificationMethod;
+  if (timedOutRequest->taskAugmented)
+  {
+    if (timedOutRequest->taskId.has_value())
+    {
+      Request cancelRequest = util::cancellation::makeTasksCancelRequest(RequestId {std::string("cancel:") + detail::requestIdToString(requestId)}, *timedOutRequest->taskId);
+      static_cast<void>(dispatchOutboundMessage(timedOutRequest->context, Message {std::move(cancelRequest)}));
+    }
 
-  JsonValue cancelParams = JsonValue::object();
-  cancelParams["requestId"] = detail::requestIdToJson(requestId);
-  cancelParams["reason"] = "Request timed out.";
-  cancelNotification.params = std::move(cancelParams);
+    return;
+  }
 
-  dispatchOutboundMessage(timedOutRequest->context, Message {std::move(cancelNotification)});
+  Notification cancelNotification = util::cancellation::makeCancelledNotification(requestId, std::string("Request timed out."));
+  static_cast<void>(dispatchOutboundMessage(timedOutRequest->context, Message {std::move(cancelNotification)}));
 }
 
 auto Router::sendRequest(const RequestContext &context, Request request, OutboundRequestOptions options) -> std::future<Response>
@@ -474,7 +440,9 @@ auto Router::sendRequest(const RequestContext &context, Request request, Outboun
   inFlightRequest->request = std::move(request);
   inFlightRequest->cancelOnTimeout = options.cancelOnTimeout;
   inFlightRequest->progressCallback = std::move(options.onProgress);
-  inFlightRequest->progressToken = detail::extractProgressToken(inFlightRequest->request);
+  inFlightRequest->progressToken = util::progress::extractProgressToken(inFlightRequest->request);
+  inFlightRequest->taskAugmented = util::cancellation::isTaskAugmentedRequest(inFlightRequest->request);
+  inFlightRequest->taskId = util::cancellation::extractTaskId(inFlightRequest->request);
 
   std::future<Response> responseFuture = inFlightRequest->promise.get_future();
 
@@ -538,9 +506,9 @@ auto Router::dispatchResponse(const RequestContext &context, const Response &res
   return true;
 }
 
-auto Router::emitProgress(const RequestContext &context, const Request &request, double progress, std::optional<double> total, std::optional<std::string> message) const -> bool
+auto Router::emitProgress(const RequestContext &context, const Request &request, double progress, std::optional<double> total, std::optional<std::string> message) -> bool
 {
-  const std::optional<RequestId> progressToken = detail::extractProgressToken(request);
+  const std::optional<RequestId> progressToken = util::progress::extractProgressToken(request);
   if (!progressToken.has_value())
   {
     return false;
@@ -549,27 +517,115 @@ auto Router::emitProgress(const RequestContext &context, const Request &request,
   return emitProgress(context, *progressToken, progress, total, std::move(message));
 }
 
-auto Router::emitProgress(const RequestContext &context, const RequestId &progressToken, double progress, std::optional<double> total, std::optional<std::string> message) const
-  -> bool
+auto Router::emitProgress(const RequestContext &context, const RequestId &progressToken, double progress, std::optional<double> total, std::optional<std::string> message) -> bool
 {
-  Notification progressNotification;
-  progressNotification.method = detail::kProgressNotificationMethod;
-
-  JsonValue progressParams = JsonValue::object();
-  progressParams["progressToken"] = detail::requestIdToJson(progressToken);
-  progressParams["progress"] = progress;
-  if (total.has_value())
   {
-    progressParams["total"] = *total;
+    const std::scoped_lock lock(mutex_);
+    const std::string sender = detail::senderKey(context);
+    const auto senderProgressIt = inboundRequestIdsByProgressTokenBySender_.find(sender);
+    if (senderProgressIt == inboundRequestIdsByProgressTokenBySender_.end())
+    {
+      return false;
+    }
+
+    const auto requestByTokenIt = senderProgressIt->second.find(progressToken);
+    if (requestByTokenIt == senderProgressIt->second.end())
+    {
+      return false;
+    }
+
+    const auto senderRequestsIt = inboundRequestsBySender_.find(sender);
+    if (senderRequestsIt == inboundRequestsBySender_.end())
+    {
+      return false;
+    }
+
+    const auto requestIt = senderRequestsIt->second.find(requestByTokenIt->second);
+    if (requestIt == senderRequestsIt->second.end())
+    {
+      return false;
+    }
+
+    if (requestIt->second.cancelled)
+    {
+      return false;
+    }
+
+    if (requestIt->second.lastEmittedProgress.has_value() && progress <= *requestIt->second.lastEmittedProgress)
+    {
+      return false;
+    }
+
+    requestIt->second.lastEmittedProgress = progress;
   }
 
-  if (message.has_value())
-  {
-    progressParams["message"] = *message;
-  }
-
-  progressNotification.params = std::move(progressParams);
+  Notification progressNotification = util::progress::makeProgressNotification(progressToken, progress, total, std::move(message));
   return dispatchOutboundMessage(context, Message {std::move(progressNotification)});
+}
+
+auto Router::markInboundRequestActive(const RequestContext &context, const Request &request) -> bool
+{
+  const std::scoped_lock lock(mutex_);
+  const std::string sender = detail::senderKey(context);
+
+  InboundRequestState requestState;
+  requestState.method = request.method;
+  requestState.taskAugmented = util::cancellation::isTaskAugmentedRequest(request);
+  requestState.progressToken = util::progress::extractProgressToken(request);
+
+  auto &senderRequests = inboundRequestsBySender_[sender];
+  senderRequests[request.id] = requestState;
+
+  if (requestState.progressToken.has_value())
+  {
+    auto &requestIdsByToken = inboundRequestIdsByProgressTokenBySender_[sender];
+    if (requestIdsByToken.find(*requestState.progressToken) != requestIdsByToken.end())
+    {
+      senderRequests.erase(request.id);
+      return false;
+    }
+
+    requestIdsByToken[*requestState.progressToken] = request.id;
+  }
+
+  return true;
+}
+
+auto Router::completeInboundRequest(const RequestContext &context, const RequestId &requestId) -> void
+{
+  const std::scoped_lock lock(mutex_);
+  const std::string sender = detail::senderKey(context);
+
+  const auto senderRequestsIt = inboundRequestsBySender_.find(sender);
+  if (senderRequestsIt == inboundRequestsBySender_.end())
+  {
+    return;
+  }
+
+  const auto requestIt = senderRequestsIt->second.find(requestId);
+  if (requestIt == senderRequestsIt->second.end())
+  {
+    return;
+  }
+
+  if (requestIt->second.progressToken.has_value())
+  {
+    const auto senderTokensIt = inboundRequestIdsByProgressTokenBySender_.find(sender);
+    if (senderTokensIt != inboundRequestIdsByProgressTokenBySender_.end())
+    {
+      senderTokensIt->second.erase(*requestIt->second.progressToken);
+      if (senderTokensIt->second.empty())
+      {
+        inboundRequestIdsByProgressTokenBySender_.erase(senderTokensIt);
+      }
+    }
+  }
+
+  senderRequestsIt->second.erase(requestIt);
+  if (senderRequestsIt->second.empty())
+  {
+    inboundRequestsBySender_.erase(senderRequestsIt);
+  }
 }
 
 auto Router::dispatchOutboundMessage(const RequestContext &context, Message message) const -> bool

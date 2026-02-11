@@ -35,7 +35,7 @@
 
 ## Phase 6: Tasks + Utilities (Blocked by Phases 4 and 5)
 - [x] `task-024`: Tasks Utility (task augmentation + tasks/* + status notifications) (Depends on: `task-015`, `task-022`, `task-023`)
-- [ ] `task-025`: Cancellation + Progress Utilities (Depends on: `task-005`, `task-024`)
+- [x] `task-025`: Cancellation + Progress Utilities (Depends on: `task-005`, `task-024`)
 
 ## Phase 7: Authorization (Blocked by Phase 3)
 - [ ] `task-026`: Server-side Authorization (RFC9728 publication + 401/403 challenges) (Depends on: `task-013`)
