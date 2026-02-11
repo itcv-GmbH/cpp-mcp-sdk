@@ -49,7 +49,7 @@
 - [x] `task-031`: Conformance: JSON-RPC + Lifecycle + Capability Tests (Depends on: `task-006`, `task-007`)
 - [x] `task-032`: Conformance: Transports (stdio + Streamable HTTP + TLS) (Depends on: `task-013`)
 - [x] `task-033`: Conformance: Tasks (Depends on: `task-024`)
-- [ ] `task-034`: Conformance: Authorization (Depends on: `task-026`, `task-029`)
+- [x] `task-034`: Conformance: Authorization (Depends on: `task-026`, `task-029`)
 - [ ] `task-035`: Integration Tests with Reference SDKs (Optional) (Depends on: `task-013`, `task-029`)
 - [ ] `task-036`: Examples (server/client; bidirectional sampling/elicitation/tasks) (Depends on: `task-018`, `task-023`, `task-024`, `task-029`)
 - [ ] `task-037`: Documentation (quickstarts, version policy, security) (Depends on: `task-036`)
