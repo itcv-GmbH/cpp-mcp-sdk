@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include <mcp/auth/oauth_server.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/origin_policy.hpp>
@@ -30,6 +31,8 @@ inline constexpr std::string_view kHeaderOrigin = "Origin";
 inline constexpr std::string_view kHeaderLastEventId = "Last-Event-ID";
 inline constexpr std::string_view kHeaderMcpSessionId = "MCP-Session-Id";
 inline constexpr std::string_view kHeaderMcpProtocolVersion = "MCP-Protocol-Version";
+inline constexpr std::string_view kHeaderAuthorization = "Authorization";
+inline constexpr std::string_view kHeaderWwwAuthenticate = "WWW-Authenticate";
 
 struct Header
 {
@@ -330,6 +333,7 @@ struct RequestValidationResult
   std::string reason;
   std::optional<std::string> sessionId;
   std::string effectiveProtocolVersion;
+  std::optional<auth::OAuthAuthorizationContext> authorizationContext;
 };
 
 inline auto rejectRequest(std::uint16_t statusCode, std::string reason) -> RequestValidationResult
@@ -439,6 +443,7 @@ struct HttpServerOptions
   HttpEndpointConfig endpoint;
   std::optional<http::ServerTlsConfiguration> tls;
   security::OriginPolicy originPolicy;
+  std::optional<auth::OAuthServerAuthorizationOptions> authorization;
   bool requireSessionId = false;
   std::vector<std::string> supportedProtocolVersions = {
     std::string(kLatestProtocolVersion),

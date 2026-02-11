@@ -1,13 +1,18 @@
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <mcp/auth/oauth_server.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/transport/http.hpp>
+#include <mcp/util/tasks.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
 // readability-magic-numbers, misc-const-correctness)
@@ -21,7 +26,8 @@ auto makeHeaderedRequest(mcp_http::ServerRequestMethod method,
                          std::string path,
                          std::optional<std::string_view> body = std::nullopt,
                          std::optional<std::string_view> sessionId = std::nullopt,
-                         std::optional<std::string_view> lastEventId = std::nullopt) -> mcp_http::ServerRequest
+                         std::optional<std::string_view> lastEventId = std::nullopt,
+                         std::optional<std::string_view> authorization = std::nullopt) -> mcp_http::ServerRequest
 {
   mcp_http::ServerRequest request;
   request.method = method;
@@ -40,6 +46,11 @@ auto makeHeaderedRequest(mcp_http::ServerRequestMethod method,
   if (lastEventId.has_value())
   {
     mcp_http::setHeader(request.headers, mcp_http::kHeaderLastEventId, std::string(*lastEventId));
+  }
+
+  if (authorization.has_value())
+  {
+    mcp_http::setHeader(request.headers, mcp_http::kHeaderAuthorization, std::string(*authorization));
   }
 
   return request;
@@ -76,6 +87,58 @@ auto lastEventId(const std::vector<mcp::http::sse::Event> &events) -> std::optio
   }
 
   return std::nullopt;
+}
+
+class TestTokenVerifier final : public mcp::auth::OAuthTokenVerifier
+{
+public:
+  struct Rule
+  {
+    mcp::auth::OAuthTokenVerificationStatus status = mcp::auth::OAuthTokenVerificationStatus::kInvalidToken;
+    bool audienceBound = false;
+    std::string taskIsolationKey;
+    std::vector<std::string> grantedScopes;
+  };
+
+  auto setRule(std::string token, Rule rule) -> void { rules_[std::move(token)] = std::move(rule); }
+
+  auto verifyToken(const mcp::auth::OAuthTokenVerificationRequest &request) const -> mcp::auth::OAuthTokenVerificationResult override
+  {
+    const auto rule = rules_.find(request.bearerToken);
+    if (rule == rules_.end())
+    {
+      return {};
+    }
+
+    mcp::auth::OAuthTokenVerificationResult result;
+    result.status = rule->second.status;
+    result.audienceBound = rule->second.audienceBound;
+    result.authorizationContext.taskIsolationKey = rule->second.taskIsolationKey;
+    result.authorizationContext.grantedScopes.values = rule->second.grantedScopes;
+    return result;
+  }
+
+private:
+  std::unordered_map<std::string, Rule> rules_;
+};
+
+auto makeAuthorizationOptions(std::shared_ptr<TestTokenVerifier> verifier, std::string endpointResource = "https://mcp.example.com/mcp")
+  -> mcp::auth::OAuthServerAuthorizationOptions
+{
+  mcp::auth::OAuthServerAuthorizationOptions authorization;
+  authorization.tokenVerifier = std::move(verifier);
+  authorization.protectedResourceMetadata.resource = std::move(endpointResource);
+  authorization.protectedResourceMetadata.authorizationServers = {"https://auth.example.com"};
+  authorization.protectedResourceMetadata.scopesSupported.values = {"mcp:read", "mcp:write"};
+  authorization.defaultRequiredScopes.values = {"mcp:read"};
+  return authorization;
+}
+
+auto requireChallengeContains(const mcp_http::ServerResponse &response, std::string_view fragment) -> void
+{
+  const auto challenge = mcp_http::getHeader(response.headers, mcp_http::kHeaderWwwAuthenticate);
+  REQUIRE(challenge.has_value());
+  REQUIRE(challenge->find(fragment) != std::string::npos);
 }
 
 }  // namespace
@@ -355,6 +418,214 @@ TEST_CASE("HTTP server supports disconnect and resume without cancelling request
   const mcp::jsonrpc::Message responseMessage = messageFromSseEvent(resumed.sse->events.front());
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(responseMessage));
   REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(responseMessage).id == mcp::jsonrpc::RequestId {std::int64_t {91}});
+}
+
+TEST_CASE("HTTP server returns 401 with OAuth challenge for missing or invalid bearer token", "[transport][http][server][auth]")
+{
+  auto verifier = std::make_shared<TestTokenVerifier>();
+  verifier->setRule("valid-token",
+                    {
+                      mcp::auth::OAuthTokenVerificationStatus::kValid,
+                      true,
+                      "principal-a",
+                      {"mcp:read"},
+                    });
+
+  mcp_http::StreamableHttpServerOptions options;
+  options.http.authorization = makeAuthorizationOptions(std::move(verifier));
+
+  mcp_http::StreamableHttpServer server(options);
+  server.setRequestHandler(
+    [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> mcp_http::StreamableRequestResult
+    {
+      mcp_http::StreamableRequestResult result;
+      mcp::jsonrpc::SuccessResponse response;
+      response.id = request.id;
+      response.result = mcp::jsonrpc::JsonValue::object();
+      response.result["ok"] = true;
+      result.response = response;
+      return result;
+    });
+
+  const std::string body = makeRequestBody(71, "ping");
+
+  SECTION("Missing Authorization header")
+  {
+    const mcp_http::ServerResponse response = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", body));
+    REQUIRE(response.statusCode == 401);
+    requireChallengeContains(response, "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\"");
+    requireChallengeContains(response, "scope=\"mcp:read\"");
+  }
+
+  SECTION("Unknown bearer token")
+  {
+    const mcp_http::ServerResponse response =
+      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", body, std::nullopt, std::nullopt, "Bearer unknown-token"));
+    REQUIRE(response.statusCode == 401);
+    requireChallengeContains(response, "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\"");
+    requireChallengeContains(response, "scope=\"mcp:read\"");
+  }
+}
+
+TEST_CASE("HTTP server returns 403 with insufficient_scope challenge", "[transport][http][server][auth]")
+{
+  auto verifier = std::make_shared<TestTokenVerifier>();
+  verifier->setRule("token-read",
+                    {
+                      mcp::auth::OAuthTokenVerificationStatus::kValid,
+                      true,
+                      "principal-read",
+                      {"mcp:read"},
+                    });
+
+  mcp_http::StreamableHttpServerOptions options;
+  options.http.authorization = makeAuthorizationOptions(std::move(verifier));
+  options.http.authorization->requiredScopesResolver = [](const mcp::auth::OAuthAuthorizationRequestContext &) -> mcp::auth::OAuthScopeSet
+  {
+    mcp::auth::OAuthScopeSet requiredScopes;
+    requiredScopes.values = {"mcp:read", "mcp:write"};
+    return requiredScopes;
+  };
+
+  mcp_http::StreamableHttpServer server(options);
+  const std::string body = makeRequestBody(72, "ping");
+
+  const mcp_http::ServerResponse response =
+    server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", body, std::nullopt, std::nullopt, "Bearer token-read"));
+
+  REQUIRE(response.statusCode == 403);
+  requireChallengeContains(response, "Bearer error=\"insufficient_scope\"");
+  requireChallengeContains(response, "scope=\"mcp:read mcp:write\"");
+  requireChallengeContains(response, "resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\"");
+}
+
+TEST_CASE("HTTP server rejects tokens without audience binding", "[transport][http][server][auth]")
+{
+  auto verifier = std::make_shared<TestTokenVerifier>();
+  verifier->setRule("token-no-audience",
+                    {
+                      mcp::auth::OAuthTokenVerificationStatus::kValid,
+                      false,
+                      "principal-a",
+                      {"mcp:read"},
+                    });
+
+  mcp_http::StreamableHttpServerOptions options;
+  options.http.authorization = makeAuthorizationOptions(std::move(verifier));
+
+  mcp_http::StreamableHttpServer server(options);
+  const std::string body = makeRequestBody(73, "ping");
+
+  const mcp_http::ServerResponse response =
+    server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", body, std::nullopt, std::nullopt, "Bearer token-no-audience"));
+
+  REQUIRE(response.statusCode == 401);
+  requireChallengeContains(response, "resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\"");
+}
+
+TEST_CASE("HTTP server publishes OAuth protected resource metadata at root and path well-known URIs", "[transport][http][server][auth]")
+{
+  auto verifier = std::make_shared<TestTokenVerifier>();
+
+  mcp_http::StreamableHttpServerOptions options;
+  options.http.endpoint.path = "/public/mcp";
+  options.http.authorization = makeAuthorizationOptions(std::move(verifier), "https://mcp.example.com/public/mcp");
+
+  mcp_http::StreamableHttpServer server(options);
+
+  const mcp_http::ServerResponse pathMetadata = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/.well-known/oauth-protected-resource/public/mcp"));
+  REQUIRE(pathMetadata.statusCode == 200);
+
+  const mcp::jsonrpc::JsonValue metadata = mcp::jsonrpc::JsonValue::parse(pathMetadata.body);
+  REQUIRE(metadata["resource"].as<std::string>() == "https://mcp.example.com/public/mcp");
+  REQUIRE(metadata["authorization_servers"].size() == 1);
+  REQUIRE(metadata["authorization_servers"][0].as<std::string>() == "https://auth.example.com");
+  REQUIRE(metadata["scopes_supported"].size() == 2);
+
+  const mcp_http::ServerResponse rootMetadata = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/.well-known/oauth-protected-resource"));
+  REQUIRE(rootMetadata.statusCode == 200);
+}
+
+TEST_CASE("HTTP authorization context binds into task isolation through RequestContext", "[transport][http][server][auth][tasks]")
+{
+  auto verifier = std::make_shared<TestTokenVerifier>();
+  verifier->setRule("token-a",
+                    {
+                      mcp::auth::OAuthTokenVerificationStatus::kValid,
+                      true,
+                      "principal-a",
+                      {"mcp:read"},
+                    });
+  verifier->setRule("token-b",
+                    {
+                      mcp::auth::OAuthTokenVerificationStatus::kValid,
+                      true,
+                      "principal-b",
+                      {"mcp:read"},
+                    });
+
+  mcp_http::StreamableHttpServerOptions options;
+  options.http.authorization = makeAuthorizationOptions(std::move(verifier));
+
+  auto taskStore = std::make_shared<mcp::util::InMemoryTaskStore>();
+  mcp::util::TaskReceiver taskReceiver(taskStore);
+
+  mcp_http::StreamableHttpServer server(options);
+  server.setRequestHandler(
+    [&taskReceiver](const mcp::jsonrpc::RequestContext &context, const mcp::jsonrpc::Request &request) -> mcp_http::StreamableRequestResult
+    {
+      mcp_http::StreamableRequestResult result;
+
+      if (request.method == "test/createTask")
+      {
+        mcp::util::TaskAugmentationRequest augmentation;
+        augmentation.requested = true;
+        const mcp::util::CreateTaskResult created = taskReceiver.createTask(context, augmentation);
+
+        mcp::jsonrpc::SuccessResponse response;
+        response.id = request.id;
+        response.result = mcp::jsonrpc::JsonValue::object();
+        response.result["taskId"] = created.task.taskId;
+        result.response = response;
+        return result;
+      }
+
+      if (request.method == "tasks/get")
+      {
+        result.response = taskReceiver.handleTasksGetRequest(context, request);
+        return result;
+      }
+
+      result.response = mcp::jsonrpc::makeErrorResponse(mcp::jsonrpc::makeMethodNotFoundError(), request.id);
+      return result;
+    });
+
+  mcp::jsonrpc::Request createRequest;
+  createRequest.id = std::int64_t {81};
+  createRequest.method = "test/createTask";
+  createRequest.params = mcp::jsonrpc::JsonValue::object();
+  const std::string createRequestBody = mcp::jsonrpc::serializeMessage(mcp::jsonrpc::Message {createRequest});
+
+  const mcp_http::ServerResponse createResponse =
+    server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", createRequestBody, std::nullopt, std::nullopt, "Bearer token-a"));
+  REQUIRE(createResponse.statusCode == 200);
+  const mcp::jsonrpc::Message createResponseMessage = mcp::jsonrpc::parseMessage(createResponse.body);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(createResponseMessage));
+  const std::string taskId = std::get<mcp::jsonrpc::SuccessResponse>(createResponseMessage).result["taskId"].as<std::string>();
+
+  mcp::jsonrpc::Request getRequest;
+  getRequest.id = std::int64_t {82};
+  getRequest.method = "tasks/get";
+  getRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*getRequest.params)["taskId"] = taskId;
+  const std::string getRequestBody = mcp::jsonrpc::serializeMessage(mcp::jsonrpc::Message {getRequest});
+
+  const mcp_http::ServerResponse deniedResponse =
+    server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", getRequestBody, std::nullopt, std::nullopt, "Bearer token-b"));
+  REQUIRE(deniedResponse.statusCode == 200);
+  const mcp::jsonrpc::Message deniedMessage = mcp::jsonrpc::parseMessage(deniedResponse.body);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(deniedMessage));
+  REQUIRE(std::get<mcp::jsonrpc::ErrorResponse>(deniedMessage).error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
 }
 
 // NOLINTEND(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,

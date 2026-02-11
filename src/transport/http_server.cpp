@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <exception>
 #include <memory>
@@ -30,11 +32,291 @@ static constexpr std::uint16_t kStatusOk = 200;
 static constexpr std::uint16_t kStatusNoContent = 204;
 static constexpr std::uint16_t kStatusAccepted = 202;
 static constexpr std::uint16_t kStatusBadRequest = 400;
+static constexpr std::uint16_t kStatusUnauthorized = 401;
+static constexpr std::uint16_t kStatusForbidden = 403;
 static constexpr std::uint16_t kStatusNotFound = 404;
 static constexpr std::uint16_t kStatusMethodNotAllowed = 405;
 static constexpr std::uint16_t kStatusInternalServerError = 500;
 static constexpr bool kTerminateStream = true;
 static constexpr bool kKeepStreamOpen = false;
+static constexpr std::string_view kBearerScheme = "Bearer";
+static constexpr std::string_view kWwwAuthenticateErrorInsufficientScope = "insufficient_scope";
+static constexpr std::string_view kWellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource";
+
+enum class BearerTokenParseStatus : std::uint8_t
+{
+  kMissing,
+  kInvalid,
+  kPresent,
+};
+
+struct BearerTokenParseResult
+{
+  BearerTokenParseStatus status = BearerTokenParseStatus::kMissing;
+  std::string token;
+};
+
+static auto requestMethodToString(ServerRequestMethod method) -> std::string
+{
+  switch (method)
+  {
+    case ServerRequestMethod::kGet:
+      return "GET";
+    case ServerRequestMethod::kPost:
+      return "POST";
+    case ServerRequestMethod::kDelete:
+      return "DELETE";
+  }
+
+  return "POST";
+}
+
+static auto normalizeEndpointPath(std::string path) -> std::string
+{
+  if (path.empty())
+  {
+    path = "/mcp";
+  }
+
+  if (path.front() != '/')
+  {
+    path.insert(path.begin(), '/');
+  }
+
+  if (path.size() > 1 && path.back() == '/')
+  {
+    path.pop_back();
+  }
+
+  return path;
+}
+
+static auto pathBasedMetadataPathForEndpoint(std::string_view endpointPath) -> std::string
+{
+  const std::string normalizedEndpointPath = normalizeEndpointPath(std::string(endpointPath));
+  if (normalizedEndpointPath == "/")
+  {
+    return std::string(kWellKnownOAuthProtectedResourcePath);
+  }
+
+  return std::string(kWellKnownOAuthProtectedResourcePath) + normalizedEndpointPath;
+}
+
+static auto parseBearerToken(const HeaderList &headers) -> BearerTokenParseResult
+{
+  const auto authorizationHeader = getHeader(headers, kHeaderAuthorization);
+  if (!authorizationHeader.has_value())
+  {
+    return {};
+  }
+
+  const std::string_view trimmedAuthorization = detail::trimAsciiWhitespace(*authorizationHeader);
+  if (trimmedAuthorization.empty())
+  {
+    BearerTokenParseResult result;
+    result.status = BearerTokenParseStatus::kInvalid;
+    return result;
+  }
+
+  const std::size_t schemeSeparator = trimmedAuthorization.find_first_of(" \t");
+  if (schemeSeparator == std::string_view::npos)
+  {
+    BearerTokenParseResult result;
+    result.status = BearerTokenParseStatus::kInvalid;
+    return result;
+  }
+
+  const std::string_view scheme = trimmedAuthorization.substr(0, schemeSeparator);
+  if (!detail::equalsIgnoreCase(scheme, kBearerScheme))
+  {
+    BearerTokenParseResult result;
+    result.status = BearerTokenParseStatus::kInvalid;
+    return result;
+  }
+
+  const std::string_view token = detail::trimAsciiWhitespace(trimmedAuthorization.substr(schemeSeparator + 1));
+  if (token.empty())
+  {
+    BearerTokenParseResult result;
+    result.status = BearerTokenParseStatus::kInvalid;
+    return result;
+  }
+
+  const bool tokenHasWhitespace = std::any_of(token.begin(), token.end(), [](char character) -> bool { return std::isspace(static_cast<unsigned char>(character)) != 0; });
+  if (tokenHasWhitespace)
+  {
+    BearerTokenParseResult result;
+    result.status = BearerTokenParseStatus::kInvalid;
+    return result;
+  }
+
+  BearerTokenParseResult result;
+  result.status = BearerTokenParseStatus::kPresent;
+  result.token = std::string(token);
+  return result;
+}
+
+static auto sanitizeScopeSet(const auth::OAuthScopeSet &scopeSet) -> auth::OAuthScopeSet
+{
+  auth::OAuthScopeSet sanitized;
+  for (const std::string &scope : scopeSet.values)
+  {
+    const std::string_view normalizedScope = detail::trimAsciiWhitespace(scope);
+    if (normalizedScope.empty())
+    {
+      continue;
+    }
+
+    if (std::find(sanitized.values.begin(), sanitized.values.end(), normalizedScope) != sanitized.values.end())
+    {
+      continue;
+    }
+
+    sanitized.values.emplace_back(normalizedScope);
+  }
+
+  return sanitized;
+}
+
+static auto hasRequiredScopes(const auth::OAuthScopeSet &grantedScopes, const auth::OAuthScopeSet &requiredScopes) -> bool
+{
+  for (const std::string &requiredScope : requiredScopes.values)
+  {
+    if (std::find(grantedScopes.values.begin(), grantedScopes.values.end(), requiredScope) == grantedScopes.values.end())
+    {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static auto joinScopeValues(const auth::OAuthScopeSet &scopeSet) -> std::string
+{
+  std::string joined;
+  for (std::size_t index = 0; index < scopeSet.values.size(); ++index)
+  {
+    if (index > 0)
+    {
+      joined.push_back(' ');
+    }
+
+    joined += scopeSet.values[index];
+  }
+
+  return joined;
+}
+
+static auto escapeHttpQuotedString(std::string_view value) -> std::string
+{
+  std::string escaped;
+  escaped.reserve(value.size());
+
+  for (const char character : value)
+  {
+    if (character == '\\' || character == '"')
+    {
+      escaped.push_back('\\');
+    }
+
+    escaped.push_back(character);
+  }
+
+  return escaped;
+}
+
+static auto toProtectedResourceMetadataBody(const auth::OAuthProtectedResourceMetadata &metadata) -> std::string
+{
+  jsonrpc::JsonValue metadataJson = jsonrpc::JsonValue::object();
+  metadataJson["resource"] = metadata.resource;
+
+  metadataJson["authorization_servers"] = jsonrpc::JsonValue::array();
+  for (const std::string &authorizationServer : metadata.authorizationServers)
+  {
+    metadataJson["authorization_servers"].push_back(authorizationServer);
+  }
+
+  if (!metadata.scopesSupported.values.empty())
+  {
+    metadataJson["scopes_supported"] = jsonrpc::JsonValue::array();
+    for (const std::string &scope : metadata.scopesSupported.values)
+    {
+      metadataJson["scopes_supported"].push_back(scope);
+    }
+  }
+
+  std::string encodedMetadata;
+  metadataJson.dump(encodedMetadata);
+  return encodedMetadata;
+}
+
+static auto metadataOriginForResource(std::string_view resource) -> std::optional<std::string>
+{
+  if (resource.empty() || resource.find('#') != std::string_view::npos)
+  {
+    return std::nullopt;
+  }
+
+  const std::size_t schemeSeparator = resource.find("://");
+  if (schemeSeparator == std::string_view::npos)
+  {
+    return std::nullopt;
+  }
+
+  const std::string scheme = detail::toLowerAscii(resource.substr(0, schemeSeparator));
+  if (scheme != "https")
+  {
+    return std::nullopt;
+  }
+
+  const std::size_t authorityBegin = schemeSeparator + 3;
+  if (authorityBegin >= resource.size())
+  {
+    return std::nullopt;
+  }
+
+  const std::size_t pathBegin = resource.find('/', authorityBegin);
+  const std::size_t queryBegin = resource.find('?', authorityBegin);
+
+  std::size_t authorityEnd = resource.size();
+  if (pathBegin != std::string_view::npos)
+  {
+    authorityEnd = std::min(authorityEnd, pathBegin);
+  }
+
+  if (queryBegin != std::string_view::npos)
+  {
+    authorityEnd = std::min(authorityEnd, queryBegin);
+  }
+
+  if (authorityEnd <= authorityBegin)
+  {
+    return std::nullopt;
+  }
+
+  return std::string(resource.substr(0, authorityEnd));
+}
+
+static auto makeUnauthorizedChallenge(std::string_view resourceMetadataUrl, const auth::OAuthScopeSet &requiredScopes) -> std::string
+{
+  std::string challenge = std::string(kBearerScheme) + " resource_metadata=\"" + escapeHttpQuotedString(resourceMetadataUrl) + "\"";
+  const std::string scopeValue = joinScopeValues(requiredScopes);
+  if (!scopeValue.empty())
+  {
+    challenge += ", scope=\"" + escapeHttpQuotedString(scopeValue) + "\"";
+  }
+
+  return challenge;
+}
+
+static auto makeInsufficientScopeChallenge(std::string_view resourceMetadataUrl, const auth::OAuthScopeSet &requiredScopes) -> std::string
+{
+  const std::string scopeValue = joinScopeValues(requiredScopes);
+  std::string challenge = std::string(kBearerScheme) + " error=\"" + std::string(kWwwAuthenticateErrorInsufficientScope) + "\"";
+  challenge += ", scope=\"" + escapeHttpQuotedString(scopeValue) + "\"";
+  challenge += ", resource_metadata=\"" + escapeHttpQuotedString(resourceMetadataUrl) + "\"";
+  return challenge;
+}
 
 struct StreamEventRecord
 {
@@ -98,6 +380,11 @@ static auto toRequestContext(const RequestValidationResult &validation) -> jsonr
   jsonrpc::RequestContext context;
   context.protocolVersion = validation.effectiveProtocolVersion;
   context.sessionId = validation.sessionId;
+  if (validation.authorizationContext.has_value())
+  {
+    context.authContext = validation.authorizationContext->taskIsolationKey;
+  }
+
   return context;
 }
 
@@ -106,6 +393,195 @@ struct StreamableHttpServer::Impl
   explicit Impl(StreamableHttpServerOptions options)
     : options(std::move(options))
   {
+    initializeAuthorizationConfiguration();
+  }
+
+  auto initializeAuthorizationConfiguration() -> void
+  {
+    if (!options.http.authorization.has_value())
+    {
+      return;
+    }
+
+    auth::OAuthServerAuthorizationOptions &authorization = *options.http.authorization;
+
+    if (!authorization.tokenVerifier)
+    {
+      throw std::invalid_argument("HTTP server authorization requires a token verifier");
+    }
+
+    authorization.defaultRequiredScopes = sanitizeScopeSet(authorization.defaultRequiredScopes);
+    authorization.protectedResourceMetadata.scopesSupported = sanitizeScopeSet(authorization.protectedResourceMetadata.scopesSupported);
+
+    if (authorization.protectedResourceMetadata.resource.empty())
+    {
+      throw std::invalid_argument("HTTP server authorization requires protected resource metadata.resource");
+    }
+
+    if (authorization.protectedResourceMetadata.resource.find('#') != std::string::npos)
+    {
+      throw std::invalid_argument("Protected resource metadata.resource must not contain a fragment");
+    }
+
+    if (authorization.protectedResourceMetadata.authorizationServers.empty())
+    {
+      throw std::invalid_argument("HTTP server authorization requires at least one authorization server");
+    }
+
+    if (!authorization.metadataPublication.publishAtPathBasedWellKnownUri && !authorization.metadataPublication.publishAtRootWellKnownUri)
+    {
+      throw std::invalid_argument("HTTP server authorization must publish metadata at path-based and/or root well-known URI");
+    }
+
+    rootMetadataPath = std::string(kWellKnownOAuthProtectedResourcePath);
+    pathBasedMetadataPath = pathBasedMetadataPathForEndpoint(options.http.endpoint.path);
+    protectedResourceMetadataBody = toProtectedResourceMetadataBody(authorization.protectedResourceMetadata);
+
+    if (authorization.metadataPublication.challengeResourceMetadataUrl.has_value())
+    {
+      const std::string_view challengeUrl = detail::trimAsciiWhitespace(*authorization.metadataPublication.challengeResourceMetadataUrl);
+      if (challengeUrl.empty())
+      {
+        throw std::invalid_argument("HTTP server authorization challengeResourceMetadataUrl must not be empty");
+      }
+
+      if (!metadataOriginForResource(challengeUrl).has_value())
+      {
+        throw std::invalid_argument("HTTP server authorization challengeResourceMetadataUrl must be an absolute HTTPS URL without fragments");
+      }
+
+      challengeResourceMetadataUrl = std::string(challengeUrl);
+      return;
+    }
+
+    const auto metadataOrigin = metadataOriginForResource(authorization.protectedResourceMetadata.resource);
+    if (!metadataOrigin.has_value())
+    {
+      throw std::invalid_argument("HTTP server authorization protected resource metadata.resource must be an absolute HTTPS URL without fragments");
+    }
+
+    const bool usePathBasedMetadataChallenge = authorization.metadataPublication.publishAtPathBasedWellKnownUri;
+    challengeResourceMetadataUrl = *metadataOrigin + (usePathBasedMetadataChallenge ? pathBasedMetadataPath : rootMetadataPath);
+  }
+
+  auto makeAuthorizationRequestContext(const ServerRequest &request, const std::optional<std::string> &sessionId) const -> auth::OAuthAuthorizationRequestContext
+  {
+    auth::OAuthAuthorizationRequestContext authorizationRequest;
+    authorizationRequest.httpMethod = requestMethodToString(request.method);
+    authorizationRequest.httpPath = request.path;
+    authorizationRequest.sessionId = sessionId;
+    return authorizationRequest;
+  }
+
+  auto resolveRequiredScopes(const ServerRequest &request, const std::optional<std::string> &sessionId) const -> auth::OAuthScopeSet
+  {
+    if (!options.http.authorization.has_value())
+    {
+      return {};
+    }
+
+    const auth::OAuthServerAuthorizationOptions &authorization = *options.http.authorization;
+    if (authorization.requiredScopesResolver)
+    {
+      return sanitizeScopeSet(authorization.requiredScopesResolver(makeAuthorizationRequestContext(request, sessionId)));
+    }
+
+    return sanitizeScopeSet(authorization.defaultRequiredScopes);
+  }
+
+  auto unauthorizedResponse(const auth::OAuthScopeSet &requiredScopes) const -> ServerResponse
+  {
+    ServerResponse response = statusResponse(kStatusUnauthorized);
+    setHeader(response.headers, kHeaderWwwAuthenticate, makeUnauthorizedChallenge(challengeResourceMetadataUrl, requiredScopes));
+    return response;
+  }
+
+  auto insufficientScopeResponse(const auth::OAuthScopeSet &requiredScopes) const -> ServerResponse
+  {
+    ServerResponse response = statusResponse(kStatusForbidden);
+    setHeader(response.headers, kHeaderWwwAuthenticate, makeInsufficientScopeChallenge(challengeResourceMetadataUrl, requiredScopes));
+    return response;
+  }
+
+  auto authorizeRequest(const ServerRequest &request, RequestValidationResult &validation) const -> std::optional<ServerResponse>
+  {
+    if (!options.http.authorization.has_value())
+    {
+      return std::nullopt;
+    }
+
+    const auth::OAuthServerAuthorizationOptions &authorization = *options.http.authorization;
+    const auth::OAuthScopeSet requiredScopes = resolveRequiredScopes(request, validation.sessionId);
+
+    const BearerTokenParseResult bearerToken = parseBearerToken(request.headers);
+    if (bearerToken.status != BearerTokenParseStatus::kPresent)
+    {
+      return unauthorizedResponse(requiredScopes);
+    }
+
+    auth::OAuthTokenVerificationRequest verificationRequest;
+    verificationRequest.bearerToken = bearerToken.token;
+    verificationRequest.expectedAudience = authorization.protectedResourceMetadata.resource;
+    verificationRequest.request = makeAuthorizationRequestContext(request, validation.sessionId);
+    verificationRequest.requiredScopes = requiredScopes;
+
+    auth::OAuthTokenVerificationResult verificationResult;
+    try
+    {
+      verificationResult = authorization.tokenVerifier->verifyToken(verificationRequest);
+    }
+    catch (...)
+    {
+      return unauthorizedResponse(requiredScopes);
+    }
+
+    verificationResult.authorizationContext.grantedScopes = sanitizeScopeSet(verificationResult.authorizationContext.grantedScopes);
+
+    if (verificationResult.status == auth::OAuthTokenVerificationStatus::kInvalidToken || !verificationResult.audienceBound
+        || verificationResult.authorizationContext.taskIsolationKey.empty())
+    {
+      return unauthorizedResponse(requiredScopes);
+    }
+
+    const bool missingRequiredScopes = !hasRequiredScopes(verificationResult.authorizationContext.grantedScopes, requiredScopes);
+    if (verificationResult.status == auth::OAuthTokenVerificationStatus::kInsufficientScope || missingRequiredScopes)
+    {
+      return insufficientScopeResponse(requiredScopes);
+    }
+
+    validation.authorizationContext = verificationResult.authorizationContext;
+    return std::nullopt;
+  }
+
+  auto handleProtectedResourceMetadataRequest(const ServerRequest &request) const -> std::optional<ServerResponse>
+  {
+    if (!options.http.authorization.has_value())
+    {
+      return std::nullopt;
+    }
+
+    const auth::OAuthServerAuthorizationOptions &authorization = *options.http.authorization;
+    const bool isRootMetadataPath = request.path == rootMetadataPath;
+    const bool isPathMetadataPath = request.path == pathBasedMetadataPath;
+
+    if (!isRootMetadataPath && !isPathMetadataPath)
+    {
+      return std::nullopt;
+    }
+
+    const bool rootPublished = isRootMetadataPath && authorization.metadataPublication.publishAtRootWellKnownUri;
+    const bool pathPublished = isPathMetadataPath && authorization.metadataPublication.publishAtPathBasedWellKnownUri;
+    if (!rootPublished && !pathPublished)
+    {
+      return statusResponse(kStatusNotFound);
+    }
+
+    if (request.method != ServerRequestMethod::kGet)
+    {
+      return statusResponse(kStatusMethodNotAllowed);
+    }
+
+    return jsonResponse(kStatusOk, protectedResourceMetadataBody);
   }
 
   auto upsertSession(std::string sessionId, SessionLookupState state, std::optional<std::string> negotiatedProtocolVersion) -> void
@@ -308,10 +784,16 @@ struct StreamableHttpServer::Impl
     }
 
     const RequestKind requestKind = isInitializeRequest(message) ? RequestKind::kInitialize : RequestKind::kOther;
-    const RequestValidationResult validation = validate(request, requestKind, options.http.requireSessionId);
+    RequestValidationResult validation = validate(request, requestKind, options.http.requireSessionId);
     if (!validation.accepted)
     {
       return rejectValidation(validation);
+    }
+
+    const std::optional<ServerResponse> authorizationRejection = authorizeRequest(request, validation);
+    if (authorizationRejection.has_value())
+    {
+      return *authorizationRejection;
     }
 
     const jsonrpc::RequestContext context = toRequestContext(validation);
@@ -387,10 +869,16 @@ struct StreamableHttpServer::Impl
       return statusResponse(kStatusMethodNotAllowed);
     }
 
-    const RequestValidationResult validation = validate(request, RequestKind::kOther, options.http.requireSessionId);
+    RequestValidationResult validation = validate(request, RequestKind::kOther, options.http.requireSessionId);
     if (!validation.accepted)
     {
       return rejectValidation(validation);
+    }
+
+    const std::optional<ServerResponse> authorizationRejection = authorizeRequest(request, validation);
+    if (authorizationRejection.has_value())
+    {
+      return *authorizationRejection;
     }
 
     const auto lastEventId = getHeader(request.headers, kHeaderLastEventId);
@@ -443,10 +931,16 @@ struct StreamableHttpServer::Impl
     }
 
     const bool sessionRequired = true;
-    const RequestValidationResult validation = validate(request, RequestKind::kOther, sessionRequired);
+    RequestValidationResult validation = validate(request, RequestKind::kOther, sessionRequired);
     if (!validation.accepted)
     {
       return rejectValidation(validation);
+    }
+
+    const std::optional<ServerResponse> authorizationRejection = authorizeRequest(request, validation);
+    if (authorizationRejection.has_value())
+    {
+      return *authorizationRejection;
     }
 
     if (!validation.sessionId.has_value())
@@ -476,6 +970,12 @@ struct StreamableHttpServer::Impl
 
   auto handleRequest(const ServerRequest &request) -> ServerResponse
   {
+    const std::optional<ServerResponse> protectedResourceMetadataResponse = handleProtectedResourceMetadataRequest(request);
+    if (protectedResourceMetadataResponse.has_value())
+    {
+      return *protectedResourceMetadataResponse;
+    }
+
     if (request.path != options.http.endpoint.path)
     {
       return statusResponse(kStatusNotFound);
@@ -512,6 +1012,11 @@ struct StreamableHttpServer::Impl
     pendingMessagesBySession[sessionKey(sessionId)].push_back(message);
     return true;
   }
+
+  std::string rootMetadataPath = std::string(kWellKnownOAuthProtectedResourcePath);
+  std::string pathBasedMetadataPath = std::string(kWellKnownOAuthProtectedResourcePath);
+  std::string protectedResourceMetadataBody;
+  std::string challengeResourceMetadataUrl;
 
   StreamableHttpServerOptions options;
   StreamableRequestHandler requestHandler;
