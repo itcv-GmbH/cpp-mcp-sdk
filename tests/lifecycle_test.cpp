@@ -232,7 +232,7 @@ TEST_CASE("Server transitions to operating after initialized notification", "[li
   REQUIRE(session.canHandleRequest("ping"));
 }
 
-TEST_CASE("Client transitions to initialized after initialize response", "[lifecycle][client][enforcement]")
+TEST_CASE("Client automatically transitions to operating after initialize response", "[lifecycle][client][enforcement]")
 {
   Session session;
   session.setRole(SessionRole::kClient);
@@ -251,13 +251,37 @@ TEST_CASE("Client transitions to initialized after initialize response", "[lifec
   initResponse.result["serverInfo"]["version"] = "1.0.0";
 
   REQUIRE_NOTHROW(session.handleInitializeResponse(jsonrpc::Response {initResponse}));
-  REQUIRE(session.state() == SessionState::kInitialized);
+  REQUIRE(session.state() == SessionState::kOperating);
 
   jsoncons::json params = jsoncons::json::object();
-  REQUIRE_THROWS_AS(session.sendRequest("tools/list", params), LifecycleError);
+  REQUIRE_NOTHROW(session.sendRequest("tools/list", params));
 
-  REQUIRE_NOTHROW(session.sendNotification("notifications/initialized"));
-  REQUIRE(session.state() == SessionState::kOperating);
+  REQUIRE_THROWS_AS(session.sendNotification("notifications/initialized"), LifecycleError);
+}
+
+TEST_CASE("Server selects latest supported version regardless of list order", "[lifecycle][server][negotiation]")
+{
+  SessionOptions options;
+  options.supportedProtocolVersions = {"2024-11-05", "2025-11-25"};
+
+  Session session(options);
+  session.setRole(SessionRole::kServer);
+
+  jsonrpc::Request request;
+  request.id = std::int64_t {1};
+  request.method = "initialize";
+  request.params = jsoncons::json::object();
+  (*request.params)["protocolVersion"] = "2023-01-01";
+  (*request.params)["capabilities"] = jsoncons::json::object();
+  (*request.params)["clientInfo"] = jsoncons::json::object();
+  (*request.params)["clientInfo"]["name"] = "test-client";
+  (*request.params)["clientInfo"]["version"] = "1.0.0";
+
+  auto response = session.handleInitializeRequest(request);
+  REQUIRE(std::holds_alternative<jsonrpc::SuccessResponse>(response));
+
+  const auto &successResp = std::get<jsonrpc::SuccessResponse>(response);
+  REQUIRE(successResp.result["protocolVersion"].as<std::string>() == "2025-11-25");
 }
 
 TEST_CASE("Client negotiation failure reports actionable version error", "[lifecycle][client][negotiation]")

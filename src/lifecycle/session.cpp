@@ -5,6 +5,7 @@
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/transport/transport.hpp>
 
 namespace mcp
 {
@@ -37,7 +38,7 @@ std::optional<std::string> selectServerProtocolVersion(std::string_view clientPr
     return std::nullopt;
   }
 
-  return serverSupported.front();
+  return *std::max_element(serverSupported.begin(), serverSupported.end());
 }
 
 auto jsonArrayFromStrings(const std::vector<std::string> &values) -> jsoncons::json
@@ -774,6 +775,8 @@ auto Session::sendRequestAsync(std::string method, jsonrpc::JsonValue params, Re
 
 auto Session::sendNotification(std::string method, std::optional<jsonrpc::JsonValue> params) -> void
 {
+  std::shared_ptr<transport::Transport> transport;
+
   {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -803,11 +806,17 @@ auto Session::sendNotification(std::string method, std::optional<jsonrpc::JsonVa
         throw LifecycleError("Server cannot send notifications before initialization completes");
       }
     }
+
+    transport = transport_;
   }
 
-  static_cast<void>(params);
-
-  // TODO: Actually send the notification through transport
+  if (transport)
+  {
+    jsonrpc::Notification notification;
+    notification.method = std::move(method);
+    notification.params = std::move(params);
+    transport->send(jsonrpc::Message {std::move(notification)});
+  }
 }
 
 auto Session::attachTransport(std::shared_ptr<transport::Transport> transport) -> void
@@ -958,7 +967,7 @@ auto Session::handleInitializeRequest(const jsonrpc::Request &request) -> jsonrp
 
 auto Session::handleInitializeResponse(const jsonrpc::Response &response) -> void
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::unique_lock<std::mutex> lock(mutex_);
 
   if (role_ != SessionRole::kClient)
   {
@@ -1041,6 +1050,10 @@ auto Session::handleInitializeResponse(const jsonrpc::Response &response) -> voi
   pendingClientInfo_.reset();
 
   state_ = SessionState::kInitialized;
+
+  lock.unlock();
+
+  sendNotification(std::string(kNotificationInitialized));
 }
 
 auto Session::handleInitializedNotification() -> void

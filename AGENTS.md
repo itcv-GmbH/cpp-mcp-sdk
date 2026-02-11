@@ -105,6 +105,7 @@ cmake --build build/unix-release
 - Warnings treated as errors: None by default
 - Key checks: cppcoreguidelines-, bugprone-, readability-, performance-
 - Disabled: fuchsia-*, llvm-header-guard, llvm-include-order
+- Never commit before all clang-tidy warnings have been resolved
 
 ### Error Handling
 - Use exceptions for exceptional conditions
