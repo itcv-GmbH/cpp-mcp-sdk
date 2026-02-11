@@ -12,6 +12,7 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/server.hpp>
+#include <mcp/server/tools.hpp>
 #include <mcp/version.hpp>
 
 namespace
@@ -25,6 +26,13 @@ static constexpr std::int64_t kCapabilityGatingRequestId = 7;
 static constexpr std::int64_t kUnknownMethodRequestId = 8;
 static constexpr std::int64_t kCompletionRequestId = 9;
 static constexpr std::int64_t kSetLevelRequestId = 10;
+static constexpr std::int64_t kToolsListPaginationRequestId = 11;
+static constexpr std::int64_t kToolsCallUnknownRequestId = 12;
+static constexpr std::int64_t kToolsCallSchemaFailureRequestId = 13;
+static constexpr std::int64_t kToolsCallSuccessRequestId = 14;
+static constexpr std::int64_t kToolsCallOutputValidationRequestId = 15;
+
+static constexpr std::size_t kToolsListPageSize = 50;
 
 static auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::future<mcp::jsonrpc::Response>
 {
@@ -68,6 +76,21 @@ static auto completeInitialization(mcp::Server &server) -> void
   mcp::jsonrpc::Notification initialized;
   initialized.method = "notifications/initialized";
   server.handleNotification(mcp::jsonrpc::RequestContext {}, initialized);
+}
+
+static auto makeToolDefinition(std::string name) -> mcp::ToolDefinition
+{
+  mcp::ToolDefinition definition;
+  definition.name = std::move(name);
+  definition.description = "test tool";
+  definition.inputSchema = mcp::jsonrpc::JsonValue::object();
+  definition.inputSchema["type"] = "object";
+  definition.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
+  definition.inputSchema["properties"]["value"] = mcp::jsonrpc::JsonValue::object();
+  definition.inputSchema["properties"]["value"]["type"] = "string";
+  definition.inputSchema["required"] = mcp::jsonrpc::JsonValue::array();
+  definition.inputSchema["required"].push_back("value");
+  return definition;
 }
 
 }  // namespace
@@ -312,6 +335,232 @@ TEST_CASE("Server returns method not found when a feature capability is not decl
 
   const mcp::jsonrpc::Response response = dispatchRequest(*server, request);
   assertErrorCode(response, mcp::JsonRpcErrorCode::kMethodNotFound);
+}
+
+TEST_CASE("Server tools list supports cursor pagination", "[server][tools][list]")
+{
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+  for (std::size_t index = 0; index < kToolsListPageSize + 5; ++index)
+  {
+    server->registerTool(makeToolDefinition("tool-" + std::to_string(index)),
+                         [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                         {
+                           mcp::CallToolResult result;
+                           result.content = mcp::jsonrpc::JsonValue::array();
+                           return result;
+                         });
+  }
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request firstPageRequest;
+  firstPageRequest.id = kToolsListPaginationRequestId;
+  firstPageRequest.method = "tools/list";
+  firstPageRequest.params = mcp::jsonrpc::JsonValue::object();
+
+  const mcp::jsonrpc::Response firstPageResponse = dispatchRequest(*server, firstPageRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(firstPageResponse));
+  const auto &firstPage = std::get<mcp::jsonrpc::SuccessResponse>(firstPageResponse);
+  REQUIRE(firstPage.result["tools"].size() == kToolsListPageSize);
+  REQUIRE(firstPage.result.contains("nextCursor"));
+
+  mcp::jsonrpc::Request secondPageRequest;
+  secondPageRequest.id = kToolsListPaginationRequestId + 1;
+  secondPageRequest.method = "tools/list";
+  secondPageRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*secondPageRequest.params)["cursor"] = firstPage.result["nextCursor"];
+
+  const mcp::jsonrpc::Response secondPageResponse = dispatchRequest(*server, secondPageRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(secondPageResponse));
+  const auto &secondPage = std::get<mcp::jsonrpc::SuccessResponse>(secondPageResponse);
+  REQUIRE(secondPage.result["tools"].size() == 5);
+  REQUIRE_FALSE(secondPage.result.contains("nextCursor"));
+
+  mcp::jsonrpc::Request invalidCursorRequest;
+  invalidCursorRequest.id = kToolsListPaginationRequestId + 2;
+  invalidCursorRequest.method = "tools/list";
+  invalidCursorRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*invalidCursorRequest.params)["cursor"] = "not-a-valid-cursor";
+
+  const mcp::jsonrpc::Response invalidCursorResponse = dispatchRequest(*server, invalidCursorRequest);
+  assertErrorCode(invalidCursorResponse, mcp::JsonRpcErrorCode::kInvalidParams);
+}
+
+TEST_CASE("Server tools call differentiates unknown tool errors from input schema failures", "[server][tools][call]")
+{
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  std::size_t invocationCount = 0;
+  server->registerTool(makeToolDefinition("echo"),
+                       [&invocationCount](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                       {
+                         ++invocationCount;
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         mcp::jsonrpc::JsonValue text = mcp::jsonrpc::JsonValue::object();
+                         text["type"] = "text";
+                         text["text"] = context.arguments["value"].as<std::string>();
+                         result.content.push_back(std::move(text));
+                         return result;
+                       });
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request unknownToolRequest;
+  unknownToolRequest.id = kToolsCallUnknownRequestId;
+  unknownToolRequest.method = "tools/call";
+  unknownToolRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*unknownToolRequest.params)["name"] = "missing";
+
+  const mcp::jsonrpc::Response unknownToolResponse = dispatchRequest(*server, unknownToolRequest);
+  assertErrorCode(unknownToolResponse, mcp::JsonRpcErrorCode::kInvalidParams);
+
+  mcp::jsonrpc::Request schemaFailureRequest;
+  schemaFailureRequest.id = kToolsCallSchemaFailureRequestId;
+  schemaFailureRequest.method = "tools/call";
+  schemaFailureRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*schemaFailureRequest.params)["name"] = "echo";
+  (*schemaFailureRequest.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*schemaFailureRequest.params)["arguments"]["value"] = 42;
+
+  const mcp::jsonrpc::Response schemaFailureResponse = dispatchRequest(*server, schemaFailureRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(schemaFailureResponse));
+  const auto &schemaFailure = std::get<mcp::jsonrpc::SuccessResponse>(schemaFailureResponse);
+  REQUIRE(schemaFailure.result["isError"].as<bool>());
+  REQUIRE(invocationCount == 0);
+}
+
+TEST_CASE("Server tools call validates structured output when output schema is declared", "[server][tools][output]")
+{
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  mcp::ToolDefinition validTool = makeToolDefinition("counter");
+  validTool.outputSchema = mcp::jsonrpc::JsonValue::object();
+  (*validTool.outputSchema)["type"] = "object";
+  (*validTool.outputSchema)["properties"] = mcp::jsonrpc::JsonValue::object();
+  (*validTool.outputSchema)["properties"]["count"] = mcp::jsonrpc::JsonValue::object();
+  (*validTool.outputSchema)["properties"]["count"]["type"] = "number";
+  (*validTool.outputSchema)["required"] = mcp::jsonrpc::JsonValue::array();
+  (*validTool.outputSchema)["required"].push_back("count");
+
+  server->registerTool(validTool,
+                       [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         mcp::jsonrpc::JsonValue text = mcp::jsonrpc::JsonValue::object();
+                         text["type"] = "text";
+                         text["text"] = "ok";
+                         result.content.push_back(std::move(text));
+                         result.structuredContent = mcp::jsonrpc::JsonValue::object();
+                         (*result.structuredContent)["count"] = 7;
+                         return result;
+                       });
+
+  mcp::ToolDefinition invalidOutputTool = makeToolDefinition("broken-counter");
+  invalidOutputTool.outputSchema = validTool.outputSchema;
+  server->registerTool(invalidOutputTool,
+                       [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         mcp::jsonrpc::JsonValue text = mcp::jsonrpc::JsonValue::object();
+                         text["type"] = "text";
+                         text["text"] = "broken";
+                         result.content.push_back(std::move(text));
+                         result.structuredContent = mcp::jsonrpc::JsonValue::object();
+                         (*result.structuredContent)["count"] = "not-a-number";
+                         return result;
+                       });
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request successCall;
+  successCall.id = kToolsCallSuccessRequestId;
+  successCall.method = "tools/call";
+  successCall.params = mcp::jsonrpc::JsonValue::object();
+  (*successCall.params)["name"] = "counter";
+  (*successCall.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*successCall.params)["arguments"]["value"] = "a";
+
+  const mcp::jsonrpc::Response successResponse = dispatchRequest(*server, successCall);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(successResponse));
+  const auto &success = std::get<mcp::jsonrpc::SuccessResponse>(successResponse);
+  REQUIRE(success.result.contains("structuredContent"));
+  REQUIRE(success.result["structuredContent"]["count"].as<std::int64_t>() == 7);
+  REQUIRE_FALSE(success.result.contains("isError"));
+
+  mcp::jsonrpc::Request invalidOutputCall;
+  invalidOutputCall.id = kToolsCallOutputValidationRequestId;
+  invalidOutputCall.method = "tools/call";
+  invalidOutputCall.params = mcp::jsonrpc::JsonValue::object();
+  (*invalidOutputCall.params)["name"] = "broken-counter";
+  (*invalidOutputCall.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*invalidOutputCall.params)["arguments"]["value"] = "a";
+
+  const mcp::jsonrpc::Response invalidOutputResponse = dispatchRequest(*server, invalidOutputCall);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(invalidOutputResponse));
+  const auto &invalidOutput = std::get<mcp::jsonrpc::SuccessResponse>(invalidOutputResponse);
+  REQUIRE(invalidOutput.result["isError"].as<bool>());
+  REQUIRE_FALSE(invalidOutput.result.contains("structuredContent"));
+}
+
+TEST_CASE("Server emits tools list_changed notifications when enabled", "[server][tools][notifications]")
+{
+  mcp::ToolsCapability toolsCapability;
+  toolsCapability.listChanged = true;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  std::mutex messagesMutex;
+  std::vector<mcp::jsonrpc::Message> outboundMessages;
+  server->setOutboundMessageSender(
+    [&messagesMutex, &outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+    {
+      const std::scoped_lock lock(messagesMutex);
+      outboundMessages.push_back(std::move(message));
+    });
+
+  completeInitialization(*server);
+
+  server->registerTool(makeToolDefinition("notify-tool"),
+                       [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         return result;
+                       });
+  REQUIRE(server->unregisterTool("notify-tool"));
+
+  std::size_t listChangedNotifications = 0;
+  {
+    const std::scoped_lock lock(messagesMutex);
+    for (const auto &message : outboundMessages)
+    {
+      if (std::holds_alternative<mcp::jsonrpc::Notification>(message))
+      {
+        const auto &notification = std::get<mcp::jsonrpc::Notification>(message);
+        if (notification.method == "notifications/tools/list_changed")
+        {
+          ++listChangedNotifications;
+        }
+      }
+    }
+  }
+
+  REQUIRE(listChangedNotifications == 2);
 }
 
 TEST_CASE("Server returns method not found for unregistered methods", "[server][core][dispatch]")

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/server/tools.hpp>
 
 namespace mcp
 {
@@ -103,6 +104,9 @@ public:
   auto sendNotification(const jsonrpc::RequestContext &context, jsonrpc::Notification notification) -> void;
 
   auto setCompletionHandler(CompletionHandler handler) -> void;
+  auto registerTool(ToolDefinition definition, ToolHandler handler) -> void;
+  auto unregisterTool(std::string_view name) -> bool;
+  auto notifyToolsListChanged(const jsonrpc::RequestContext &context = {}) -> bool;
   auto emitLogMessage(const jsonrpc::RequestContext &context, LogLevel level, jsonrpc::JsonValue data, std::optional<std::string> logger = std::nullopt) -> bool;
   auto logLevel() const -> LogLevel;
 
@@ -111,6 +115,8 @@ public:
 private:
   auto configureSessionInitialization() -> void;
   auto registerCoreHandlers() -> void;
+  auto handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
+  auto handleToolsCallRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleLoggingSetLevelRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
   auto handleCompletionCompleteRequest(const jsonrpc::Request &request) -> jsonrpc::Response;
 
@@ -121,7 +127,9 @@ private:
   ServerConfiguration configuration_;
   jsonrpc::Router router_;
   mutable std::mutex utilityMutex_;
+  mutable std::mutex toolsMutex_;
   CompletionHandler completionHandler_;
+  std::vector<RegisteredTool> tools_;
   LogLevel logLevel_ = LogLevel::kDebug;
 };
 

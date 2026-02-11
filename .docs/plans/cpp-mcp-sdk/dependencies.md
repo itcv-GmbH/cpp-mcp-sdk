@@ -21,7 +21,7 @@
 
 ## Phase 4: Server Features (Blocked by Phase 3)
 - [x] `task-014`: Server Core + Capability Enforcement (Depends on: `task-006`, `task-007`, `task-011`)
-- [ ] `task-015`: Tools (list/call + schemas + list_changed) (Depends on: `task-014`)
+- [x] `task-015`: Tools (list/call + schemas + list_changed) (Depends on: `task-014`)
 - [ ] `task-016`: Resources (list/read/templates/subscribe + updated/list_changed) (Depends on: `task-014`)
 - [ ] `task-017`: Prompts (list/get + list_changed) (Depends on: `task-014`)
 - [x] `task-018`: Server Utilities (logging, completion, pagination helpers) (Depends on: `task-014`)

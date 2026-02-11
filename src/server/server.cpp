@@ -3,18 +3,26 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <future>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 
+#include <jsoncons_ext/jsonschema/common/validator.hpp>
+#include <jsoncons_ext/jsonschema/evaluation_options.hpp>
+#include <jsoncons_ext/jsonschema/json_schema.hpp>
+#include <jsoncons_ext/jsonschema/json_schema_factory.hpp>
+#include <jsoncons_ext/jsonschema/validation_message.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/schema/validator.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/version.hpp>
 
@@ -29,8 +37,21 @@ constexpr std::string_view kInitializedNotificationMethod = "notifications/initi
 constexpr std::string_view kMessageNotificationMethod = "notifications/message";
 constexpr std::string_view kLoggingSetLevelMethod = "logging/setLevel";
 constexpr std::string_view kCompletionCompleteMethod = "completion/complete";
+constexpr std::string_view kToolsListMethod = "tools/list";
+constexpr std::string_view kToolsCallMethod = "tools/call";
+constexpr std::string_view kToolsListChangedNotificationMethod = "notifications/tools/list_changed";
 constexpr std::string_view kDefaultServerName = "mcp-cpp-sdk";
 constexpr std::string_view kCursorPrefix = "mcp:v1:";
+constexpr std::size_t kToolsPageSize = 50;
+
+using JsonSchema = jsoncons::jsonschema::json_schema<jsonrpc::JsonValue>;
+using WalkResult = jsoncons::jsonschema::walk_result;
+
+struct SchemaValidationResult
+{
+  bool valid = false;
+  std::vector<schema::ValidationDiagnostic> diagnostics;
+};
 
 constexpr std::array<std::pair<std::string_view, LogLevel>, 8> kLogLevelMappings {
   std::pair<std::string_view, LogLevel> {"debug", LogLevel::kDebug},
@@ -62,6 +83,94 @@ auto makeMethodNotFoundResponse(const jsonrpc::RequestId &requestId, std::string
 {
   const std::string message = "Method '" + std::string(method) + "' is not available for the negotiated server capabilities.";
   return jsonrpc::makeErrorResponse(jsonrpc::makeMethodNotFoundError(std::nullopt, message), requestId);
+}
+
+auto makeInvalidParamsResponse(const jsonrpc::RequestId &requestId, std::string message, std::optional<jsonrpc::JsonValue> data = std::nullopt) -> jsonrpc::Response
+{
+  return jsonrpc::makeErrorResponse(jsonrpc::makeInvalidParamsError(std::move(data), std::move(message)), requestId);
+}
+
+auto makeTextContentBlock(std::string text) -> jsonrpc::JsonValue
+{
+  jsonrpc::JsonValue content = jsonrpc::JsonValue::array();
+  jsonrpc::JsonValue textBlock = jsonrpc::JsonValue::object();
+  textBlock["type"] = "text";
+  textBlock["text"] = std::move(text);
+  content.push_back(std::move(textBlock));
+  return content;
+}
+
+auto makeSchemaValidationErrorResult(std::string message, const std::vector<schema::ValidationDiagnostic> &diagnostics) -> mcp::CallToolResult
+{
+  mcp::CallToolResult result;
+  result.content = makeTextContentBlock(std::move(message));
+  result.isError = true;
+
+  if (!diagnostics.empty())
+  {
+    jsonrpc::JsonValue metadata = jsonrpc::JsonValue::object();
+    jsonrpc::JsonValue diagnosticArray = jsonrpc::JsonValue::array();
+    for (const auto &diagnostic : diagnostics)
+    {
+      jsonrpc::JsonValue entry = jsonrpc::JsonValue::object();
+      entry["instanceLocation"] = diagnostic.instanceLocation;
+      entry["evaluationPath"] = diagnostic.evaluationPath;
+      entry["schemaLocation"] = diagnostic.schemaLocation;
+      entry["error"] = diagnostic.message;
+      diagnosticArray.push_back(std::move(entry));
+    }
+
+    metadata["validationErrors"] = std::move(diagnosticArray);
+    result.metadata = std::move(metadata);
+  }
+
+  return result;
+}
+
+auto validateJsonInstanceAgainstSchema(const jsonrpc::JsonValue &schemaObject, const jsonrpc::JsonValue &instance) -> SchemaValidationResult
+{
+  SchemaValidationResult result;
+
+  if (!schemaObject.is_object())
+  {
+    schema::ValidationDiagnostic diagnostic;
+    diagnostic.message = "Schema must be an object.";
+    result.diagnostics.push_back(std::move(diagnostic));
+    return result;
+  }
+
+  try
+  {
+    const jsoncons::jsonschema::evaluation_options options = jsoncons::jsonschema::evaluation_options {}.default_version(jsoncons::jsonschema::schema_version::draft202012());
+    const JsonSchema compiledSchema = jsoncons::jsonschema::make_json_schema(jsonrpc::JsonValue(schemaObject), options);
+    compiledSchema.validate(instance,
+                            [&result](const jsoncons::jsonschema::validation_message &validationMessage) -> WalkResult
+                            {
+                              schema::ValidationDiagnostic diagnostic;
+                              diagnostic.instanceLocation = validationMessage.instance_location().string();
+                              diagnostic.evaluationPath = validationMessage.eval_path().string();
+                              diagnostic.schemaLocation = validationMessage.schema_location().string();
+                              diagnostic.message = validationMessage.message();
+                              result.diagnostics.push_back(std::move(diagnostic));
+                              return WalkResult::advance;
+                            });
+  }
+  catch (const std::exception &exception)
+  {
+    schema::ValidationDiagnostic diagnostic;
+    diagnostic.message = std::string("Schema compilation failed: ") + exception.what();
+    result.diagnostics.push_back(std::move(diagnostic));
+    return result;
+  }
+
+  result.valid = result.diagnostics.empty();
+  return result;
+}
+
+auto mcpSchemaValidator() -> const schema::Validator &
+{
+  static const schema::Validator validator = schema::Validator::loadPinnedMcpSchema();
+  return validator;
 }
 
 auto makeLifecycleRejectedResponse(const jsonrpc::RequestId &requestId, std::string_view method) -> jsonrpc::Response
@@ -515,6 +624,95 @@ auto Server::setCompletionHandler(CompletionHandler handler) -> void
   completionHandler_ = std::move(handler);
 }
 
+auto Server::registerTool(ToolDefinition definition, ToolHandler handler) -> void
+{
+  if (handler == nullptr)
+  {
+    throw std::invalid_argument("Tool handler must not be null");
+  }
+
+  if (definition.name.empty())
+  {
+    throw std::invalid_argument("Tool name must not be empty");
+  }
+
+  if (!definition.inputSchema.is_object())
+  {
+    throw std::invalid_argument("Tool input schema must be a JSON object");
+  }
+
+  const schema::ValidationResult inputSchemaValidation = detail::mcpSchemaValidator().validateToolSchema(definition.inputSchema, schema::ToolSchemaKind::kInput);
+  if (!inputSchemaValidation.valid)
+  {
+    throw std::invalid_argument("Tool input schema is invalid: " + schema::formatDiagnostics(inputSchemaValidation));
+  }
+
+  if (definition.outputSchema.has_value())
+  {
+    const schema::ValidationResult outputSchemaValidation = detail::mcpSchemaValidator().validateToolSchema(*definition.outputSchema, schema::ToolSchemaKind::kOutput);
+    if (!outputSchemaValidation.valid)
+    {
+      throw std::invalid_argument("Tool output schema is invalid: " + schema::formatDiagnostics(outputSchemaValidation));
+    }
+  }
+
+  {
+    const std::scoped_lock lock(toolsMutex_);
+    const auto existingTool =
+      std::find_if(tools_.begin(), tools_.end(), [&definition](const RegisteredTool &registeredTool) -> bool { return registeredTool.definition.name == definition.name; });
+    if (existingTool != tools_.end())
+    {
+      throw std::invalid_argument("Tool already registered: " + definition.name);
+    }
+
+    tools_.push_back(RegisteredTool {std::move(definition), std::move(handler)});
+  }
+
+  static_cast<void>(notifyToolsListChanged());
+}
+
+auto Server::unregisterTool(std::string_view name) -> bool
+{
+  bool removed = false;
+
+  {
+    const std::scoped_lock lock(toolsMutex_);
+    const auto iter = std::find_if(tools_.begin(), tools_.end(), [name](const RegisteredTool &registeredTool) -> bool { return registeredTool.definition.name == name; });
+
+    if (iter != tools_.end())
+    {
+      tools_.erase(iter);
+      removed = true;
+    }
+  }
+
+  if (removed)
+  {
+    static_cast<void>(notifyToolsListChanged());
+  }
+
+  return removed;
+}
+
+auto Server::notifyToolsListChanged(const jsonrpc::RequestContext &context) -> bool
+{
+  if (!configuration_.capabilities.tools().has_value() || !configuration_.capabilities.tools()->listChanged)
+  {
+    return false;
+  }
+
+  if (!session_->canSendNotification(detail::kToolsListChangedNotificationMethod))
+  {
+    return false;
+  }
+
+  jsonrpc::Notification notification;
+  notification.method = std::string(detail::kToolsListChangedNotificationMethod);
+  notification.params = jsonrpc::JsonValue::object();
+  sendNotification(context, std::move(notification));
+  return true;
+}
+
 auto Server::emitLogMessage(const jsonrpc::RequestContext &context, LogLevel level, jsonrpc::JsonValue data, std::optional<std::string> logger) -> bool
 {
   if (!configuration_.capabilities.hasCapability("logging"))
@@ -615,6 +813,235 @@ auto Server::registerCoreHandlers() -> void
   router_.registerRequestHandler(std::string(detail::kCompletionCompleteMethod),
                                  [this](const jsonrpc::RequestContext &, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
                                  { return detail::makeReadyResponseFuture(handleCompletionCompleteRequest(request)); });
+
+  router_.registerRequestHandler(std::string(detail::kToolsListMethod),
+                                 [this](const jsonrpc::RequestContext &, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleToolsListRequest(request)); });
+
+  router_.registerRequestHandler(std::string(detail::kToolsCallMethod),
+                                 [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
+                                 { return detail::makeReadyResponseFuture(handleToolsCallRequest(context, request)); });
+}
+
+auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  std::optional<std::string> cursor;
+  if (request.params.has_value())
+  {
+    if (!request.params->is_object())
+    {
+      return detail::makeInvalidParamsResponse(request.id, "tools/list requires params to be an object when provided");
+    }
+
+    if (request.params->contains("cursor"))
+    {
+      if (!(*request.params)["cursor"].is_string())
+      {
+        return detail::makeInvalidParamsResponse(request.id, "tools/list requires params.cursor to be a string");
+      }
+
+      cursor = (*request.params)["cursor"].as<std::string>();
+    }
+  }
+
+  std::vector<ToolDefinition> toolDefinitions;
+  {
+    const std::scoped_lock lock(toolsMutex_);
+    toolDefinitions.reserve(tools_.size());
+    for (const auto &registeredTool : tools_)
+    {
+      toolDefinitions.push_back(registeredTool.definition);
+    }
+  }
+
+  PaginationWindow window;
+  try
+  {
+    window = paginateList(ListEndpoint::kTools, cursor, toolDefinitions.size(), detail::kToolsPageSize);
+  }
+  catch (const std::invalid_argument &)
+  {
+    return detail::makeInvalidParamsResponse(request.id, "Invalid tools/list cursor");
+  }
+
+  jsonrpc::JsonValue toolsJson = jsonrpc::JsonValue::array();
+  for (std::size_t index = window.startIndex; index < window.endIndex; ++index)
+  {
+    const ToolDefinition &definition = toolDefinitions[index];
+    jsonrpc::JsonValue toolJson = jsonrpc::JsonValue::object();
+    toolJson["name"] = definition.name;
+    if (definition.title.has_value())
+    {
+      toolJson["title"] = *definition.title;
+    }
+    if (definition.description.has_value())
+    {
+      toolJson["description"] = *definition.description;
+    }
+    if (definition.icons.has_value())
+    {
+      toolJson["icons"] = *definition.icons;
+    }
+    toolJson["inputSchema"] = definition.inputSchema;
+    if (definition.outputSchema.has_value())
+    {
+      toolJson["outputSchema"] = *definition.outputSchema;
+    }
+    if (definition.annotations.has_value())
+    {
+      toolJson["annotations"] = *definition.annotations;
+    }
+    if (definition.execution.has_value())
+    {
+      toolJson["execution"] = *definition.execution;
+    }
+    if (definition.metadata.has_value())
+    {
+      toolJson["_meta"] = *definition.metadata;
+    }
+
+    toolsJson.push_back(std::move(toolJson));
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = request.id;
+  response.result = jsonrpc::JsonValue::object();
+  response.result["tools"] = std::move(toolsJson);
+  if (window.nextCursor.has_value())
+  {
+    response.result["nextCursor"] = *window.nextCursor;
+  }
+
+  return response;
+}
+
+auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
+{
+  if (!request.params.has_value() || !request.params->is_object())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "tools/call requires params object");
+  }
+
+  const jsonrpc::JsonValue &params = *request.params;
+  if (!params.contains("name") || !params["name"].is_string())
+  {
+    return detail::makeInvalidParamsResponse(request.id, "tools/call requires string params.name");
+  }
+
+  const std::string toolName = params["name"].as<std::string>();
+  jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object();
+  if (params.contains("arguments"))
+  {
+    if (!params["arguments"].is_object())
+    {
+      return detail::makeInvalidParamsResponse(request.id, "tools/call requires params.arguments to be an object when provided");
+    }
+
+    arguments = params["arguments"];
+  }
+
+  std::optional<ToolDefinition> definition;
+  ToolHandler handler;
+  {
+    const std::scoped_lock lock(toolsMutex_);
+    const auto toolIter =
+      std::find_if(tools_.begin(), tools_.end(), [&toolName](const RegisteredTool &registeredTool) -> bool { return registeredTool.definition.name == toolName; });
+    if (toolIter == tools_.end())
+    {
+      return detail::makeInvalidParamsResponse(request.id, "Unknown tool: " + toolName);
+    }
+
+    definition = toolIter->definition;
+    handler = toolIter->handler;
+  }
+
+  if (!definition.has_value() || handler == nullptr)
+  {
+    return jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Tool registration is incomplete"), request.id);
+  }
+
+  const detail::SchemaValidationResult inputValidation = detail::validateJsonInstanceAgainstSchema(definition->inputSchema, arguments);
+  if (!inputValidation.valid)
+  {
+    const CallToolResult validationError = detail::makeSchemaValidationErrorResult("Tool input validation failed for '" + toolName + "'", inputValidation.diagnostics);
+
+    jsonrpc::SuccessResponse response;
+    response.id = request.id;
+    response.result = jsonrpc::JsonValue::object();
+    response.result["content"] = validationError.content;
+    if (validationError.metadata.has_value())
+    {
+      response.result["_meta"] = *validationError.metadata;
+    }
+    response.result["isError"] = true;
+    return response;
+  }
+
+  CallToolResult result;
+  try
+  {
+    ToolCallContext callContext;
+    callContext.requestContext = context;
+    callContext.toolName = toolName;
+    callContext.arguments = std::move(arguments);
+    result = handler(callContext);
+  }
+  catch (const std::exception &exception)
+  {
+    result.content = detail::makeTextContentBlock(std::string("Tool execution failed: ") + exception.what());
+    result.isError = true;
+  }
+  catch (...)
+  {
+    result.content = detail::makeTextContentBlock("Tool execution failed: unknown error");
+    result.isError = true;
+  }
+
+  if (!result.content.is_array())
+  {
+    result.content = detail::makeTextContentBlock("Tool returned invalid content payload");
+    result.isError = true;
+  }
+
+  if (definition->outputSchema.has_value())
+  {
+    if (!result.structuredContent.has_value() || !result.structuredContent->is_object())
+    {
+      result.content = detail::makeTextContentBlock("Tool output schema requires structuredContent object");
+      result.isError = true;
+    }
+    else
+    {
+      const detail::SchemaValidationResult outputValidation = detail::validateJsonInstanceAgainstSchema(*definition->outputSchema, *result.structuredContent);
+      if (!outputValidation.valid)
+      {
+        const CallToolResult validationError = detail::makeSchemaValidationErrorResult("Tool output validation failed for '" + toolName + "'", outputValidation.diagnostics);
+        result.content = validationError.content;
+        result.metadata = validationError.metadata;
+        result.structuredContent.reset();
+        result.isError = true;
+      }
+    }
+  }
+
+  jsonrpc::SuccessResponse response;
+  response.id = request.id;
+  response.result = jsonrpc::JsonValue::object();
+  response.result["content"] = result.content;
+  if (result.structuredContent.has_value())
+  {
+    response.result["structuredContent"] = *result.structuredContent;
+  }
+  if (result.metadata.has_value())
+  {
+    response.result["_meta"] = *result.metadata;
+  }
+  if (result.isError)
+  {
+    response.result["isError"] = true;
+  }
+
+  return response;
 }
 
 auto Server::handleLoggingSetLevelRequest(const jsonrpc::Request &request) -> jsonrpc::Response
