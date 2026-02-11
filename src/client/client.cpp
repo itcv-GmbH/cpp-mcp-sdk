@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <future>
 #include <memory>
@@ -632,6 +634,149 @@ private:
   std::function<void(const jsonrpc::Message &)> inboundMessageHandler_;
 };
 
+class SubprocessStdioClientTransport final : public transport::Transport
+{
+public:
+  SubprocessStdioClientTransport(transport::StdioClientOptions options, std::function<void(const jsonrpc::Message &)> inboundMessageHandler)
+    : options_(std::move(options))
+    , inboundMessageHandler_(std::move(inboundMessageHandler))
+  {
+    if (options_.executablePath.empty())
+    {
+      throw std::invalid_argument("StdioClientOptions.executablePath must not be empty");
+    }
+  }
+
+  ~SubprocessStdioClientTransport() override { stop(); }
+
+  SubprocessStdioClientTransport(const SubprocessStdioClientTransport &) = delete;
+  auto operator=(const SubprocessStdioClientTransport &) -> SubprocessStdioClientTransport & = delete;
+  SubprocessStdioClientTransport(SubprocessStdioClientTransport &&) = delete;
+  auto operator=(SubprocessStdioClientTransport &&) -> SubprocessStdioClientTransport & = delete;
+
+  auto attach(std::weak_ptr<Session> session) -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    attachedSession_ = std::move(session);
+  }
+
+  auto start() -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    if (running_.load())
+    {
+      return;
+    }
+
+    transport::StdioSubprocessSpawnOptions spawnOptions;
+    spawnOptions.argv.push_back(options_.executablePath);
+    spawnOptions.argv.insert(spawnOptions.argv.end(), options_.arguments.begin(), options_.arguments.end());
+    spawnOptions.envOverrides = options_.environment;
+    spawnOptions.stderrMode = transport::StdioClientStderrMode::kCapture;
+
+    subprocess_ = transport::StdioTransport::spawnSubprocess(spawnOptions);
+    if (!subprocess_.valid())
+    {
+      throw std::runtime_error("Failed to spawn stdio subprocess transport");
+    }
+
+    running_.store(true);
+    readerThread_ = std::thread([this]() -> void { readerLoop(); });
+  }
+
+  auto stop() -> void override
+  {
+    bool shouldJoin = false;
+    {
+      const std::scoped_lock lock(mutex_);
+      running_.store(false);
+      shouldJoin = readerThread_.joinable();
+    }
+
+    if (subprocess_.valid())
+    {
+      static_cast<void>(subprocess_.shutdown());
+    }
+
+    if (shouldJoin && readerThread_.joinable())
+    {
+      readerThread_.join();
+    }
+  }
+
+  auto isRunning() const noexcept -> bool override { return running_.load(); }
+
+  auto send(jsonrpc::Message message) -> void override
+  {
+    const std::scoped_lock lock(mutex_);
+    if (!running_.load() || !subprocess_.valid())
+    {
+      throw std::runtime_error("Stdio subprocess transport must be running before send().");
+    }
+
+    jsonrpc::EncodeOptions encodeOptions;
+    encodeOptions.disallowEmbeddedNewlines = true;
+    subprocess_.writeLine(jsonrpc::serializeMessage(message, encodeOptions));
+  }
+
+private:
+  auto readerLoop() -> void
+  {
+    while (true)
+    {
+      std::string line;
+      if (!running_.load() || !subprocess_.valid())
+      {
+        break;
+      }
+
+      bool hasLine = false;
+      try
+      {
+        hasLine = subprocess_.readLine(line);
+      }
+      catch (const std::exception &error)
+      {
+        static_cast<void>(error);
+        running_.store(false);
+        break;
+      }
+
+      if (!hasLine)
+      {
+        running_.store(false);
+        break;
+      }
+
+      if (line.empty())
+      {
+        continue;
+      }
+
+      try
+      {
+        const jsonrpc::Message inboundMessage = jsonrpc::parseMessage(line);
+        if (inboundMessageHandler_)
+        {
+          inboundMessageHandler_(inboundMessage);
+        }
+      }
+      catch (const std::exception &error)
+      {
+        static_cast<void>(error);
+      }
+    }
+  }
+
+  mutable std::mutex mutex_;
+  std::atomic<bool> running_ {false};
+  transport::StdioClientOptions options_;
+  std::weak_ptr<Session> attachedSession_;
+  transport::StdioSubprocess subprocess_;
+  std::thread readerThread_;
+  std::function<void(const jsonrpc::Message &)> inboundMessageHandler_;
+};
+
 auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 {
   return std::make_shared<Client>(std::make_shared<Session>(std::move(options)));
@@ -682,18 +827,51 @@ auto Client::attachTransport(std::shared_ptr<transport::Transport> transport) ->
 
 auto Client::connectStdio(const transport::StdioClientOptions &options) -> void
 {
-  attachTransport(std::make_shared<transport::StdioTransport>(options));
+  auto transport = std::make_shared<SubprocessStdioClientTransport>(options,
+                                                                    [this](const jsonrpc::Message &inboundMessage) -> void
+                                                                    {
+                                                                      try
+                                                                      {
+                                                                        handleMessage(jsonrpc::RequestContext {}, inboundMessage);
+                                                                      }
+                                                                      catch (const std::exception &error)
+                                                                      {
+                                                                        static_cast<void>(error);
+                                                                      }
+                                                                    });
+
+  attachTransport(std::move(transport));
 }
 
 auto Client::connectHttp(const transport::HttpClientOptions &options) -> void
 {
-  attachTransport(std::make_shared<transport::HttpTransport>(options));
+  auto runtime = std::make_shared<transport::HttpClientRuntime>(options);
+
+  transport::http::StreamableHttpClientOptions streamableOptions;
+  streamableOptions.endpointUrl = options.endpointUrl;
+  streamableOptions.bearerToken = options.bearerToken;
+  streamableOptions.tls = options.tls;
+  streamableOptions.sessionState = options.sessionState;
+  streamableOptions.protocolVersionState = options.protocolVersionState;
+
+  connectHttp(std::move(streamableOptions), [runtime](const transport::http::ServerRequest &request) -> transport::http::ServerResponse { return runtime->execute(request); });
 }
 
 auto Client::connectHttp(transport::http::StreamableHttpClientOptions options, transport::http::StreamableHttpClient::RequestExecutor requestExecutor) -> void
 {
-  auto transport = std::make_shared<StreamableHttpClientTransport>(
-    std::move(options), std::move(requestExecutor), [this](const jsonrpc::Message &inboundMessage) -> void { handleMessage(jsonrpc::RequestContext {}, inboundMessage); });
+  auto transport = std::make_shared<StreamableHttpClientTransport>(std::move(options),
+                                                                   std::move(requestExecutor),
+                                                                   [this](const jsonrpc::Message &inboundMessage) -> void
+                                                                   {
+                                                                     try
+                                                                     {
+                                                                       handleMessage(jsonrpc::RequestContext {}, inboundMessage);
+                                                                     }
+                                                                     catch (const std::exception &error)
+                                                                     {
+                                                                       static_cast<void>(error);
+                                                                     }
+                                                                   });
 
   attachTransport(std::move(transport));
 }

@@ -785,3 +785,75 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
   REQUIRE(promptResult.messages[0].role == "user");
   REQUIRE(promptResult.messages[0].content["text"].as<std::string>() == "Explain: pagination");
 }
+
+TEST_CASE("Client connectHttp using HttpClientOptions performs lifecycle requests", "[client][transport][http]")
+{
+  mcp::transport::http::StreamableHttpServer streamableServer;
+  streamableServer.setRequestHandler(
+    [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> mcp::transport::http::StreamableRequestResult
+    {
+      mcp::transport::http::StreamableRequestResult result;
+
+      mcp::jsonrpc::SuccessResponse response;
+      response.id = request.id;
+      response.result = mcp::jsonrpc::JsonValue::object();
+      if (request.method == "initialize")
+      {
+        response.result["protocolVersion"] = std::string(mcp::kLatestProtocolVersion);
+        response.result["capabilities"] = mcp::jsonrpc::JsonValue::object();
+        response.result["serverInfo"] = mcp::jsonrpc::JsonValue::object();
+        response.result["serverInfo"]["name"] = "http-test-server";
+        response.result["serverInfo"]["version"] = "1.0.0";
+      }
+
+      result.response = std::move(response);
+      return result;
+    });
+
+  mcp::transport::HttpServerOptions serverOptions;
+  serverOptions.endpoint.path = "/mcp";
+  serverOptions.endpoint.bindAddress = "127.0.0.1";
+  serverOptions.endpoint.bindLocalhostOnly = true;
+  serverOptions.endpoint.port = 0;
+
+  mcp::transport::HttpServerRuntime serverRuntime(serverOptions);
+  serverRuntime.setRequestHandler([&streamableServer](const mcp::transport::http::ServerRequest &request) -> mcp::transport::http::ServerResponse
+                                  { return streamableServer.handleRequest(request); });
+  serverRuntime.start();
+
+  auto client = mcp::Client::create();
+  mcp::transport::HttpClientOptions clientOptions;
+  clientOptions.endpointUrl = "http://127.0.0.1:" + std::to_string(serverRuntime.localPort()) + "/mcp";
+
+  client->connectHttp(clientOptions);
+  client->start();
+
+  const auto initializeResponse = client->initialize().get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initializeResponse));
+
+  const auto pingResponse = client->sendRequest("ping", mcp::jsonrpc::JsonValue::object()).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(pingResponse));
+
+  client->stop();
+  serverRuntime.stop();
+}
+
+#ifdef MCP_TEST_STDIO_SUBPROCESS_HELPER_PATH
+TEST_CASE("Client connectStdio spawns subprocess and performs initialize/ping", "[client][transport][stdio]")
+{
+  auto client = mcp::Client::create();
+
+  mcp::transport::StdioClientOptions options;
+  options.executablePath = MCP_TEST_STDIO_SUBPROCESS_HELPER_PATH;
+  client->connectStdio(options);
+  client->start();
+
+  const auto initializeResponse = client->initialize().get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initializeResponse));
+
+  const auto pingResponse = client->sendRequest("ping", mcp::jsonrpc::JsonValue::object()).get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(pingResponse));
+
+  client->stop();
+}
+#endif

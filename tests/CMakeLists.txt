@@ -89,6 +89,11 @@ target_link_libraries(mcp_sdk_test_stdio_subprocess_server
         mcp::sdk
 )
 
+target_compile_definitions(mcp_sdk_test_client
+    PRIVATE
+        MCP_TEST_STDIO_SUBPROCESS_HELPER_PATH="$<TARGET_FILE:mcp_sdk_test_stdio_subprocess_server>"
+)
+
 add_executable(mcp_sdk_test_transport_stdio_subprocess transport_stdio_subprocess_test.cpp)
 
 target_link_libraries(mcp_sdk_test_transport_stdio_subprocess

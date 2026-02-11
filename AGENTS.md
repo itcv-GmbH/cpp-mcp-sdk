@@ -7,6 +7,24 @@ Model Context Protocol (MCP) SDK for C++ - A CMake-based C++17 library for imple
 
 ### Configure & Build
 
+**Quick start (fresh machine / unknown dependency state):**
+```bash
+# 1) Configure with vcpkg toolchain (installs/uses managed dependencies)
+cmake --preset vcpkg-unix-release
+
+# 2) Build in parallel while reserving 4 CPU cores
+JOBS=$(( $(sysctl -n hw.ncpu) - 4 ))
+if [ "$JOBS" -lt 1 ]; then JOBS=1; fi
+cmake --build build/vcpkg-unix-release --parallel "$JOBS"
+
+# 3) Run tests
+ctest --test-dir build/vcpkg-unix-release
+```
+
+**Preset selection (macOS/Linux):**
+- Use `vcpkg-unix-release` by default (most reliable in fresh/CI-like environments).
+- Use `unix-release` only when dependencies are already discoverable without the vcpkg toolchain.
+
 **First-time setup (dependencies required):**
 ```bash
 # Configure with vcpkg preset to install dependencies (jsoncons, Boost, etc.)
@@ -35,7 +53,15 @@ cmake --build build/windows-release --config Release
 
 **IMPORTANT:** On UNIX systems, you can parallelize builds while reserving 4 CPU cores:
 ```bash
-cmake --build build/unix-release --parallel $(( $(nproc) - 4 ))
+# macOS
+JOBS=$(( $(sysctl -n hw.ncpu) - 4 ))
+if [ "$JOBS" -lt 1 ]; then JOBS=1; fi
+cmake --build build/vcpkg-unix-release --parallel "$JOBS"
+
+# Linux
+JOBS=$(( $(nproc) - 4 ))
+if [ "$JOBS" -lt 1 ]; then JOBS=1; fi
+cmake --build build/vcpkg-unix-release --parallel "$JOBS"
 ```
 
 ### Build Options
@@ -47,20 +73,23 @@ cmake --build build/unix-release --parallel $(( $(nproc) - 4 ))
 
 ### Run All Tests
 ```bash
-# Using CTest
-cd build/unix-release && ctest
+# Using CTest (vcpkg preset build)
+ctest --test-dir build/vcpkg-unix-release
 
-# Using CMake preset
-cmake --preset unix-release && cmake --build build/unix-release && ctest --preset unix-release
+# Using CTest (non-vcpkg preset build)
+ctest --test-dir build/unix-release
+
+# Using CMake preset (vcpkg)
+cmake --preset vcpkg-unix-release && cmake --build build/vcpkg-unix-release && ctest --test-dir build/vcpkg-unix-release
 ```
 
 ### Run Single Test
 ```bash
 # Run specific test by name
-ctest --preset unix-release -R mcp_sdk_smoke_test -V
+ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_smoke_test -V
 
 # Or run test executable directly
-./build/unix-release/tests/mcp_sdk_test_smoke
+./build/vcpkg-unix-release/tests/mcp_sdk_test_smoke
 ```
 
 ## Lint/Format Commands
@@ -68,16 +97,16 @@ ctest --preset unix-release -R mcp_sdk_smoke_test -V
 ### Code Formatting (clang-format)
 ```bash
 # Auto-format all source files
-cmake --build build/unix-release --target clang-format
+cmake --build build/vcpkg-unix-release --target clang-format
 
 # Check formatting without modifying files
-cmake --build build/unix-release --target clang-format-check
+cmake --build build/vcpkg-unix-release --target clang-format-check
 ```
 
 ### Static Analysis (clang-tidy)
 ```bash
 # Run during build (automatically enabled if clang-tidy is found)
-cmake --build build/unix-release
+cmake --build build/vcpkg-unix-release
 ```
 
 ## Code Style Guidelines

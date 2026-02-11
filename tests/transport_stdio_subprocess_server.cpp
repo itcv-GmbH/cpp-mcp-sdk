@@ -5,6 +5,7 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/transport/stdio.hpp>
+#include <mcp/version.hpp>
 
 namespace
 {
@@ -30,6 +31,20 @@ auto main() -> int
                                   mcp::jsonrpc::SuccessResponse response;
                                   response.id = request.id;
                                   response.result = mcp::jsonrpc::JsonValue::object();
+                                  return makeReadyResponseFuture(mcp::jsonrpc::Response {response});
+                                });
+
+  router.registerRequestHandler("initialize",
+                                [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
+                                {
+                                  mcp::jsonrpc::SuccessResponse response;
+                                  response.id = request.id;
+                                  response.result = mcp::jsonrpc::JsonValue::object();
+                                  response.result["protocolVersion"] = std::string(mcp::kLatestProtocolVersion);
+                                  response.result["capabilities"] = mcp::jsonrpc::JsonValue::object();
+                                  response.result["serverInfo"] = mcp::jsonrpc::JsonValue::object();
+                                  response.result["serverInfo"]["name"] = "stdio-helper";
+                                  response.result["serverInfo"]["version"] = "1.0.0";
                                   return makeReadyResponseFuture(mcp::jsonrpc::Response {response});
                                 });
 
