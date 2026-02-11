@@ -123,8 +123,29 @@ Demo bearer tokens in this example:
 - `dev-token-read` (`mcp:read`)
 - `dev-token-write` (`mcp:read mcp:write`)
 
+## Legacy 2024-11-05 HTTP+SSE server compatibility (optional)
+
+Servers can expose legacy `GET /events` + `POST /rpc` endpoints alongside modern Streamable HTTP when interoperability is required.
+
+- Build default: `MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY=OFF`
+- Runtime default: `StreamableHttpServerOptions.enableLegacyHttpSseCompatibility = std::nullopt` (inherits build default)
+
+Enable per server instance:
+
+```cpp
+mcp::transport::http::StreamableHttpServerOptions options;
+options.enableLegacyHttpSseCompatibility = true;
+options.legacySseEndpointPath = "/events";
+options.legacyPostEndpointPath = "/rpc";
+```
+
+When enabled, `GET /events` sends an initial SSE `endpoint` event containing the POST URI, and server JSON-RPC messages are emitted as SSE `message` events.
+
+Use this only for legacy-client interop and prefer modern Streamable HTTP when possible.
+
 ## Relevant CMake options
 
 - `MCP_SDK_BUILD_EXAMPLES=ON` builds example binaries.
 - `MCP_SDK_ENABLE_TLS=ON` is enabled by default.
+- `MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY=OFF` keeps legacy HTTP+SSE server endpoints disabled by default.
 - `MCP_SDK_BUILD_TESTS=ON` is unrelated to this quickstart and can be disabled for faster local builds.

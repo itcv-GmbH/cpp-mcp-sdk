@@ -10,6 +10,7 @@ option(MCP_SDK_INTEGRATION_TESTS "Build integration tests that use reference SDK
 option(MCP_SDK_ENABLE_TLS "Enable TLS support" ON)
 option(MCP_SDK_ENABLE_AUTH "Enable authorization features" ON)
 option(MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK "Enable legacy HTTP+SSE client fallback by default" OFF)
+option(MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY "Enable legacy HTTP+SSE server compatibility by default" OFF)
 
 if(NOT MCP_SDK_ENABLE_AUTH AND NOT MCP_SDK_ENABLE_TLS)
     message(STATUS "Both MCP_SDK_ENABLE_AUTH and MCP_SDK_ENABLE_TLS are OFF")

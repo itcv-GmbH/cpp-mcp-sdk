@@ -94,6 +94,15 @@ Additional hardening:
 - If the legacy `endpoint` SSE event provides an absolute URL, it must stay same-origin with the configured server URL.
 - HTTP transport runtime does not auto-follow redirects, so fallback cannot loop through unbounded redirect chains.
 
+## Legacy HTTP+SSE server compatibility safeguards
+
+`StreamableHttpServer` optional legacy compatibility (`GET /events` + `POST /rpc`) is disabled by default.
+
+- Build default: `MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY=OFF`
+- Runtime default: `StreamableHttpServerOptions.enableLegacyHttpSseCompatibility = std::nullopt` (inherits build default)
+- Legacy endpoints increase externally reachable HTTP surface and should be enabled only for required interop windows.
+- Origin validation, authorization checks, protocol/version validation, and runtime limits apply to legacy endpoints the same as modern Streamable HTTP endpoints.
+
 ## Runtime limits and backpressure knobs
 
 `mcp::security::RuntimeLimits` (`include/mcp/security/limits.hpp`) defaults:

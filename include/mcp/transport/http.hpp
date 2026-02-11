@@ -507,6 +507,9 @@ struct StreamableHttpServerOptions
   bool allowGetSse = true;
   bool allowDeleteSession = true;
   std::optional<std::uint32_t> defaultSseRetryMilliseconds;
+  std::optional<bool> enableLegacyHttpSseCompatibility;
+  std::string legacyPostEndpointPath = "/rpc";
+  std::string legacySseEndpointPath = "/events";
 };
 
 class StreamableHttpServer

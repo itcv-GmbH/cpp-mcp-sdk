@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -19,6 +20,10 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/http.hpp>
+
+#ifndef MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY
+#  define MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY 0
+#endif
 
 namespace mcp::transport
 {
@@ -45,6 +50,8 @@ static constexpr bool kKeepStreamOpen = false;
 static constexpr std::string_view kBearerScheme = "Bearer";
 static constexpr std::string_view kWwwAuthenticateErrorInsufficientScope = "insufficient_scope";
 static constexpr std::string_view kWellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource";
+static constexpr std::string_view kLegacyDefaultPostEndpointPath = "/rpc";
+static constexpr std::string_view kLegacyDefaultSseEndpointPath = "/events";
 
 enum class BearerTokenParseStatus : std::uint8_t
 {
@@ -103,6 +110,55 @@ static auto pathBasedMetadataPathForEndpoint(std::string_view endpointPath) -> s
   }
 
   return std::string(kWellKnownOAuthProtectedResourcePath) + normalizedEndpointPath;
+}
+
+static auto normalizeLegacyEndpointPath(std::string path, std::string_view fallback) -> std::string
+{
+  path = std::string(detail::trimAsciiWhitespace(path));
+  if (path.empty())
+  {
+    path = std::string(fallback);
+  }
+
+  if (path.front() != '/')
+  {
+    path.insert(path.begin(), '/');
+  }
+
+  if (path.size() > 1 && path.back() == '/')
+  {
+    path.pop_back();
+  }
+
+  return path;
+}
+
+static auto parseLegacyCursorValue(std::string_view value) -> std::optional<std::uint64_t>
+{
+  const std::string_view trimmed = detail::trimAsciiWhitespace(value);
+  if (trimmed.empty())
+  {
+    return std::nullopt;
+  }
+
+  std::uint64_t parsed = 0;
+  for (const char character : trimmed)
+  {
+    if (character < '0' || character > '9')
+    {
+      return std::nullopt;
+    }
+
+    const auto digit = static_cast<std::uint64_t>(character - '0');
+    if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / 10U)
+    {
+      return std::nullopt;
+    }
+
+    parsed = (parsed * 10U) + digit;
+  }
+
+  return parsed;
 }
 
 static auto parseBearerToken(const HeaderList &headers) -> BearerTokenParseResult
@@ -338,6 +394,19 @@ struct StreamState
   std::vector<StreamEventRecord> events;
 };
 
+struct LegacyCompatibilityConfiguration
+{
+  bool enabled = false;
+  std::string postEndpointPath = std::string(kLegacyDefaultPostEndpointPath);
+  std::string sseEndpointPath = std::string(kLegacyDefaultSseEndpointPath);
+};
+
+struct LegacySessionEventBuffer
+{
+  std::uint64_t nextCursor = 1;
+  std::vector<StreamEventRecord> events;
+};
+
 static auto sessionKey(const std::optional<std::string> &sessionId) -> std::string
 {
   return sessionId.has_value() ? *sessionId : std::string();
@@ -351,6 +420,23 @@ static auto makeJsonRpcErrorBody(std::string message) -> std::string
 static auto makeEvent(std::string eventId, std::string data) -> mcp::http::sse::Event
 {
   mcp::http::sse::Event event;
+  event.id = std::move(eventId);
+  event.data = std::move(data);
+  return event;
+}
+
+static auto makeLegacyEndpointEvent(std::string endpointUri) -> mcp::http::sse::Event
+{
+  mcp::http::sse::Event event;
+  event.event = "endpoint";
+  event.data = std::move(endpointUri);
+  return event;
+}
+
+static auto makeLegacyMessageEvent(std::string eventId, std::string data) -> mcp::http::sse::Event
+{
+  mcp::http::sse::Event event;
+  event.event = "message";
   event.id = std::move(eventId);
   event.data = std::move(data);
   return event;
@@ -397,7 +483,33 @@ struct StreamableHttpServer::Impl
   explicit Impl(StreamableHttpServerOptions options)
     : options(std::move(options))
   {
+    initializeLegacyCompatibilityConfiguration();
     initializeAuthorizationConfiguration();
+  }
+
+  auto initializeLegacyCompatibilityConfiguration() -> void
+  {
+    const bool buildDefaultLegacyCompatibility = MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY != 0;
+    legacyCompatibility.enabled = options.enableLegacyHttpSseCompatibility.value_or(buildDefaultLegacyCompatibility);
+
+    legacyCompatibility.postEndpointPath = normalizeLegacyEndpointPath(options.legacyPostEndpointPath, kLegacyDefaultPostEndpointPath);
+    legacyCompatibility.sseEndpointPath = normalizeLegacyEndpointPath(options.legacySseEndpointPath, kLegacyDefaultSseEndpointPath);
+
+    if (!legacyCompatibility.enabled)
+    {
+      return;
+    }
+
+    const std::string streamablePath = normalizeEndpointPath(options.http.endpoint.path);
+    if (legacyCompatibility.postEndpointPath == streamablePath || legacyCompatibility.sseEndpointPath == streamablePath)
+    {
+      throw std::invalid_argument("Legacy HTTP+SSE endpoints must not overlap Streamable HTTP endpoint path");
+    }
+
+    if (legacyCompatibility.postEndpointPath == legacyCompatibility.sseEndpointPath)
+    {
+      throw std::invalid_argument("Legacy HTTP+SSE POST and SSE endpoint paths must be distinct");
+    }
   }
 
   auto initializeAuthorizationConfiguration() -> void
@@ -659,6 +771,100 @@ struct StreamableHttpServer::Impl
     return true;
   }
 
+  auto applyLegacyBufferLimit(LegacySessionEventBuffer &buffer) const -> void
+  {
+    const std::size_t maxBufferedMessages = options.http.limits.maxSseBufferedMessages;
+    if (maxBufferedMessages == 0)
+    {
+      buffer.events.clear();
+      return;
+    }
+
+    if (buffer.events.size() <= maxBufferedMessages)
+    {
+      return;
+    }
+
+    const std::size_t overflow = buffer.events.size() - maxBufferedMessages;
+    buffer.events.erase(buffer.events.begin(), buffer.events.begin() + static_cast<std::ptrdiff_t>(overflow));
+  }
+
+  static auto legacySessionIdForRequest(const ServerRequest &request) -> std::optional<std::string>
+  {
+    const auto sessionId = getHeader(request.headers, kHeaderMcpSessionId);
+    if (!sessionId.has_value())
+    {
+      return std::nullopt;
+    }
+
+    const std::string_view normalizedSessionId = detail::trimAsciiWhitespace(*sessionId);
+    if (!isValidSessionId(normalizedSessionId))
+    {
+      return std::nullopt;
+    }
+
+    return std::string(normalizedSessionId);
+  }
+
+  auto appendLegacyMessage(const std::optional<std::string> &sessionId, const jsonrpc::Message &message) -> bool
+  {
+    const std::string serializedMessage = jsonrpc::serializeMessage(message);
+    if (serializedMessage.size() > options.http.limits.maxMessageSizeBytes)
+    {
+      return false;
+    }
+
+    const std::string key = sessionKey(sessionId);
+    LegacySessionEventBuffer &buffer = legacyEventsBySession[key];
+
+    const std::uint64_t cursor = buffer.nextCursor++;
+    const std::string eventId = std::to_string(cursor);
+    buffer.events.push_back(StreamEventRecord {cursor, makeLegacyMessageEvent(eventId, serializedMessage)});
+    applyLegacyBufferLimit(buffer);
+
+    return !buffer.events.empty();
+  }
+
+  auto appendLegacyMessagesFromResponse(const std::optional<std::string> &sessionId, const ServerResponse &response) -> bool
+  {
+    if (response.statusCode != kStatusOk)
+    {
+      return true;
+    }
+
+    try
+    {
+      if (response.sse.has_value())
+      {
+        for (const auto &event : response.sse->events)
+        {
+          if (event.data.empty())
+          {
+            continue;
+          }
+
+          if (!appendLegacyMessage(sessionId, jsonrpc::parseMessage(event.data)))
+          {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      if (response.body.empty())
+      {
+        return true;
+      }
+
+      return appendLegacyMessage(sessionId, jsonrpc::parseMessage(response.body));
+    }
+    catch (const std::exception &)
+    {
+      return false;
+    }
+  }
+
   auto createStream(std::optional<std::string> sessionId, StreamKind kind) -> StreamState &
   {
     const std::string streamId = "s" + std::to_string(++nextStreamOrdinal);
@@ -678,6 +884,20 @@ struct StreamableHttpServer::Impl
   {
     std::vector<mcp::http::sse::Event> replay;
     for (const StreamEventRecord &record : stream.events)
+    {
+      if (record.cursor > cursor)
+      {
+        replay.push_back(record.event);
+      }
+    }
+
+    return replay;
+  }
+
+  static auto replayLegacyFromCursor(const LegacySessionEventBuffer &buffer, std::uint64_t cursor) -> std::vector<mcp::http::sse::Event>
+  {
+    std::vector<mcp::http::sse::Event> replay;
+    for (const StreamEventRecord &record : buffer.events)
     {
       if (record.cursor > cursor)
       {
@@ -807,6 +1027,30 @@ struct StreamableHttpServer::Impl
     return response;
   }
 
+  static auto legacySseResponse(std::vector<mcp::http::sse::Event> events) -> ServerResponse
+  {
+    ServerResponse response;
+    response.statusCode = kStatusOk;
+    setHeader(response.headers, kHeaderContentType, "text/event-stream");
+    response.body = mcp::http::sse::encodeEvents(events);
+    return response;
+  }
+
+  static auto propagateSessionAndProtocolHeaders(const ServerResponse &source, ServerResponse &target) -> void
+  {
+    const auto sessionHeader = getHeader(source.headers, kHeaderMcpSessionId);
+    if (sessionHeader.has_value())
+    {
+      setHeader(target.headers, kHeaderMcpSessionId, *sessionHeader);
+    }
+
+    const auto protocolHeader = getHeader(source.headers, kHeaderMcpProtocolVersion);
+    if (protocolHeader.has_value())
+    {
+      setHeader(target.headers, kHeaderMcpProtocolVersion, *protocolHeader);
+    }
+  }
+
   static auto rejectValidation(const RequestValidationResult &validation) -> ServerResponse
   {
     if (validation.reason.empty())
@@ -920,6 +1164,73 @@ struct StreamableHttpServer::Impl
     }
 
     return sseResponse(stream, std::move(outboundEvents), stream.terminated ? kTerminateStream : kKeepStreamOpen);
+  }
+
+  auto handleLegacyPost(const ServerRequest &request) -> ServerResponse
+  {
+    ServerResponse modernResponse = handlePost(request);
+    if (modernResponse.statusCode >= kStatusBadRequest)
+    {
+      return modernResponse;
+    }
+
+    const std::optional<std::string> sessionId = legacySessionIdForRequest(request);
+    if (!appendLegacyMessagesFromResponse(sessionId, modernResponse))
+    {
+      return jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("Legacy SSE response exceeds configured message limits."));
+    }
+
+    ServerResponse accepted = statusResponse(kStatusAccepted);
+    propagateSessionAndProtocolHeaders(modernResponse, accepted);
+    return accepted;
+  }
+
+  auto handleLegacyGet(const ServerRequest &request) -> ServerResponse
+  {
+    RequestValidationResult validation = validate(request, RequestKind::kOther, options.http.requireSessionId);
+    if (!validation.accepted)
+    {
+      return rejectValidation(validation);
+    }
+
+    const std::optional<ServerResponse> authorizationRejection = authorizeRequest(request, validation);
+    if (authorizationRejection.has_value())
+    {
+      return *authorizationRejection;
+    }
+
+    std::uint64_t replayCursor = 0;
+    const auto lastEventId = getHeader(request.headers, kHeaderLastEventId);
+    if (lastEventId.has_value())
+    {
+      const auto parsedCursor = parseLegacyCursorValue(*lastEventId);
+      if (!parsedCursor.has_value())
+      {
+        return jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("Invalid Last-Event-ID"));
+      }
+
+      replayCursor = *parsedCursor;
+    }
+
+    LegacySessionEventBuffer &buffer = legacyEventsBySession[sessionKey(validation.sessionId)];
+    if (lastEventId.has_value() && !buffer.events.empty())
+    {
+      const std::uint64_t oldestRetainedCursor = buffer.events.front().cursor;
+      if (replayCursor < oldestRetainedCursor && replayCursor != oldestRetainedCursor - 1)
+      {
+        return jsonResponse(kStatusConflict, makeJsonRpcErrorBody("Last-Event-ID is outside the retained SSE buffer window."));
+      }
+    }
+
+    std::vector<mcp::http::sse::Event> events;
+    if (!lastEventId.has_value())
+    {
+      events.push_back(makeLegacyEndpointEvent(legacyCompatibility.postEndpointPath));
+    }
+
+    std::vector<mcp::http::sse::Event> replay = replayLegacyFromCursor(buffer, replayCursor);
+    events.insert(events.end(), replay.begin(), replay.end());
+    return legacySseResponse(std::move(events));
   }
 
   auto handleGet(const ServerRequest &request) -> ServerResponse
@@ -1040,6 +1351,7 @@ struct StreamableHttpServer::Impl
     }
 
     pendingMessagesBySession.erase(*validation.sessionId);
+    legacyEventsBySession.erase(*validation.sessionId);
     return statusResponse(kStatusNoContent);
   }
 
@@ -1049,6 +1361,19 @@ struct StreamableHttpServer::Impl
     if (protectedResourceMetadataResponse.has_value())
     {
       return *protectedResourceMetadataResponse;
+    }
+
+    if (legacyCompatibility.enabled)
+    {
+      if (request.path == legacyCompatibility.sseEndpointPath)
+      {
+        return request.method == ServerRequestMethod::kGet ? handleLegacyGet(request) : statusResponse(kStatusMethodNotAllowed);
+      }
+
+      if (request.path == legacyCompatibility.postEndpointPath)
+      {
+        return request.method == ServerRequestMethod::kPost ? handleLegacyPost(request) : statusResponse(kStatusMethodNotAllowed);
+      }
     }
 
     if (request.path != options.http.endpoint.path)
@@ -1101,6 +1426,7 @@ struct StreamableHttpServer::Impl
   std::string pathBasedMetadataPath = std::string(kWellKnownOAuthProtectedResourcePath);
   std::string protectedResourceMetadataBody;
   std::string challengeResourceMetadataUrl;
+  LegacyCompatibilityConfiguration legacyCompatibility;
 
   StreamableHttpServerOptions options;
   StreamableRequestHandler requestHandler;
@@ -1112,6 +1438,7 @@ struct StreamableHttpServer::Impl
   std::unordered_map<std::string, StreamState> streams;
   std::vector<std::string> streamOrder;
   std::unordered_map<std::string, std::vector<jsonrpc::Message>> pendingMessagesBySession;
+  std::unordered_map<std::string, LegacySessionEventBuffer> legacyEventsBySession;
   mutable std::mutex mutex;
 };
 

@@ -66,6 +66,14 @@ target_link_libraries(mcp_sdk_test_conformance_legacy_client
         mcp::sdk
 )
 
+add_executable(mcp_sdk_test_conformance_legacy_server conformance/test_legacy_server.cpp)
+
+target_link_libraries(mcp_sdk_test_conformance_legacy_server
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
 add_executable(mcp_sdk_test_conformance_tasks conformance/test_tasks.cpp)
 
 target_link_libraries(mcp_sdk_test_conformance_tasks
@@ -100,6 +108,7 @@ add_test(NAME mcp_sdk_conformance_capabilities_test COMMAND mcp_sdk_test_conform
 add_test(NAME mcp_sdk_conformance_stdio_transport_test COMMAND mcp_sdk_test_conformance_stdio_transport)
 add_test(NAME mcp_sdk_conformance_streamable_http_transport_test COMMAND mcp_sdk_test_conformance_streamable_http_transport)
 add_test(NAME mcp_sdk_conformance_legacy_client_test COMMAND mcp_sdk_test_conformance_legacy_client)
+add_test(NAME mcp_sdk_conformance_legacy_server_test COMMAND mcp_sdk_test_conformance_legacy_server)
 add_test(NAME mcp_sdk_conformance_tasks_test COMMAND mcp_sdk_test_conformance_tasks)
 add_test(NAME mcp_sdk_conformance_authorization_test_authorization COMMAND mcp_sdk_test_conformance_authorization)
 add_test(NAME mcp_sdk_jsonrpc_messages_test COMMAND mcp_sdk_test_jsonrpc_messages)
