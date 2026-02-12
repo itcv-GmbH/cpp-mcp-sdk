@@ -14,6 +14,7 @@
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <jsoncons_ext/jsonschema/common/validator.hpp>
@@ -1649,6 +1650,7 @@ auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, cons
   jsonrpc::RequestContext backgroundContext = context;
   const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
   std::thread(
+    // NOLINTNEXTLINE(bugprone-exception-escape) - Exception handling is intentional
     [taskId = std::move(taskId),
      toolName,
      definitionCopy = std::move(definitionCopy),

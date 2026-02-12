@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <ctime>
+#include <exception>
 #include <iomanip>
 #include <limits>
 #include <memory>
@@ -16,6 +17,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <mcp/errors.hpp>

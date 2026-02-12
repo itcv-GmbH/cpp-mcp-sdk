@@ -1,16 +1,17 @@
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
-#include <stdexcept>
 #include <vector>
 
 #ifdef _WIN32
+#  include <algorithm>
+#  include <limits>
+
 #  include <bcrypt.h>
 #  include <windows.h>
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 #  include <cstdlib>
 #elif defined(__linux__)
+#  include <algorithm>
 #  include <cerrno>
 
 #  include <sys/random.h>

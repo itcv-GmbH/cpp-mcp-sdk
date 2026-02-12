@@ -33,6 +33,7 @@
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
 #include <mcp/transport/transport.hpp>
+#include <mcp/util/tasks.hpp>
 #include <mcp/version.hpp>
 
 namespace mcp
@@ -1477,11 +1478,14 @@ Client::Client(std::shared_ptr<Session> session)
 
         const std::string taskId = createTaskResult.task.taskId;
         const SamplingCreateMessageHandler taskHandler = *samplingCreateMessageHandler;
+        // NOLINTNEXTLINE(performance-unnecessary-copy-initialization) - Copy required for thread capture
         const jsonrpc::RequestContext taskContext = context;
+        // NOLINTNEXTLINE(performance-unnecessary-copy-initialization) - Copy required for thread capture
         const jsonrpc::JsonValue taskParams = effectiveParams;
         const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
 
         std::thread(
+          // NOLINTNEXTLINE(bugprone-exception-escape) - Exception handling is intentional
           [taskReceiver, taskId, taskHandler, taskContext, taskParams]() mutable -> void
           {
             jsonrpc::Response taskResponse;
@@ -1548,6 +1552,7 @@ Client::Client(std::shared_ptr<Session> session)
 
   router_.registerRequestHandler(
     std::string(kElicitationCreateMethod),
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Elicitation protocol handling requires multiple branches
     [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
     {
       const auto negotiatedCapabilities = negotiatedClientCapabilities();
@@ -1602,6 +1607,7 @@ Client::Client(std::shared_ptr<Session> session)
           }
 
           const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
+          // NOLINTNEXTLINE(performance-unnecessary-copy-initialization) - Copy required for thread capture
           const jsonrpc::RequestContext taskContext = context;
           std::weak_ptr<Client> weakClient;
           try
@@ -1614,6 +1620,7 @@ Client::Client(std::shared_ptr<Session> session)
           }
 
           std::thread(
+            // NOLINTNEXTLINE(bugprone-exception-escape) - Exception handling is intentional
             [weakClient, taskReceiver, taskContext, internalRequest = std::move(internalRequest), taskId]() mutable -> void
             {
               jsonrpc::Response taskResponse;
