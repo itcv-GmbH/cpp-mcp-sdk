@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -73,6 +74,7 @@ auto toIso8601Utc(std::chrono::system_clock::time_point timestamp) -> std::strin
 {
   const std::time_t timeValue = std::chrono::system_clock::to_time_t(timestamp);
   std::tm utcTime {};
+  // NOLINTNEXTLINE(readability-use-concise-preprocessor-directives) - _WIN32 is a predefined macro
 #if defined(_WIN32)
   gmtime_s(&utcTime, &timeValue);
 #else
@@ -122,6 +124,7 @@ auto encodeCursorPayload(std::string_view payload) -> std::string
   return encoded;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Base64 decoding inherently has multiple branches
 auto decodeCursorPayload(std::string_view encoded) -> std::optional<std::string>
 {
   if (encoded.empty())
@@ -318,7 +321,7 @@ auto parseTaskIdFromRequestParams(const jsonrpc::Request &request, std::string *
   return params["taskId"].as<std::string>();
 }
 
-auto defaultCancellationError(std::optional<std::string> statusMessage) -> JsonRpcError
+auto defaultCancellationError(const std::optional<std::string> &statusMessage) -> JsonRpcError
 {
   JsonRpcError cancellationError;
   cancellationError.code = static_cast<std::int32_t>(JsonRpcErrorCode::kInvalidRequest);
@@ -399,7 +402,7 @@ auto isTerminalTaskStatus(TaskStatus status) -> bool
   return status == TaskStatus::kCompleted || status == TaskStatus::kFailed || status == TaskStatus::kCancelled;
 }
 
-auto isValidTaskStatusTransition(TaskStatus from, TaskStatus to) -> bool
+auto isValidTaskStatusTransition(TaskStatus from, TaskStatus targetStatus) -> bool
 {
   if (isTerminalTaskStatus(from))
   {
@@ -408,12 +411,12 @@ auto isValidTaskStatusTransition(TaskStatus from, TaskStatus to) -> bool
 
   if (from == TaskStatus::kWorking)
   {
-    return to == TaskStatus::kInputRequired || to == TaskStatus::kCompleted || to == TaskStatus::kFailed || to == TaskStatus::kCancelled;
+    return targetStatus == TaskStatus::kInputRequired || targetStatus == TaskStatus::kCompleted || targetStatus == TaskStatus::kFailed || targetStatus == TaskStatus::kCancelled;
   }
 
   if (from == TaskStatus::kInputRequired)
   {
-    return to == TaskStatus::kWorking || to == TaskStatus::kCompleted || to == TaskStatus::kFailed || to == TaskStatus::kCancelled;
+    return targetStatus == TaskStatus::kWorking || targetStatus == TaskStatus::kCompleted || targetStatus == TaskStatus::kFailed || targetStatus == TaskStatus::kCancelled;
   }
 
   return false;
@@ -584,11 +587,12 @@ struct InMemoryTaskStore::Impl
     std::uint64_t sequence = 0;
   };
 
+  // NOLINTNEXTLINE(readability-convert-member-functions-to-static) - Intentionally non-static for testing/mocking
   auto nowSystem() const -> std::chrono::system_clock::time_point { return std::chrono::system_clock::now(); }
 
-  auto normalizedAuthContextKey(const std::optional<std::string> &authContext) const -> std::string { return authContext.value_or(std::string(detail::kUnboundAuthContextKey)); }
+  static auto normalizedAuthContextKey(const std::optional<std::string> &authContext) -> std::string { return authContext.value_or(std::string(detail::kUnboundAuthContextKey)); }
 
-  auto checkAccess(const StoredTask &storedTask, const std::optional<std::string> &authContext) const -> bool
+  static auto checkAccess(const StoredTask &storedTask, const std::optional<std::string> &authContext) -> bool
   {
     if (!storedTask.authContext.has_value())
     {
@@ -615,11 +619,11 @@ struct InMemoryTaskStore::Impl
 
   auto countActiveTasksForAuthContext(const std::optional<std::string> &authContext) const -> std::size_t
   {
-    const std::string authContextKey = normalizedAuthContextKey(authContext);
+    const std::string authContextKey = Impl::normalizedAuthContextKey(authContext);
     std::size_t activeCount = 0;
     for (const auto &entry : tasks)
     {
-      if (normalizedAuthContextKey(entry.second.authContext) != authContextKey)
+      if (Impl::normalizedAuthContextKey(entry.second.authContext) != authContextKey)
       {
         continue;
       }
@@ -633,9 +637,11 @@ struct InMemoryTaskStore::Impl
     return activeCount;
   }
 
-  auto generateTaskId() -> std::string
+  static auto generateTaskId() -> std::string
   {
     static constexpr std::string_view hexAlphabet = "0123456789abcdef";
+    static constexpr std::uint8_t kHighNibbleMask = 0x0FU;
+    static constexpr std::uint8_t kLowNibbleMask = 0x0FU;
 
     const std::vector<std::uint8_t> randomBytes = security::cryptoRandomBytes(detail::kTaskIdRandomBytes);
 
@@ -643,8 +649,9 @@ struct InMemoryTaskStore::Impl
     taskId.reserve(detail::kTaskIdRandomBytes * 2U);
     for (const std::uint8_t value : randomBytes)
     {
-      taskId.push_back(hexAlphabet[(value >> 4U) & 0x0FU]);
-      taskId.push_back(hexAlphabet[value & 0x0FU]);
+      // NOLINTNEXTLINE(hicpp-signed-bitwise) - Bitwise ops on uint8_t are well-defined
+      taskId.push_back(hexAlphabet[(value >> 4U) & kHighNibbleMask]);
+      taskId.push_back(hexAlphabet[value & kLowNibbleMask]);
     }
 
     return taskId;
@@ -663,10 +670,6 @@ InMemoryTaskStore::InMemoryTaskStore(InMemoryTaskStoreOptions options)
 }
 
 InMemoryTaskStore::~InMemoryTaskStore() = default;
-
-InMemoryTaskStore::InMemoryTaskStore(InMemoryTaskStore &&) noexcept = default;
-
-auto InMemoryTaskStore::operator=(InMemoryTaskStore &&) noexcept -> InMemoryTaskStore & = default;
 
 auto InMemoryTaskStore::createTask(TaskCreateOptions options) -> TaskRecordResult
 {
@@ -694,9 +697,10 @@ auto InMemoryTaskStore::createTask(TaskCreateOptions options) -> TaskRecordResul
   }
 
   std::string taskId;
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) - Required for collision avoidance loop
   do
   {
-    taskId = impl_->generateTaskId();
+    taskId = Impl::generateTaskId();
   } while (impl_->tasks.find(taskId) != impl_->tasks.end());
 
   const auto now = impl_->nowSystem();
@@ -734,7 +738,7 @@ auto InMemoryTaskStore::getTask(std::string_view taskId, const std::optional<std
     return {.error = TaskStoreError::kNotFound};
   }
 
-  if (!impl_->checkAccess(taskIter->second, authContext))
+  if (!Impl::checkAccess(taskIter->second, authContext))
   {
     return {.error = TaskStoreError::kAccessDenied};
   }
@@ -751,7 +755,7 @@ auto InMemoryTaskStore::listTasks(const std::optional<std::string> &authContext)
   orderedTasks.reserve(impl_->tasks.size());
   for (const auto &entry : impl_->tasks)
   {
-    if (!impl_->checkAccess(entry.second, authContext))
+    if (!Impl::checkAccess(entry.second, authContext))
     {
       continue;
     }
@@ -783,7 +787,7 @@ auto InMemoryTaskStore::updateTaskStatus(std::string_view taskId, TaskStatus sta
     return {.error = TaskStoreError::kNotFound};
   }
 
-  if (!impl_->checkAccess(taskIter->second, authContext))
+  if (!Impl::checkAccess(taskIter->second, authContext))
   {
     return {.error = TaskStoreError::kAccessDenied};
   }
@@ -822,7 +826,7 @@ auto InMemoryTaskStore::setTaskResult(std::string_view taskId,
     return {.error = TaskStoreError::kNotFound};
   }
 
-  if (!impl_->checkAccess(taskIter->second, authContext))
+  if (!Impl::checkAccess(taskIter->second, authContext))
   {
     return {.error = TaskStoreError::kAccessDenied};
   }
@@ -863,7 +867,7 @@ auto InMemoryTaskStore::setTaskError(std::string_view taskId,
     return {.error = TaskStoreError::kNotFound};
   }
 
-  if (!impl_->checkAccess(taskIter->second, authContext))
+  if (!Impl::checkAccess(taskIter->second, authContext))
   {
     return {.error = TaskStoreError::kAccessDenied};
   }
@@ -909,7 +913,7 @@ auto InMemoryTaskStore::waitForTaskTerminal(std::string_view taskId, const std::
       return {.error = TaskStoreError::kNotFound};
     }
 
-    if (!impl_->checkAccess(taskIter->second, authContext))
+    if (!Impl::checkAccess(taskIter->second, authContext))
     {
       return {.error = TaskStoreError::kAccessDenied};
     }
@@ -1016,7 +1020,9 @@ auto TaskReceiver::completeTaskWithResponse(const jsonrpc::RequestContext &conte
 
 auto TaskReceiver::cancelTask(const jsonrpc::RequestContext &context,
                               std::string_view taskId,
+                              // NOLINTNEXTLINE(performance-unnecessary-value-param)
                               std::optional<std::string> statusMessage,
+                              // NOLINTNEXTLINE(performance-unnecessary-value-param)
                               std::optional<JsonRpcError> cancellationError) -> TaskRecordResult
 {
   const JsonRpcError effectiveError = cancellationError.value_or(detail::defaultCancellationError(statusMessage));

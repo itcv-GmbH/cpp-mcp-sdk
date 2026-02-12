@@ -165,13 +165,13 @@ inline auto extractCreateTaskResultTaskId(const jsonrpc::Response &response) -> 
   return taskId;
 }
 
-inline auto makeTasksCancelRequest(jsonrpc::RequestId id, std::string taskId) -> jsonrpc::Request
+inline auto makeTasksCancelRequest(jsonrpc::RequestId id, const std::string &taskId) -> jsonrpc::Request
 {
   jsonrpc::Request request;
   request.id = std::move(id);
   request.method = std::string(kTasksCancelMethod);
   request.params = jsonrpc::JsonValue::object();
-  (*request.params)["taskId"] = std::move(taskId);
+  (*request.params)["taskId"] = taskId;
   return request;
 }
 

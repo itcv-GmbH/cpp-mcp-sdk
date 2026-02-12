@@ -18,6 +18,9 @@ namespace mcp::util
 
 inline constexpr std::string_view kRelatedTaskMetadataKey = "io.modelcontextprotocol/related-task";
 
+inline constexpr std::int64_t kDefaultTaskPollIntervalMs = 1000;
+inline constexpr std::size_t kDefaultTaskListPageSize = 50;
+
 enum class TaskStatus : std::uint8_t
 {
   kWorking,
@@ -30,7 +33,7 @@ enum class TaskStatus : std::uint8_t
 auto toString(TaskStatus status) -> std::string_view;
 auto taskStatusFromString(std::string_view status) -> std::optional<TaskStatus>;
 auto isTerminalTaskStatus(TaskStatus status) -> bool;
-auto isValidTaskStatusTransition(TaskStatus from, TaskStatus to) -> bool;
+auto isValidTaskStatusTransition(TaskStatus from, TaskStatus targetStatus) -> bool;
 
 struct Task
 {
@@ -104,6 +107,11 @@ struct InMemoryTaskStoreOptions
 class TaskStore
 {
 public:
+  TaskStore() = default;
+  TaskStore(const TaskStore &) = delete;
+  TaskStore(TaskStore &&) = delete;
+  auto operator=(const TaskStore &) -> TaskStore & = delete;
+  auto operator=(TaskStore &&) -> TaskStore & = delete;
   virtual ~TaskStore() = default;
 
   virtual auto createTask(TaskCreateOptions options) -> TaskRecordResult = 0;
@@ -139,8 +147,8 @@ public:
 
   InMemoryTaskStore(const InMemoryTaskStore &) = delete;
   auto operator=(const InMemoryTaskStore &) -> InMemoryTaskStore & = delete;
-  InMemoryTaskStore(InMemoryTaskStore &&) noexcept;
-  auto operator=(InMemoryTaskStore &&) noexcept -> InMemoryTaskStore &;
+  InMemoryTaskStore(InMemoryTaskStore &&) = delete;
+  auto operator=(InMemoryTaskStore &&) -> InMemoryTaskStore & = delete;
 
   auto createTask(TaskCreateOptions options) -> TaskRecordResult override;
   auto getTask(std::string_view taskId, const std::optional<std::string> &authContext) -> TaskRecordResult override;
@@ -169,8 +177,8 @@ class TaskReceiver
 {
 public:
   explicit TaskReceiver(std::shared_ptr<TaskStore> store = std::make_shared<InMemoryTaskStore>(),
-                        std::optional<std::int64_t> defaultPollInterval = std::int64_t {1000},
-                        std::size_t listPageSize = 50);
+                        std::optional<std::int64_t> defaultPollInterval = kDefaultTaskPollIntervalMs,
+                        std::size_t listPageSize = kDefaultTaskListPageSize);
 
   auto setStatusObserver(TaskStatusObserver observer) -> void;
 
@@ -202,7 +210,7 @@ private:
 
   std::shared_ptr<TaskStore> store_;
   std::optional<std::int64_t> defaultPollInterval_;
-  std::size_t listPageSize_ = 50;
+  std::size_t listPageSize_ = kDefaultTaskListPageSize;
   TaskStatusObserver statusObserver_;
 };
 

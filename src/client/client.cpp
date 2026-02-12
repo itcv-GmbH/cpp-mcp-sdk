@@ -59,6 +59,9 @@ static constexpr std::string_view kTasksStatusNotificationMethod = "notification
 static constexpr std::string_view kRootsListChangedNotificationMethod = "notifications/roots/list_changed";
 static constexpr std::string_view kElicitationCompleteNotificationMethod = "notifications/elicitation/complete";
 
+static constexpr std::uint32_t kDecimalBase = 10U;
+static constexpr std::uint32_t kMaxValidPort = 65535U;
+
 static auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>
 {
   std::promise<jsonrpc::Response> promise;
@@ -570,8 +573,8 @@ static auto isValidPort(std::string_view portText) -> bool
       return false;
     }
 
-    port = (port * 10U) + static_cast<std::uint32_t>(character - '0');
-    if (port > 65535U)
+    port = (port * kDecimalBase) + static_cast<std::uint32_t>(character - '0');
+    if (port > kMaxValidPort)
     {
       return false;
     }
@@ -755,7 +758,7 @@ static auto collectToolUseIds(const jsonrpc::JsonValue &message) -> std::vector<
 
                                              if (!contentBlock.contains("id") || !contentBlock["id"].is_string())
                                              {
-                                               toolUseIds.push_back(std::string {});
+                                               toolUseIds.emplace_back();
                                                return;
                                              }
 
@@ -778,7 +781,7 @@ static auto collectToolResultIds(const jsonrpc::JsonValue &message) -> std::vect
                                            {
                                              if (!contentBlock.contains("toolUseId") || !contentBlock["toolUseId"].is_string())
                                              {
-                                               toolResultIds.push_back(std::string {});
+                                               toolResultIds.emplace_back();
                                                return;
                                              }
 
@@ -788,6 +791,7 @@ static auto collectToolResultIds(const jsonrpc::JsonValue &message) -> std::vect
   return toolResultIds;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex semantic validation required by MCP spec
 static auto hasBalancedToolUseSequence(const jsonrpc::JsonValue &messages) -> bool
 {
   if (!messages.is_array())
@@ -866,6 +870,7 @@ static auto hasBalancedToolUseSequence(const jsonrpc::JsonValue &messages) -> bo
   return true;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex semantic validation required by MCP spec
 static auto validateSamplingRequestSemantics(const Client &client, const jsonrpc::JsonValue &params) -> std::optional<std::string>
 {
   if (!params.is_object())
@@ -1307,6 +1312,7 @@ auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
   return std::make_shared<Client>(std::make_shared<Session>(std::move(options)));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex initialization required by MCP protocol
 Client::Client(std::shared_ptr<Session> session)
   : session_(std::move(session))
 {

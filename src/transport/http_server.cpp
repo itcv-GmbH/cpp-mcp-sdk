@@ -16,6 +16,7 @@
 #include <variant>
 #include <vector>
 
+#include <mcp/auth/oauth_server.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -52,6 +53,7 @@ static constexpr std::string_view kWwwAuthenticateErrorInsufficientScope = "insu
 static constexpr std::string_view kWellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource";
 static constexpr std::string_view kLegacyDefaultPostEndpointPath = "/rpc";
 static constexpr std::string_view kLegacyDefaultSseEndpointPath = "/events";
+static constexpr std::uint64_t kDecimalBase = 10U;
 
 enum class BearerTokenParseStatus : std::uint8_t
 {
@@ -150,12 +152,12 @@ static auto parseLegacyCursorValue(std::string_view value) -> std::optional<std:
     }
 
     const auto digit = static_cast<std::uint64_t>(character - '0');
-    if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / 10U)
+    if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / kDecimalBase)
     {
       return std::nullopt;
     }
 
-    parsed = (parsed * 10U) + digit;
+    parsed = (parsed * kDecimalBase) + digit;
   }
 
   return parsed;
@@ -239,15 +241,10 @@ static auto sanitizeScopeSet(const auth::OAuthScopeSet &scopeSet) -> auth::OAuth
 
 static auto hasRequiredScopes(const auth::OAuthScopeSet &grantedScopes, const auth::OAuthScopeSet &requiredScopes) -> bool
 {
-  for (const std::string &requiredScope : requiredScopes.values)
-  {
-    if (std::find(grantedScopes.values.begin(), grantedScopes.values.end(), requiredScope) == grantedScopes.values.end())
-    {
-      return false;
-    }
-  }
-
-  return true;
+  return std::all_of(requiredScopes.values.begin(),
+                     requiredScopes.values.end(),
+                     [&grantedScopes](const std::string &requiredScope) -> bool
+                     { return std::find(grantedScopes.values.begin(), grantedScopes.values.end(), requiredScope) != grantedScopes.values.end(); });
 }
 
 static auto joinScopeValues(const auth::OAuthScopeSet &scopeSet) -> std::string
@@ -580,7 +577,7 @@ struct StreamableHttpServer::Impl
     challengeResourceMetadataUrl = *metadataOrigin + (usePathBasedMetadataChallenge ? pathBasedMetadataPath : rootMetadataPath);
   }
 
-  auto makeAuthorizationRequestContext(const ServerRequest &request, const std::optional<std::string> &sessionId) const -> auth::OAuthAuthorizationRequestContext
+  static auto makeAuthorizationRequestContext(const ServerRequest &request, const std::optional<std::string> &sessionId) -> auth::OAuthAuthorizationRequestContext
   {
     auth::OAuthAuthorizationRequestContext authorizationRequest;
     authorizationRequest.httpMethod = requestMethodToString(request.method);
@@ -836,6 +833,7 @@ struct StreamableHttpServer::Impl
     {
       if (response.sse.has_value())
       {
+        // NOLINTNEXTLINE(readability-use-anyofallof) - Loop has side effects (appendLegacyMessage)
         for (const auto &event : response.sse->events)
         {
           if (event.data.empty())
@@ -1027,7 +1025,7 @@ struct StreamableHttpServer::Impl
     return response;
   }
 
-  static auto legacySseResponse(std::vector<mcp::http::sse::Event> events) -> ServerResponse
+  static auto legacySseResponse(const std::vector<mcp::http::sse::Event> &events) -> ServerResponse
   {
     ServerResponse response;
     response.statusCode = kStatusOk;
@@ -1230,7 +1228,7 @@ struct StreamableHttpServer::Impl
 
     std::vector<mcp::http::sse::Event> replay = replayLegacyFromCursor(buffer, replayCursor);
     events.insert(events.end(), replay.begin(), replay.end());
-    return legacySseResponse(std::move(events));
+    return legacySseResponse(events);
   }
 
   auto handleGet(const ServerRequest &request) -> ServerResponse

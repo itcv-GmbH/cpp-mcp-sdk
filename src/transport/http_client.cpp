@@ -441,14 +441,14 @@ struct StreamableHttpClient::Impl
     }
   }
 
-  auto applyCommonRequestHeaders(HeaderList &headers, bool isInitializeRequest) -> void
+  auto applyCommonRequestHeaders(HeaderList &headers, bool isInitializeRequest) const -> void
   {
     options.sessionState.replayToRequestHeaders(headers);
     options.protocolVersionState.replayToRequestHeaders(headers, isInitializeRequest);
     applyAuthorizationHeader(headers);
   }
 
-  auto makePostRequest(const jsonrpc::Message &message) -> ServerRequest
+  auto makePostRequest(const jsonrpc::Message &message) const -> ServerRequest
   {
     ServerRequest request;
     request.method = ServerRequestMethod::kPost;
@@ -461,7 +461,7 @@ struct StreamableHttpClient::Impl
     return request;
   }
 
-  auto makeLegacyPostRequest(const jsonrpc::Message &message, std::string_view targetPath) -> ServerRequest
+  auto makeLegacyPostRequest(const jsonrpc::Message &message, std::string_view targetPath) const -> ServerRequest
   {
     ServerRequest request;
     request.method = ServerRequestMethod::kPost;
@@ -474,7 +474,7 @@ struct StreamableHttpClient::Impl
     return request;
   }
 
-  auto makeGetRequest(std::optional<std::string> lastEventId) -> ServerRequest
+  auto makeGetRequest(std::optional<std::string> lastEventId) const -> ServerRequest
   {
     ServerRequest request;
     request.method = ServerRequestMethod::kGet;
@@ -490,7 +490,7 @@ struct StreamableHttpClient::Impl
     return request;
   }
 
-  auto makeLegacyGetRequest(const LegacyState &state) -> ServerRequest
+  auto makeLegacyGetRequest(const LegacyState &state) const -> ServerRequest
   {
     ServerRequest request;
     request.method = ServerRequestMethod::kGet;
@@ -655,7 +655,7 @@ struct StreamableHttpClient::Impl
     return parsed;
   }
 
-  auto appendMessagesAndCaptureResponse(StreamableHttpSendResult &result, std::vector<jsonrpc::Message> messages, const std::optional<jsonrpc::RequestId> &awaitedRequestId) const
+  static auto appendMessagesAndCaptureResponse(StreamableHttpSendResult &result, std::vector<jsonrpc::Message> messages, const std::optional<jsonrpc::RequestId> &awaitedRequestId)
     -> void
   {
     for (auto &message : messages)
@@ -707,7 +707,7 @@ struct StreamableHttpClient::Impl
     return legacyFallbackEnabled && !legacyState.has_value() && isInitializeRequest(message) && isLegacyFallbackStatus(response.statusCode);
   }
 
-  auto resumeSseStreamUntilResponse(const jsonrpc::RequestId &requestId, SseState &streamState) -> StreamableHttpSendResult
+  auto resumeSseStreamUntilResponse(const jsonrpc::RequestId &requestId, SseState &streamState) const -> StreamableHttpSendResult
   {
     StreamableHttpSendResult result;
     const std::uint32_t maxAttempts = options.limits.maxRetryAttempts;
@@ -774,6 +774,7 @@ struct StreamableHttpClient::Impl
     throw std::runtime_error("Exceeded configured legacy SSE retry attempts without receiving a matching JSON-RPC response.");
   }
 
+  // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex legacy protocol handling
   auto sendLegacy(const jsonrpc::Message &message) -> StreamableHttpSendResult
   {
     if (!legacyState.has_value())

@@ -3,14 +3,13 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
-#include <string>
 #include <vector>
 
-#if defined(_WIN32)
+#ifdef _WIN32
 #  include <bcrypt.h>
 #  include <windows.h>
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
-#  include <stdlib.h>
+#  include <cstdlib>
 #elif defined(__linux__)
 #  include <cerrno>
 
@@ -24,6 +23,7 @@ namespace mcp::security
 namespace detail
 {
 
+// NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result)
 constexpr std::size_t kChunkSize = 256U * 1024U;
 
 }  // namespace detail
@@ -36,7 +36,7 @@ auto cryptoRandomBytes(std::size_t length) -> std::vector<std::uint8_t>
     return bytes;
   }
 
-#if defined(_WIN32)
+#ifdef _WIN32
   std::size_t offset = 0;
   constexpr std::size_t kWindowsChunkMax = static_cast<std::size_t>(std::numeric_limits<ULONG>::max());
   while (offset < bytes.size())
@@ -53,6 +53,7 @@ auto cryptoRandomBytes(std::size_t length) -> std::vector<std::uint8_t>
     offset += chunkSize;
   }
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+  // NOLINTNEXTLINE(misc-include-cleaner) - arc4random_buf is from <cstdlib> on BSD/macOS
   arc4random_buf(bytes.data(), bytes.size());
 #elif defined(__linux__)
   std::size_t offset = 0;

@@ -4,12 +4,10 @@
 #include <exception>
 #include <functional>
 #include <future>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -251,6 +249,7 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
   {
     std::future<Response> handlerFuture = handler(context, request);
     std::thread(
+      // NOLINTNEXTLINE(bugprone-exception-escape) - Catch-all handles handler exceptions; memory allocation in string is acceptable
       [this, context, requestId = request.id, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable -> void
       {
         try
@@ -297,7 +296,7 @@ auto Router::dispatchNotification(const RequestContext &context, const Notificat
         const auto inFlightRequestIt = inFlightRequests_.find(requestIdByTokenIt->second);
         if (inFlightRequestIt != inFlightRequests_.end())
         {
-          std::shared_ptr<InFlightRequestState> requestState = inFlightRequestIt->second;
+          const std::shared_ptr<InFlightRequestState> requestState = inFlightRequestIt->second;
           const bool monotonic = !requestState->lastObservedProgress.has_value() || progressUpdate->progress > *requestState->lastObservedProgress;
           if (monotonic)
           {
