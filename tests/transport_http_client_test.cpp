@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <exception>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -116,6 +117,23 @@ auto countPostRequests(const std::vector<mcp_http::ServerRequest> &requests) -> 
   return count;
 }
 
+auto requireExceptionContains(const std::function<void()> &operation, const std::vector<std::string_view> &expectedSnippets) -> void
+{
+  try
+  {
+    operation();
+    FAIL("Expected operation to throw an exception.");
+  }
+  catch (const std::exception &exception)
+  {
+    const std::string message = exception.what();
+    for (const std::string_view snippet : expectedSnippets)
+    {
+      REQUIRE(message.find(snippet) != std::string::npos);
+    }
+  }
+}
+
 }  // namespace
 
 TEST_CASE("HTTP client sends notifications/responses with POST and handles 202", "[transport][http][client]")
@@ -125,10 +143,12 @@ TEST_CASE("HTTP client sends notifications/responses with POST and handles 202",
 
   const auto notificationResult = client.send(makeNotification("notifications/initialized"));
   REQUIRE(notificationResult.statusCode == 202);
+  REQUIRE(notificationResult.messages.empty());
   REQUIRE_FALSE(notificationResult.response.has_value());
 
   const auto responseResult = client.send(makeSuccessResponse(7));
   REQUIRE(responseResult.statusCode == 202);
+  REQUIRE(responseResult.messages.empty());
   REQUIRE_FALSE(responseResult.response.has_value());
 
   const auto requests = fixture.requests();
@@ -140,6 +160,59 @@ TEST_CASE("HTTP client sends notifications/responses with POST and handles 202",
     REQUIRE(mcp_http::getHeader(request.headers, mcp_http::kHeaderAccept) == std::optional<std::string> {"application/json, text/event-stream"});
     REQUIRE(mcp_http::getHeader(request.headers, mcp_http::kHeaderContentType) == std::optional<std::string> {"application/json"});
   }
+}
+
+TEST_CASE("HTTP client throws when JSON body is returned with unsupported content type", "[transport][http][client]")
+{
+  mcp_http::StreamableHttpClient client(makeClientOptions(),
+                                        [](const mcp_http::ServerRequest &) -> mcp_http::ServerResponse
+                                        {
+                                          mcp_http::ServerResponse response;
+                                          response.statusCode = 200;
+                                          mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "text/plain");
+                                          response.body = mcp::jsonrpc::serializeMessage(makeSuccessResponse(11));
+                                          return response;
+                                        });
+
+  requireExceptionContains([&client]() -> void { static_cast<void>(client.send(makeRequest(11, "tools/list"))); }, {"content type", "application/json", "text/event-stream"});
+}
+
+TEST_CASE("HTTP client rejects malformed SSE payloads", "[transport][http][client]")
+{
+  mcp_http::StreamableHttpClient client(makeClientOptions(),
+                                        [](const mcp_http::ServerRequest &) -> mcp_http::ServerResponse
+                                        {
+                                          mcp_http::ServerResponse response;
+                                          response.statusCode = 200;
+                                          mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "text/event-stream");
+                                          response.body = "data: {not-json}\n\n";
+                                          return response;
+                                        });
+
+  requireExceptionContains([&client]() -> void { static_cast<void>(client.send(makeRequest(12, "tools/list"))); }, {"Failed to parse JSON-RPC message"});
+}
+
+TEST_CASE("HTTP client surfaces actionable 404 error for stale session requests", "[transport][http][client]")
+{
+  std::vector<mcp_http::ServerRequest> observedRequests;
+
+  mcp_http::StreamableHttpClientOptions options = makeClientOptions();
+  REQUIRE(options.sessionState.captureFromInitializeResponse("stale-session"));
+
+  mcp_http::StreamableHttpClient client(std::move(options),
+                                        [&observedRequests](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+                                        {
+                                          observedRequests.push_back(request);
+
+                                          mcp_http::ServerResponse response;
+                                          response.statusCode = 404;
+                                          return response;
+                                        });
+
+  requireExceptionContains([&client]() -> void { static_cast<void>(client.send(makeRequest(13, "initialize"))); }, {"404", "expected 200"});
+
+  REQUIRE(observedRequests.size() == 1);
+  REQUIRE(mcp_http::getHeader(observedRequests.front().headers, mcp_http::kHeaderMcpSessionId) == std::optional<std::string> {"stale-session"});
 }
 
 TEST_CASE("HTTP client reconnects with GET Last-Event-ID and respects retry guidance", "[transport][http][client]")
