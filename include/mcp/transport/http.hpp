@@ -606,20 +606,4 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-class HttpTransport final : public Transport
-{
-public:
-  explicit HttpTransport(const HttpServerOptions &options);
-  explicit HttpTransport(const HttpClientOptions &options);
-
-  auto attach(std::weak_ptr<Session> session) -> void override;
-  auto start() -> void override;
-  auto stop() -> void override;
-  auto isRunning() const noexcept -> bool override;
-  auto send(jsonrpc::Message message) -> void override;
-
-private:
-  bool running_ = false;
-};
-
 }  // namespace mcp::transport

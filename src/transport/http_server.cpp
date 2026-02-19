@@ -1527,44 +1527,4 @@ auto StreamableHttpServer::enqueueServerMessage(const jsonrpc::Message &message,
 
 }  // namespace http
 
-HttpTransport::HttpTransport(const HttpServerOptions &options)
-{
-  static_cast<void>(options);
-}
-
-HttpTransport::HttpTransport(const HttpClientOptions &options)
-{
-  static_cast<void>(options);
-}
-
-auto HttpTransport::attach(std::weak_ptr<Session> session) -> void
-{
-  static_cast<void>(session);
-}
-
-auto HttpTransport::start() -> void
-{
-  running_ = true;
-}
-
-auto HttpTransport::stop() -> void
-{
-  running_ = false;
-}
-
-auto HttpTransport::isRunning() const noexcept -> bool
-{
-  return running_;
-}
-
-auto HttpTransport::send(jsonrpc::Message message) -> void
-{
-  static_cast<void>(message);
-
-  if (!running_)
-  {
-    throw std::runtime_error("HttpTransport must be running before send().");
-  }
-}
-
 }  // namespace mcp::transport
