@@ -321,6 +321,11 @@ auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> ClientCa
       {
         tasksCapability.elicitationCreate = requestsJson["elicitation"].contains("create") && requestsJson["elicitation"]["create"].is_object();
       }
+
+      if (requestsJson.contains("tools") && requestsJson["tools"].is_object())
+      {
+        tasksCapability.toolsCall = requestsJson["tools"].contains("call") && requestsJson["tools"]["call"].is_object();
+      }
     }
 
     tasks = tasksCapability;

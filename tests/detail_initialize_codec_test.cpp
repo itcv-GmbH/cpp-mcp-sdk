@@ -176,7 +176,7 @@ TEST_CASE("ClientCapabilities to JSON includes elicitation form mode", "[initial
 TEST_CASE("ClientCapabilities to JSON includes tasks with requests", "[initialize_codec][capabilities]")
 {
   ClientCapabilities caps;
-  caps = {std::nullopt, std::nullopt, std::nullopt, TasksCapability {true, true, true, false, false}, std::nullopt};
+  caps = {std::nullopt, std::nullopt, std::nullopt, TasksCapability {true, true, true, false, true}, std::nullopt};
 
   auto json = detail::clientCapabilitiesToJson(caps);
 
@@ -186,6 +186,20 @@ TEST_CASE("ClientCapabilities to JSON includes tasks with requests", "[initializ
   REQUIRE(json["tasks"].contains("cancel"));
   REQUIRE(json["tasks"].contains("requests"));
   REQUIRE(json["tasks"]["requests"].contains("sampling"));
+  REQUIRE(json["tasks"]["requests"].contains("tools"));
+  REQUIRE(json["tasks"]["requests"]["tools"].contains("call"));
+}
+
+TEST_CASE("ClientCapabilities to JSON includes tasks with all request types", "[initialize_codec][capabilities]")
+{
+  ClientCapabilities caps;
+  caps = {std::nullopt, std::nullopt, std::nullopt, TasksCapability {true, true, true, true, true}, std::nullopt};
+
+  auto json = detail::clientCapabilitiesToJson(caps);
+
+  REQUIRE(json["tasks"]["requests"].contains("sampling"));
+  REQUIRE(json["tasks"]["requests"].contains("elicitation"));
+  REQUIRE(json["tasks"]["requests"].contains("tools"));
 }
 
 TEST_CASE("parseClientCapabilities returns empty for non-object", "[initialize_codec][capabilities]")
@@ -234,6 +248,24 @@ TEST_CASE("parseClientCapabilities parses elicitation with empty object as form 
 
   REQUIRE(caps.elicitation().has_value());
   REQUIRE(caps.elicitation()->form == true);
+}
+
+TEST_CASE("parseClientCapabilities parses tasks with requests.tools.call", "[initialize_codec][capabilities]")
+{
+  jsoncons::json json;
+  json["tasks"] = jsoncons::json::object();
+  json["tasks"]["list"] = jsoncons::json::object();
+  json["tasks"]["cancel"] = jsoncons::json::object();
+  json["tasks"]["requests"] = jsoncons::json::object();
+  json["tasks"]["requests"]["tools"] = jsoncons::json::object();
+  json["tasks"]["requests"]["tools"]["call"] = jsoncons::json::object();
+
+  auto caps = detail::parseClientCapabilities(json);
+
+  REQUIRE(caps.tasks().has_value());
+  REQUIRE(caps.tasks()->list == true);
+  REQUIRE(caps.tasks()->cancel == true);
+  REQUIRE(caps.tasks()->toolsCall == true);
 }
 
 TEST_CASE("parseClientCapabilities preserves experimental objects", "[initialize_codec][capabilities]")
@@ -437,7 +469,7 @@ TEST_CASE("Roundtrip: Implementation encode then parse preserves data", "[initia
 TEST_CASE("Roundtrip: ClientCapabilities encode then parse preserves data", "[initialize_codec][roundtrip]")
 {
   ClientCapabilities original;
-  original = {RootsCapability {true}, SamplingCapability {true, true}, ElicitationCapability {true, false}, TasksCapability {true, true, true, false, false}, std::nullopt};
+  original = {RootsCapability {true}, SamplingCapability {true, true}, ElicitationCapability {true, false}, TasksCapability {true, true, true, false, true}, std::nullopt};
 
   auto json = detail::clientCapabilitiesToJson(original);
   auto parsed = detail::parseClientCapabilities(json);
@@ -454,6 +486,7 @@ TEST_CASE("Roundtrip: ClientCapabilities encode then parse preserves data", "[in
   REQUIRE(parsed.tasks()->list == true);
   REQUIRE(parsed.tasks()->cancel == true);
   REQUIRE(parsed.tasks()->samplingCreateMessage == true);
+  REQUIRE(parsed.tasks()->toolsCall == true);
 }
 
 TEST_CASE("Roundtrip: ServerCapabilities encode then parse preserves data", "[initialize_codec][roundtrip]")

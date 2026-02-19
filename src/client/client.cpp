@@ -23,6 +23,7 @@
 #include <mcp/client/elicitation.hpp>
 #include <mcp/client/roots.hpp>
 #include <mcp/client/sampling.hpp>
+#include <mcp/detail/initialize_codec.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -936,159 +937,6 @@ static auto isFileUri(std::string_view uri) -> bool
 {
   static constexpr std::string_view kFileUriPrefix = "file://";
   return uri.size() >= kFileUriPrefix.size() && uri.compare(0, kFileUriPrefix.size(), kFileUriPrefix) == 0;
-}
-
-static auto iconToJson(const Icon &icon) -> jsonrpc::JsonValue
-{
-  jsonrpc::JsonValue iconJson = jsonrpc::JsonValue::object();
-  iconJson["src"] = icon.src();
-
-  if (icon.mimeType().has_value())
-  {
-    iconJson["mimeType"] = *icon.mimeType();
-  }
-
-  if (icon.sizes().has_value())
-  {
-    iconJson["sizes"] = jsonrpc::JsonValue::array(icon.sizes()->begin(), icon.sizes()->end());
-  }
-
-  if (icon.theme().has_value())
-  {
-    iconJson["theme"] = *icon.theme();
-  }
-
-  return iconJson;
-}
-
-static auto implementationToJson(const Implementation &implementation) -> jsonrpc::JsonValue
-{
-  jsonrpc::JsonValue implementationJson = jsonrpc::JsonValue::object();
-  implementationJson["name"] = implementation.name();
-  implementationJson["version"] = implementation.version();
-
-  if (implementation.title().has_value())
-  {
-    implementationJson["title"] = *implementation.title();
-  }
-
-  if (implementation.description().has_value())
-  {
-    implementationJson["description"] = *implementation.description();
-  }
-
-  if (implementation.websiteUrl().has_value())
-  {
-    implementationJson["websiteUrl"] = *implementation.websiteUrl();
-  }
-
-  if (implementation.icons().has_value())
-  {
-    jsonrpc::JsonValue iconsJson = jsonrpc::JsonValue::array();
-    for (const auto &icon : *implementation.icons())
-    {
-      iconsJson.push_back(iconToJson(icon));
-    }
-
-    implementationJson["icons"] = std::move(iconsJson);
-  }
-
-  return implementationJson;
-}
-
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
-static auto clientCapabilitiesToJson(const ClientCapabilities &capabilities) -> jsonrpc::JsonValue
-{
-  jsonrpc::JsonValue capabilitiesJson = jsonrpc::JsonValue::object();
-
-  if (capabilities.experimental().has_value())
-  {
-    capabilitiesJson["experimental"] = *capabilities.experimental();
-  }
-
-  if (capabilities.roots().has_value())
-  {
-    jsonrpc::JsonValue rootsJson = jsonrpc::JsonValue::object();
-    rootsJson["listChanged"] = capabilities.roots()->listChanged;
-    capabilitiesJson["roots"] = std::move(rootsJson);
-  }
-
-  if (capabilities.sampling().has_value())
-  {
-    jsonrpc::JsonValue samplingJson = jsonrpc::JsonValue::object();
-    if (capabilities.sampling()->context)
-    {
-      samplingJson["context"] = jsonrpc::JsonValue::object();
-    }
-
-    if (capabilities.sampling()->tools)
-    {
-      samplingJson["tools"] = jsonrpc::JsonValue::object();
-    }
-
-    capabilitiesJson["sampling"] = std::move(samplingJson);
-  }
-
-  if (capabilities.elicitation().has_value())
-  {
-    jsonrpc::JsonValue elicitationJson = jsonrpc::JsonValue::object();
-    if (capabilities.elicitation()->form)
-    {
-      elicitationJson["form"] = jsonrpc::JsonValue::object();
-    }
-
-    if (capabilities.elicitation()->url)
-    {
-      elicitationJson["url"] = jsonrpc::JsonValue::object();
-    }
-
-    capabilitiesJson["elicitation"] = std::move(elicitationJson);
-  }
-
-  if (capabilities.tasks().has_value())
-  {
-    jsonrpc::JsonValue tasksJson = jsonrpc::JsonValue::object();
-    if (capabilities.tasks()->list)
-    {
-      tasksJson["list"] = jsonrpc::JsonValue::object();
-    }
-
-    if (capabilities.tasks()->cancel)
-    {
-      tasksJson["cancel"] = jsonrpc::JsonValue::object();
-    }
-
-    if (capabilities.tasks()->samplingCreateMessage || capabilities.tasks()->elicitationCreate || capabilities.tasks()->toolsCall)
-    {
-      jsonrpc::JsonValue requestsJson = jsonrpc::JsonValue::object();
-      if (capabilities.tasks()->samplingCreateMessage)
-      {
-        jsonrpc::JsonValue samplingJson = jsonrpc::JsonValue::object();
-        samplingJson["createMessage"] = jsonrpc::JsonValue::object();
-        requestsJson["sampling"] = std::move(samplingJson);
-      }
-
-      if (capabilities.tasks()->elicitationCreate)
-      {
-        jsonrpc::JsonValue elicitationJson = jsonrpc::JsonValue::object();
-        elicitationJson["create"] = jsonrpc::JsonValue::object();
-        requestsJson["elicitation"] = std::move(elicitationJson);
-      }
-
-      if (capabilities.tasks()->toolsCall)
-      {
-        jsonrpc::JsonValue toolsJson = jsonrpc::JsonValue::object();
-        toolsJson["call"] = jsonrpc::JsonValue::object();
-        requestsJson["tools"] = std::move(toolsJson);
-      }
-
-      tasksJson["requests"] = std::move(requestsJson);
-    }
-
-    capabilitiesJson["tasks"] = std::move(tasksJson);
-  }
-
-  return capabilitiesJson;
 }
 
 class StreamableHttpClientTransport final : public transport::Transport
@@ -2546,7 +2394,7 @@ auto Client::applyInitializeDefaults(jsonrpc::Request &request) const -> void
   {
     if (initializeConfiguration.capabilities.has_value())
     {
-      params["capabilities"] = clientCapabilitiesToJson(*initializeConfiguration.capabilities);
+      params["capabilities"] = detail::clientCapabilitiesToJson(*initializeConfiguration.capabilities);
     }
     else
     {
@@ -2558,12 +2406,12 @@ auto Client::applyInitializeDefaults(jsonrpc::Request &request) const -> void
   {
     if (initializeConfiguration.clientInfo.has_value())
     {
-      params["clientInfo"] = implementationToJson(*initializeConfiguration.clientInfo);
+      params["clientInfo"] = detail::implementationToJson(*initializeConfiguration.clientInfo);
     }
     else
     {
       const Implementation clientInfo {std::string(kDefaultClientName), std::string(kSdkVersion)};
-      params["clientInfo"] = implementationToJson(clientInfo);
+      params["clientInfo"] = detail::implementationToJson(clientInfo);
     }
   }
 
