@@ -181,7 +181,7 @@ TEST_CASE("Server negotiates version when client proposes unsupported version", 
 
 TEST_CASE("Server returns actionable error when it supports no protocol versions", "[lifecycle][server][negotiation]")
 {
-  const std::string requestedVersion = "server has no supported protocol versions";
+  const std::string requestedVersion = "2099-01-01";
 
   SessionOptions options;
   options.supportedProtocolVersions.clear();
@@ -205,8 +205,7 @@ TEST_CASE("Server returns actionable error when it supports no protocol versions
   const auto &errorResp = std::get<jsonrpc::ErrorResponse>(response);
   REQUIRE(errorResp.error.code == -32602);
   REQUIRE(errorResp.error.message.find("Protocol negotiation failed") != std::string::npos);
-  REQUIRE(errorResp.error.message.find(requestedVersion) != std::string::npos);
-  REQUIRE(errorResp.error.message.find("supported protocol versions") != std::string::npos);
+  REQUIRE(errorResp.error.message.find("no supported protocol versions") != std::string::npos);
   REQUIRE(errorResp.error.data.has_value());
   const auto &errorData = *errorResp.error.data;
   REQUIRE(errorData.contains("supported"));
