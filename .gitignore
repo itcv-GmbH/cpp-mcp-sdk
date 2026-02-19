@@ -42,3 +42,11 @@ build**/
 
 # Worktrees
 .worktrees/
+
+# Review report artifacts
+.docs/plans/reviews/report-task-*.md
+
+# Locally-generated TLS certs/keys (keep directory, ignore generated files)
+examples/http_server_auth/tls/*.pem
+examples/http_server_auth/tls/*.csr
+examples/http_server_auth/tls/*.srl
