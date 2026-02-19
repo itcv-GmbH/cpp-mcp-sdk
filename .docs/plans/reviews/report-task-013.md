@@ -1,4 +1,4 @@
-# Review Report: task-013 (/ Add HTTPS (TLS) for HTTP Server + Client (Runtime Config))
+# Review Report: task-013 (/ Expand Unit Tests: Streamable HTTP Common Validation)
 
 ## Status
 **PASS**
@@ -10,8 +10,8 @@
 - [x] No unauthorized architectural changes.
 
 ## Verification Output
-*   **Command Run:** `cmake -S . -B build && cmake --build build && ctest --test-dir build`
-*   **Result:** Pass. Build completed and all tests passed (`12/12`), including `mcp_sdk_transport_http_tls_test` (local TLS handshake success and default-verification failure path).
+*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_transport_http_common_test --output-on-failure`
+*   **Result:** Pass. `mcp_sdk_transport_http_common_test` passed (`1/1`). Determinism spot-check also passed with `--repeat until-fail:20` (20 consecutive passes).
 
 ## Issues Found (If FAIL)
 *   **Critical:** None.
