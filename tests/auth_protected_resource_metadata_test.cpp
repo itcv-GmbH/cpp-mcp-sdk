@@ -69,11 +69,13 @@ auto makeJsonResponse(std::uint16_t statusCode, std::string body) -> mcp::auth::
 
 }  // namespace
 
-TEST_CASE("WWW-Authenticate Bearer parser extracts resource_metadata and scope from multiple headers", "[auth][discovery]")
+TEST_CASE("WWW-Authenticate Bearer parser extracts challenges from mixed multi-header schemes", "[auth][discovery]")
 {
   const std::vector<std::string> headers = {
+    "Digest realm=\"legacy\", nonce=\"abc123\"",
     "Basic realm=\"legacy\"",
-    "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\", scope=\"mcp:read mcp:write\"",
+    "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\", scope=\"  mcp:read mcp:write  \"",
+    "Negotiate token68",
     "Bearer error=\"insufficient_scope\", scope=\"mcp:admin\"",
   };
 
@@ -83,7 +85,7 @@ TEST_CASE("WWW-Authenticate Bearer parser extracts resource_metadata and scope f
   REQUIRE(challenges[0].resourceMetadata.has_value());
   REQUIRE(*challenges[0].resourceMetadata == "https://mcp.example.com/.well-known/oauth-protected-resource/mcp");
   REQUIRE(challenges[0].scope.has_value());
-  REQUIRE(*challenges[0].scope == "mcp:read mcp:write");
+  REQUIRE(*challenges[0].scope == "  mcp:read mcp:write  ");
 
   REQUIRE(challenges[1].error.has_value());
   REQUIRE(*challenges[1].error == "insufficient_scope");
@@ -123,6 +125,60 @@ TEST_CASE("WWW-Authenticate Bearer parser handles multiple quoted challenges in 
 
   REQUIRE(errorDescription.has_value());
   REQUIRE(*errorDescription == "Need \"admin\", token");
+}
+
+TEST_CASE("Scope selection handles commas, spaces, and trimming in challenge scope values", "[auth][discovery]")
+{
+  mcp::auth::ProtectedResourceMetadata metadata;
+
+  SECTION("comma-delimited scope remains a single scope token")
+  {
+    std::vector<mcp::auth::BearerWwwAuthenticateChallenge> challenges(1);
+    challenges[0].scope = "   mcp:read,mcp:write   ";
+
+    const auto selectedScopes = mcp::auth::selectScopesForAuthorization(challenges, metadata);
+    REQUIRE(selectedScopes.has_value());
+    REQUIRE(selectedScopes->values == std::vector<std::string> {"mcp:read,mcp:write"});
+  }
+
+  SECTION("space-delimited scope is split, trimmed, and de-duplicated")
+  {
+    std::vector<mcp::auth::BearerWwwAuthenticateChallenge> challenges(1);
+    challenges[0].scope = "   mcp:read   mcp:write   mcp:read   ";
+
+    const auto selectedScopes = mcp::auth::selectScopesForAuthorization(challenges, metadata);
+    REQUIRE(selectedScopes.has_value());
+    REQUIRE(selectedScopes->values
+            == std::vector<std::string> {
+              "mcp:read",
+              "mcp:write",
+            });
+  }
+}
+
+TEST_CASE("WWW-Authenticate Bearer parser safely ignores malformed quoted parameters", "[auth][discovery]")
+{
+  const std::vector<std::string> headers = {
+    "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\", scope=\"mcp:read",
+    "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\"\\oops, scope=\"mcp:write\"",
+    "Bearer error_description=\"missing trailing escape\\",
+  };
+
+  std::vector<mcp::auth::BearerWwwAuthenticateChallenge> challenges;
+  REQUIRE_NOTHROW(challenges = mcp::auth::parseBearerWwwAuthenticateChallenges(headers));
+  REQUIRE(challenges.size() == 3);
+
+  REQUIRE(challenges[0].resourceMetadata.has_value());
+  REQUIRE(*challenges[0].resourceMetadata == "https://mcp.example.com/.well-known/oauth-protected-resource/mcp");
+  REQUIRE_FALSE(challenges[0].scope.has_value());
+
+  REQUIRE_FALSE(challenges[1].resourceMetadata.has_value());
+  REQUIRE(challenges[1].scope.has_value());
+  REQUIRE(*challenges[1].scope == "mcp:write");
+
+  REQUIRE(challenges[2].parameters.empty());
+  REQUIRE_FALSE(challenges[2].resourceMetadata.has_value());
+  REQUIRE_FALSE(challenges[2].scope.has_value());
 }
 
 TEST_CASE("Discovery uses WWW-Authenticate resource_metadata and RFC8414/OIDC path insertion order", "[auth][discovery]")
@@ -220,6 +276,37 @@ TEST_CASE("Discovery falls back to RFC9728 well-known probing order and uses sco
             "https://mcp.example.com/.well-known/oauth-protected-resource",
             "https://auth.example.com/.well-known/oauth-authorization-server",
           });
+}
+
+TEST_CASE("Discovery rejects non-HTTPS WWW-Authenticate resource_metadata URLs", "[auth][discovery][security]")
+{
+  bool fetchCalled = false;
+
+  mcp::auth::AuthorizationDiscoveryRequest request;
+  request.mcpEndpointUrl = "https://mcp.example.com/mcp";
+  request.wwwAuthenticateHeaderValues = {
+    "Bearer resource_metadata=\"http://mcp.example.com/.well-known/oauth-protected-resource/mcp\", scope=\"mcp:read\"",
+  };
+  request.httpFetcher = [&fetchCalled](const mcp::auth::DiscoveryHttpRequest &) -> mcp::auth::DiscoveryHttpResponse
+  {
+    fetchCalled = true;
+    throw std::runtime_error("HTTP fetch should not be attempted for non-HTTPS metadata URLs");
+  };
+  request.dnsResolver = makeDnsResolver({
+    {"mcp.example.com", {"93.184.216.34"}},
+  });
+
+  try
+  {
+    static_cast<void>(mcp::auth::discoverAuthorizationMetadata(request));
+    FAIL("Expected discovery to reject non-HTTPS resource_metadata URL");
+  }
+  catch (const mcp::auth::AuthorizationDiscoveryError &error)
+  {
+    REQUIRE(error.code() == mcp::auth::AuthorizationDiscoveryErrorCode::kSecurityPolicyViolation);
+  }
+
+  REQUIRE_FALSE(fetchCalled);
 }
 
 TEST_CASE("Discovery blocks redirects that change origin", "[auth][discovery][security]")
