@@ -3,6 +3,7 @@
 #include <future>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -33,6 +34,8 @@ static constexpr std::int64_t kToolsCallUnknownRequestId = 12;
 static constexpr std::int64_t kToolsCallSchemaFailureRequestId = 13;
 static constexpr std::int64_t kToolsCallSuccessRequestId = 14;
 static constexpr std::int64_t kToolsCallOutputValidationRequestId = 15;
+static constexpr std::int64_t kCompletionResourceRequestId = 16;
+static constexpr std::int64_t kToolsCallExecutionFailureRequestId = 17;
 static constexpr std::int64_t kResourcesListPaginationRequestId = 100;
 static constexpr std::int64_t kResourcesReadRequestId = 110;
 static constexpr std::int64_t kResourcesMissingReadRequestId = 120;
@@ -50,6 +53,7 @@ static constexpr std::size_t kToolsListPageSize = 50;
 static constexpr std::size_t kResourcesListPageSize = 50;
 static constexpr std::size_t kResourceTemplatesListPageSize = 50;
 static constexpr std::size_t kPromptsListPageSize = 50;
+static constexpr std::size_t kTasksListPageSize = 50;
 
 static auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::future<mcp::jsonrpc::Response>
 {
@@ -240,16 +244,28 @@ TEST_CASE("Server enforces pre-initialization lifecycle rules", "[server][core][
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(toolsListOperatingResponse));
 }
 
-TEST_CASE("Server completion enforces a maximum of 100 values", "[server][utilities][completion]")
+TEST_CASE("Server completion enforces max values and preserves reference semantics", "[server][utilities][completion]")
 {
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::ServerCapabilities(std::nullopt, mcp::CompletionsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
+
+  std::vector<mcp::CompletionRequest> observedRequests;
   server->setCompletionHandler(
-    [](const mcp::CompletionRequest &) -> mcp::CompletionResult
+    [&observedRequests](const mcp::CompletionRequest &request) -> mcp::CompletionResult
     {
+      observedRequests.push_back(request);
+
       mcp::CompletionResult result;
+      if (request.referenceType == mcp::CompletionReferenceType::kPrompt)
+      {
+        result.values = {"prompt-suggestion"};
+        result.total = 1;
+        result.hasMore = false;
+        return result;
+      }
+
       result.values.reserve(120);
       for (std::size_t index = 0; index < 120; ++index)
       {
@@ -262,26 +278,66 @@ TEST_CASE("Server completion enforces a maximum of 100 values", "[server][utilit
 
   completeInitialization(*server);
 
-  mcp::jsonrpc::Request request;
-  request.id = kCompletionRequestId;
-  request.method = "completion/complete";
-  request.params = mcp::jsonrpc::JsonValue::object();
-  (*request.params)["ref"] = mcp::jsonrpc::JsonValue::object();
-  (*request.params)["ref"]["type"] = "ref/prompt";
-  (*request.params)["ref"]["name"] = "prompt-a";
-  (*request.params)["argument"] = mcp::jsonrpc::JsonValue::object();
-  (*request.params)["argument"]["name"] = "language";
-  (*request.params)["argument"]["value"] = "c";
+  mcp::jsonrpc::Request promptRequest;
+  promptRequest.id = kCompletionRequestId;
+  promptRequest.method = "completion/complete";
+  promptRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*promptRequest.params)["ref"] = mcp::jsonrpc::JsonValue::object();
+  (*promptRequest.params)["ref"]["type"] = "ref/prompt";
+  (*promptRequest.params)["ref"]["name"] = "prompt-a";
+  (*promptRequest.params)["argument"] = mcp::jsonrpc::JsonValue::object();
+  (*promptRequest.params)["argument"]["name"] = "language";
+  (*promptRequest.params)["argument"]["value"] = "c";
+  (*promptRequest.params)["context"] = mcp::jsonrpc::JsonValue::object();
+  (*promptRequest.params)["context"]["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*promptRequest.params)["context"]["arguments"]["framework"] = "catch2";
 
-  const mcp::jsonrpc::Response response = dispatchRequest(*server, request);
-  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
-  const auto &success = std::get<mcp::jsonrpc::SuccessResponse>(response);
-  REQUIRE(success.result.contains("completion"));
-  REQUIRE(success.result["completion"]["values"].size() == 100);
-  REQUIRE(success.result["completion"]["values"][0].as<std::string>() == "value-0");
-  REQUIRE(success.result["completion"]["values"][99].as<std::string>() == "value-99");
-  REQUIRE(success.result["completion"]["total"].as<std::size_t>() == 120);
-  REQUIRE(success.result["completion"]["hasMore"].as<bool>());
+  const mcp::jsonrpc::Response promptResponse = dispatchRequest(*server, promptRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(promptResponse));
+  const auto &promptSuccess = std::get<mcp::jsonrpc::SuccessResponse>(promptResponse);
+  REQUIRE(promptSuccess.result.contains("completion"));
+  REQUIRE(promptSuccess.result["completion"]["values"].size() == 1);
+  REQUIRE(promptSuccess.result["completion"]["values"][0].as<std::string>() == "prompt-suggestion");
+  REQUIRE(promptSuccess.result["completion"]["total"].as<std::size_t>() == 1);
+  REQUIRE_FALSE(promptSuccess.result["completion"]["hasMore"].as<bool>());
+
+  mcp::jsonrpc::Request resourceRequest;
+  resourceRequest.id = kCompletionResourceRequestId;
+  resourceRequest.method = "completion/complete";
+  resourceRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*resourceRequest.params)["ref"] = mcp::jsonrpc::JsonValue::object();
+  (*resourceRequest.params)["ref"]["type"] = "ref/resource";
+  (*resourceRequest.params)["ref"]["uri"] = "resource://template/{id}";
+  (*resourceRequest.params)["argument"] = mcp::jsonrpc::JsonValue::object();
+  (*resourceRequest.params)["argument"]["name"] = "id";
+  (*resourceRequest.params)["argument"]["value"] = "ab";
+
+  const mcp::jsonrpc::Response resourceResponse = dispatchRequest(*server, resourceRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(resourceResponse));
+  const auto &resourceSuccess = std::get<mcp::jsonrpc::SuccessResponse>(resourceResponse);
+  REQUIRE(resourceSuccess.result.contains("completion"));
+  REQUIRE(resourceSuccess.result["completion"]["values"].size() == 100);
+  REQUIRE(resourceSuccess.result["completion"]["values"][0].as<std::string>() == "value-0");
+  REQUIRE(resourceSuccess.result["completion"]["values"][99].as<std::string>() == "value-99");
+  REQUIRE(resourceSuccess.result["completion"]["total"].as<std::size_t>() == 120);
+  REQUIRE(resourceSuccess.result["completion"]["hasMore"].as<bool>());
+
+  REQUIRE(observedRequests.size() == 2);
+  REQUIRE(observedRequests[0].referenceType == mcp::CompletionReferenceType::kPrompt);
+  REQUIRE(observedRequests[0].referenceValue == "prompt-a");
+  REQUIRE(observedRequests[0].argumentName == "language");
+  REQUIRE(observedRequests[0].argumentValue == "c");
+  REQUIRE(observedRequests[0].contextArguments.has_value());
+  if (observedRequests[0].contextArguments.has_value())
+  {
+    REQUIRE((*observedRequests[0].contextArguments)["framework"].as<std::string>() == "catch2");
+  }
+
+  REQUIRE(observedRequests[1].referenceType == mcp::CompletionReferenceType::kResource);
+  REQUIRE(observedRequests[1].referenceValue == "resource://template/{id}");
+  REQUIRE(observedRequests[1].argumentName == "id");
+  REQUIRE(observedRequests[1].argumentValue == "ab");
+  REQUIRE_FALSE(observedRequests[1].contextArguments.has_value());
 }
 
 TEST_CASE("Server pagination cursors are opaque and endpoint-scoped", "[server][utilities][pagination]")
@@ -302,6 +358,23 @@ TEST_CASE("Server pagination cursors are opaque and endpoint-scoped", "[server][
 
   REQUIRE_THROWS_AS(mcp::Server::paginateList(mcp::ListEndpoint::kResources, firstPage.nextCursor, 11, 4), std::invalid_argument);
   REQUIRE_THROWS_AS(mcp::Server::paginateList(mcp::ListEndpoint::kPrompts, std::optional<std::string> {"invalid-cursor"}, 11, 4), std::invalid_argument);
+}
+
+TEST_CASE("Server logging/setLevel is capability-gated", "[server][utilities][logging]")
+{
+  auto server = mcp::Server::create();
+  completeInitialization(*server);
+
+  mcp::jsonrpc::Request setLevel;
+  setLevel.id = kSetLevelRequestId;
+  setLevel.method = "logging/setLevel";
+  setLevel.params = mcp::jsonrpc::JsonValue::object();
+  (*setLevel.params)["level"] = "error";
+
+  const mcp::jsonrpc::Response setLevelResponse = dispatchRequest(*server, setLevel);
+  assertErrorCode(setLevelResponse, mcp::JsonRpcErrorCode::kMethodNotFound);
+
+  REQUIRE_FALSE(server->emitLogMessage(mcp::jsonrpc::RequestContext {}, mcp::LogLevel::kEmergency, mcp::jsonrpc::JsonValue("hidden")));
 }
 
 TEST_CASE("Server logging level updates and filters outbound notifications", "[server][utilities][logging]")
@@ -460,6 +533,8 @@ TEST_CASE("Server tools call differentiates unknown tool errors from input schem
                          return result;
                        });
 
+  server->registerTool(makeToolDefinition("throws"), [](const mcp::ToolCallContext &) -> mcp::CallToolResult { throw std::runtime_error("tool blew up"); });
+
   completeInitialization(*server);
 
   mcp::jsonrpc::Request unknownToolRequest;
@@ -484,6 +559,22 @@ TEST_CASE("Server tools call differentiates unknown tool errors from input schem
   const auto &schemaFailure = std::get<mcp::jsonrpc::SuccessResponse>(schemaFailureResponse);
   REQUIRE(schemaFailure.result["isError"].as<bool>());
   REQUIRE(invocationCount == 0);
+
+  mcp::jsonrpc::Request executionFailureRequest;
+  executionFailureRequest.id = kToolsCallExecutionFailureRequestId;
+  executionFailureRequest.method = "tools/call";
+  executionFailureRequest.params = mcp::jsonrpc::JsonValue::object();
+  (*executionFailureRequest.params)["name"] = "throws";
+  (*executionFailureRequest.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+  (*executionFailureRequest.params)["arguments"]["value"] = "input";
+
+  const mcp::jsonrpc::Response executionFailureResponse = dispatchRequest(*server, executionFailureRequest);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(executionFailureResponse));
+  const auto &executionFailure = std::get<mcp::jsonrpc::SuccessResponse>(executionFailureResponse);
+  REQUIRE(executionFailure.result["isError"].as<bool>());
+  REQUIRE(executionFailure.result["content"].is_array());
+  REQUIRE(executionFailure.result["content"][0]["type"].as<std::string>() == "text");
+  REQUIRE(executionFailure.result["content"][0]["text"].as<std::string>() == "Tool execution failed: tool blew up");
 }
 
 TEST_CASE("Server tools call validates structured output when output schema is declared", "[server][tools][output]")
@@ -1062,6 +1153,7 @@ TEST_CASE("Server resources/read missing URI returns resource not found", "[serv
   assertErrorCode(response, mcp::JsonRpcErrorCode::kResourceNotFound);
 
   const auto &errorResponse = std::get<mcp::jsonrpc::ErrorResponse>(response);
+  REQUIRE(errorResponse.error.code == -32002);
   REQUIRE(errorResponse.error.data.has_value());
   if (errorResponse.error.data.has_value())
   {
@@ -1234,6 +1326,203 @@ TEST_CASE("Server prompts list supports cursor pagination", "[server][prompts][l
 
   const mcp::jsonrpc::Response invalidCursorResponse = dispatchRequest(*server, invalidCursorRequest);
   assertErrorCode(invalidCursorResponse, mcp::JsonRpcErrorCode::kInvalidParams);
+}
+
+TEST_CASE("Server list endpoint cursors are opaque, stable, and endpoint-scoped", "[server][utilities][pagination][list]")
+{
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.list = true;
+  tasksCapability.toolsCall = true;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities =
+    mcp::ServerCapabilities(std::nullopt, std::nullopt, mcp::PromptsCapability {}, mcp::ResourcesCapability {}, mcp::ToolsCapability {}, tasksCapability, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  for (std::size_t index = 0; index < kToolsListPageSize + 3; ++index)
+  {
+    server->registerTool(makeToolDefinition("tool-page-" + std::to_string(index)),
+                         [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                         {
+                           mcp::CallToolResult result;
+                           result.content = mcp::jsonrpc::JsonValue::array();
+                           return result;
+                         });
+  }
+
+  for (std::size_t index = 0; index < kResourcesListPageSize + 3; ++index)
+  {
+    const std::string uri = "resource://page-" + std::to_string(index);
+    server->registerResource(makeResourceDefinition(uri, "resource-page-" + std::to_string(index)),
+                             [uri](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                             {
+                               return {
+                                 mcp::ResourceContent::text(uri, "payload", std::string("text/plain")),
+                               };
+                             });
+  }
+
+  for (std::size_t index = 0; index < kPromptsListPageSize + 3; ++index)
+  {
+    server->registerPrompt(makePromptDefinition("prompt-page-" + std::to_string(index)),
+                           [](const mcp::PromptGetContext &) -> mcp::PromptGetResult
+                           {
+                             mcp::PromptGetResult result;
+                             mcp::PromptMessage message;
+                             message.role = "assistant";
+                             message.content = mcp::jsonrpc::JsonValue::object();
+                             message.content["type"] = "text";
+                             message.content["text"] = "ok";
+                             result.messages.push_back(std::move(message));
+                             return result;
+                           });
+  }
+
+  mcp::ToolDefinition taskTool = makeToolDefinition("task-page-tool");
+  taskTool.execution = mcp::jsonrpc::JsonValue::object();
+  (*taskTool.execution)["taskSupport"] = "optional";
+  server->registerTool(taskTool,
+                       [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
+                         content["type"] = "text";
+                         content["text"] = "task";
+                         result.content.push_back(std::move(content));
+                         return result;
+                       });
+
+  completeInitialization(*server);
+
+  mcp::jsonrpc::RequestContext taskContext;
+  taskContext.authContext = "auth-pagination";
+  for (std::size_t index = 0; index < kTasksListPageSize + 3; ++index)
+  {
+    mcp::jsonrpc::Request taskCall;
+    taskCall.id = static_cast<std::int64_t>(4000 + index);
+    taskCall.method = "tools/call";
+    taskCall.params = mcp::jsonrpc::JsonValue::object();
+    (*taskCall.params)["name"] = "task-page-tool";
+    (*taskCall.params)["arguments"] = mcp::jsonrpc::JsonValue::object();
+    (*taskCall.params)["arguments"]["value"] = "v";
+    (*taskCall.params)["task"] = mcp::jsonrpc::JsonValue::object();
+
+    const mcp::jsonrpc::Response taskCallResponse = dispatchRequest(*server, taskCall, taskContext);
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(taskCallResponse));
+  }
+
+  mcp::jsonrpc::Request toolsList;
+  toolsList.id = std::int64_t {5001};
+  toolsList.method = "tools/list";
+  toolsList.params = mcp::jsonrpc::JsonValue::object();
+  const mcp::jsonrpc::Response toolsListResponse = dispatchRequest(*server, toolsList);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(toolsListResponse));
+  const auto &toolsFirstPage = std::get<mcp::jsonrpc::SuccessResponse>(toolsListResponse);
+  REQUIRE(toolsFirstPage.result["tools"].size() == kToolsListPageSize);
+  REQUIRE(toolsFirstPage.result.contains("nextCursor"));
+  const std::string toolsCursor = toolsFirstPage.result["nextCursor"].as<std::string>();
+  REQUIRE(toolsCursor != std::to_string(kToolsListPageSize));
+
+  toolsList.id = std::int64_t {5006};
+  const mcp::jsonrpc::Response toolsListStableResponse = dispatchRequest(*server, toolsList);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(toolsListStableResponse));
+  const auto &toolsStablePage = std::get<mcp::jsonrpc::SuccessResponse>(toolsListStableResponse);
+  REQUIRE(toolsStablePage.result["nextCursor"].as<std::string>() == toolsCursor);
+
+  mcp::jsonrpc::Request resourcesList;
+  resourcesList.id = std::int64_t {5002};
+  resourcesList.method = "resources/list";
+  resourcesList.params = mcp::jsonrpc::JsonValue::object();
+  const mcp::jsonrpc::Response resourcesListResponse = dispatchRequest(*server, resourcesList);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(resourcesListResponse));
+  const auto &resourcesFirstPage = std::get<mcp::jsonrpc::SuccessResponse>(resourcesListResponse);
+  REQUIRE(resourcesFirstPage.result["resources"].size() == kResourcesListPageSize);
+  REQUIRE(resourcesFirstPage.result.contains("nextCursor"));
+  const std::string resourcesCursor = resourcesFirstPage.result["nextCursor"].as<std::string>();
+  REQUIRE(resourcesCursor != std::to_string(kResourcesListPageSize));
+
+  resourcesList.id = std::int64_t {5007};
+  const mcp::jsonrpc::Response resourcesListStableResponse = dispatchRequest(*server, resourcesList);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(resourcesListStableResponse));
+  const auto &resourcesStablePage = std::get<mcp::jsonrpc::SuccessResponse>(resourcesListStableResponse);
+  REQUIRE(resourcesStablePage.result["nextCursor"].as<std::string>() == resourcesCursor);
+
+  mcp::jsonrpc::Request promptsList;
+  promptsList.id = std::int64_t {5003};
+  promptsList.method = "prompts/list";
+  promptsList.params = mcp::jsonrpc::JsonValue::object();
+  const mcp::jsonrpc::Response promptsListResponse = dispatchRequest(*server, promptsList);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(promptsListResponse));
+  const auto &promptsFirstPage = std::get<mcp::jsonrpc::SuccessResponse>(promptsListResponse);
+  REQUIRE(promptsFirstPage.result["prompts"].size() == kPromptsListPageSize);
+  REQUIRE(promptsFirstPage.result.contains("nextCursor"));
+  const std::string promptsCursor = promptsFirstPage.result["nextCursor"].as<std::string>();
+  REQUIRE(promptsCursor != std::to_string(kPromptsListPageSize));
+
+  promptsList.id = std::int64_t {5008};
+  const mcp::jsonrpc::Response promptsListStableResponse = dispatchRequest(*server, promptsList);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(promptsListStableResponse));
+  const auto &promptsStablePage = std::get<mcp::jsonrpc::SuccessResponse>(promptsListStableResponse);
+  REQUIRE(promptsStablePage.result["nextCursor"].as<std::string>() == promptsCursor);
+
+  mcp::jsonrpc::Request tasksList;
+  tasksList.id = std::int64_t {5004};
+  tasksList.method = "tasks/list";
+  tasksList.params = mcp::jsonrpc::JsonValue::object();
+  const mcp::jsonrpc::Response tasksListResponse = dispatchRequest(*server, tasksList, taskContext);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(tasksListResponse));
+  const auto &tasksFirstPage = std::get<mcp::jsonrpc::SuccessResponse>(tasksListResponse);
+  REQUIRE(tasksFirstPage.result["tasks"].size() == kTasksListPageSize);
+  REQUIRE(tasksFirstPage.result.contains("nextCursor"));
+  const std::string tasksCursor = tasksFirstPage.result["nextCursor"].as<std::string>();
+  REQUIRE(tasksCursor != std::to_string(kTasksListPageSize));
+
+  tasksList.id = std::int64_t {5009};
+  const mcp::jsonrpc::Response tasksListStableResponse = dispatchRequest(*server, tasksList, taskContext);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(tasksListStableResponse));
+  const auto &tasksStablePage = std::get<mcp::jsonrpc::SuccessResponse>(tasksListStableResponse);
+  REQUIRE(tasksStablePage.result["nextCursor"].as<std::string>() == tasksCursor);
+
+  mcp::jsonrpc::Request tasksSecondPage;
+  tasksSecondPage.id = std::int64_t {5005};
+  tasksSecondPage.method = "tasks/list";
+  tasksSecondPage.params = mcp::jsonrpc::JsonValue::object();
+  (*tasksSecondPage.params)["cursor"] = tasksCursor;
+  const mcp::jsonrpc::Response tasksSecondPageResponse = dispatchRequest(*server, tasksSecondPage, taskContext);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(tasksSecondPageResponse));
+  const auto &tasksPageTwo = std::get<mcp::jsonrpc::SuccessResponse>(tasksSecondPageResponse);
+  REQUIRE(tasksPageTwo.result["tasks"].size() == 3);
+  REQUIRE_FALSE(tasksPageTwo.result.contains("nextCursor"));
+
+  mcp::jsonrpc::Request toolsWithTaskCursor;
+  toolsWithTaskCursor.id = std::int64_t {5101};
+  toolsWithTaskCursor.method = "tools/list";
+  toolsWithTaskCursor.params = mcp::jsonrpc::JsonValue::object();
+  (*toolsWithTaskCursor.params)["cursor"] = tasksCursor;
+  assertErrorCode(dispatchRequest(*server, toolsWithTaskCursor), mcp::JsonRpcErrorCode::kInvalidParams);
+
+  mcp::jsonrpc::Request resourcesWithToolsCursor;
+  resourcesWithToolsCursor.id = std::int64_t {5102};
+  resourcesWithToolsCursor.method = "resources/list";
+  resourcesWithToolsCursor.params = mcp::jsonrpc::JsonValue::object();
+  (*resourcesWithToolsCursor.params)["cursor"] = toolsCursor;
+  assertErrorCode(dispatchRequest(*server, resourcesWithToolsCursor), mcp::JsonRpcErrorCode::kInvalidParams);
+
+  mcp::jsonrpc::Request promptsWithResourcesCursor;
+  promptsWithResourcesCursor.id = std::int64_t {5103};
+  promptsWithResourcesCursor.method = "prompts/list";
+  promptsWithResourcesCursor.params = mcp::jsonrpc::JsonValue::object();
+  (*promptsWithResourcesCursor.params)["cursor"] = resourcesCursor;
+  assertErrorCode(dispatchRequest(*server, promptsWithResourcesCursor), mcp::JsonRpcErrorCode::kInvalidParams);
+
+  mcp::jsonrpc::Request tasksWithPromptsCursor;
+  tasksWithPromptsCursor.id = std::int64_t {5104};
+  tasksWithPromptsCursor.method = "tasks/list";
+  tasksWithPromptsCursor.params = mcp::jsonrpc::JsonValue::object();
+  (*tasksWithPromptsCursor.params)["cursor"] = promptsCursor;
+  assertErrorCode(dispatchRequest(*server, tasksWithPromptsCursor, taskContext), mcp::JsonRpcErrorCode::kInvalidParams);
 }
 
 TEST_CASE("Server prompts/get validates required and unknown arguments", "[server][prompts][get]")
