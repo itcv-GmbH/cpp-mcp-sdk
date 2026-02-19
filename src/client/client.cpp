@@ -2180,8 +2180,17 @@ auto Client::stop() -> void
 
   if (asyncWorkPool)
   {
+    const bool calledFromAsyncWorker = asyncWorkPool->get_executor().running_in_this_thread();
     asyncWorkPool->stop();
-    asyncWorkPool->join();
+
+    if (calledFromAsyncWorker)
+    {
+      std::thread([ownedAsyncPool = std::move(asyncWorkPool)]() mutable -> void { ownedAsyncPool->join(); }).detach();
+    }
+    else
+    {
+      asyncWorkPool->join();
+    }
   }
 
   if (transport && transport->isRunning())

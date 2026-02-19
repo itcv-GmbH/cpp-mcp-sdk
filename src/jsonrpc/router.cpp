@@ -177,10 +177,13 @@ Router::~Router() noexcept
       if (requestState->timeoutTimer)
       {
         requestState->timeoutTimer->cancel();
+        requestState->timeoutTimer.reset();
       }
 
       detail::setPromiseValueNoThrow(requestState->promise, detail::makeInternalErrorResponse(requestState->request.id, "Router shutdown before response was received."));
     }
+
+    inFlightRequests.clear();
 
     for (auto &promiseEntry : pendingInboundPromises)
     {
@@ -481,6 +484,8 @@ auto Router::handleRequestTimeout(const RequestId &requestId) -> void
     return;
   }
 
+  timedOutRequest->timeoutTimer.reset();
+
   detail::setPromiseValueNoThrow(timedOutRequest->promise, detail::makeInternalErrorResponse(requestId, "Request timed out."));
 
   if (!timedOutRequest->cancelOnTimeout || timedOutRequest->request.method == "initialize")
@@ -540,6 +545,7 @@ auto Router::sendRequest(const RequestContext &context, Request request, Outboun
     if (failedRequest->timeoutTimer)
     {
       failedRequest->timeoutTimer->cancel();
+      failedRequest->timeoutTimer.reset();
     }
 
     detail::setPromiseValueNoThrow(failedRequest->promise, detail::makeInternalErrorResponse(failedRequest->request.id, "Failed to send outbound request."));
@@ -596,6 +602,7 @@ auto Router::dispatchResponse(const RequestContext &context, const Response &res
   if (inFlightRequest->timeoutTimer)
   {
     inFlightRequest->timeoutTimer->cancel();
+    inFlightRequest->timeoutTimer.reset();
   }
 
   detail::setPromiseValueNoThrow(inFlightRequest->promise, response);
