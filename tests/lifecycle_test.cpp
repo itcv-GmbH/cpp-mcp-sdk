@@ -205,7 +205,8 @@ TEST_CASE("Server returns actionable error when it supports no protocol versions
   const auto &errorResp = std::get<jsonrpc::ErrorResponse>(response);
   REQUIRE(errorResp.error.code == -32602);
   REQUIRE(errorResp.error.message.find("Protocol negotiation failed") != std::string::npos);
-  REQUIRE(errorResp.error.message.find("no supported protocol versions") != std::string::npos);
+  REQUIRE(errorResp.error.message.find("requested '" + requestedVersion + "'") != std::string::npos);
+  REQUIRE(errorResp.error.message.find("supported: []") != std::string::npos);
   REQUIRE(errorResp.error.data.has_value());
   const auto &errorData = *errorResp.error.data;
   REQUIRE(errorData.contains("supported"));

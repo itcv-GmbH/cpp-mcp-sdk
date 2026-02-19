@@ -79,6 +79,16 @@ static auto joinedVersions(const std::vector<std::string> &versions) -> std::str
   return stream.str();
 }
 
+static auto formatVersionList(const std::vector<std::string> &versions) -> std::string
+{
+  return "[" + joinedVersions(versions) + "]";
+}
+
+static auto negotiationFailureMessage(std::string_view requested, const std::vector<std::string> &supported) -> std::string
+{
+  return "Protocol negotiation failed: requested '" + std::string(requested) + "', supported: " + formatVersionList(supported);
+}
+
 static auto parseIcon(const jsoncons::json &iconJson) -> std::optional<Icon>
 {
   if (!iconJson.is_object() || !iconJson.contains("src") || !iconJson["src"].is_string())
@@ -935,7 +945,7 @@ auto Session::handleInitializeRequest(const jsonrpc::Request &request) -> jsonrp
   if (!negotiatedVersion)
   {
     return jsonrpc::makeErrorResponse(jsonrpc::makeInvalidParamsError(negotiationFailureData(clientProposedVersion, options_.supportedProtocolVersions),
-                                                                      "Protocol negotiation failed: server has no supported protocol versions"),
+                                                                      negotiationFailureMessage(clientProposedVersion, options_.supportedProtocolVersions)),
                                       request.id);
   }
 
