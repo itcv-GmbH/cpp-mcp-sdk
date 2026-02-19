@@ -22,4 +22,4 @@ Validate interoperability against official SDKs to reduce ecosystem integration 
 
 ## Verification
 * `cmake -S . -B build -DMCP_SDK_INTEGRATION_TESTS=ON`
-* `ctest --test-dir build -R integration`
+* `ctest --test-dir build -R integration_reference`
