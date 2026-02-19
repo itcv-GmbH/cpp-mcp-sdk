@@ -34,4 +34,4 @@
 - [x] `task-021`: Expand Unit Tests: Server Facade (Depends on: `task-001`)
 
 ## Phase 7: CI / Variant Builds (Optional follow-up)
-- [ ] `task-022`: CI: Add Feature-Matrix Builds + Test Selection (Depends on: `task-006`, `task-013`, `task-017`, `task-019`)
+- [x] `task-022`: CI: Add Feature-Matrix Builds + Test Selection (Depends on: `task-006`, `task-013`, `task-017`, `task-019`)
