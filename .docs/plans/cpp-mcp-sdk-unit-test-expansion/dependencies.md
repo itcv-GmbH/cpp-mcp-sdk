@@ -17,12 +17,12 @@
 - [x] `task-010`: Expand Unit Tests: Tasks Store + Receiver (Depends on: `task-001`)
 
 ## Phase 4: Transport Tests (Parallel; blocked by Phase 1)
-- [ ] `task-011`: Expand Unit Tests: Stdio Transport (Depends on: `task-001`)
-- [ ] `task-012`: Expand Unit Tests: Stdio Subprocess Client (Depends on: `task-001`)
-- [ ] `task-013`: Expand Unit Tests: Streamable HTTP Common Validation (Depends on: `task-001`)
-- [ ] `task-014`: Expand Unit Tests: Streamable HTTP Client (Depends on: `task-001`)
-- [ ] `task-015`: Expand Unit Tests: Streamable HTTP Server (Depends on: `task-001`)
-- [ ] `task-016`: Expand Unit Tests: HTTP Runtime (URL/TLS error paths) (Depends on: `task-001`)
+- [x] `task-011`: Expand Unit Tests: Stdio Transport (Depends on: `task-001`)
+- [x] `task-012`: Expand Unit Tests: Stdio Subprocess Client (Depends on: `task-001`)
+- [x] `task-013`: Expand Unit Tests: Streamable HTTP Common Validation (Depends on: `task-001`)
+- [x] `task-014`: Expand Unit Tests: Streamable HTTP Client (Depends on: `task-001`)
+- [x] `task-015`: Expand Unit Tests: Streamable HTTP Server (Depends on: `task-001`)
+- [x] `task-016`: Expand Unit Tests: HTTP Runtime (URL/TLS error paths) (Depends on: `task-001`)
 
 ## Phase 5: Authorization Tests (Parallel; blocked by Phase 1)
 - [ ] `task-017`: Expand Unit Tests: Protected Resource Metadata + Challenge Parsing (Depends on: `task-001`)
