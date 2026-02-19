@@ -25,9 +25,9 @@
 - [x] `task-016`: Expand Unit Tests: HTTP Runtime (URL/TLS error paths) (Depends on: `task-001`)
 
 ## Phase 5: Authorization Tests (Parallel; blocked by Phase 1)
-- [ ] `task-017`: Expand Unit Tests: Protected Resource Metadata + Challenge Parsing (Depends on: `task-001`)
-- [ ] `task-018`: Expand Unit Tests: Client Registration (Depends on: `task-001`)
-- [ ] `task-019`: Expand Unit Tests: OAuth Client (PKCE/Step-up/Redirect policy) (Depends on: `task-001`)
+- [x] `task-017`: Expand Unit Tests: Protected Resource Metadata + Challenge Parsing (Depends on: `task-001`)
+- [x] `task-018`: Expand Unit Tests: Client Registration (Depends on: `task-001`)
+- [x] `task-019`: Expand Unit Tests: OAuth Client (PKCE/Step-up/Redirect policy) (Depends on: `task-001`)
 
 ## Phase 6: Facade-Level Edge Tests (Parallel; blocked by Phase 1)
 - [ ] `task-020`: Expand Unit Tests: Client Facade (Depends on: `task-001`)
