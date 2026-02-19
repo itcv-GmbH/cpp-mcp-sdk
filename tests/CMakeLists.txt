@@ -396,6 +396,16 @@ target_link_libraries(mcp_sdk_test_detail_ascii
 
 add_test(NAME mcp_sdk_detail_ascii_test COMMAND mcp_sdk_test_detail_ascii)
 
+add_executable(mcp_sdk_test_detail_base64url detail_base64url_test.cpp)
+
+target_link_libraries(mcp_sdk_test_detail_base64url
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_detail_base64url_test COMMAND mcp_sdk_test_detail_base64url)
+
 if(MCP_SDK_INTEGRATION_TESTS)
     add_subdirectory(integration)
 endif()
