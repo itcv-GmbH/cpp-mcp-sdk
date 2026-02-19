@@ -1,10 +1,13 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <future>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
@@ -561,16 +564,25 @@ TEST_CASE("Streamable HTTP avoids deadlock when handler enqueues server message"
 {
   using namespace std::chrono_literals;
 
-  mcp_http::StreamableHttpServer server;
-  std::atomic<int> enqueueCalls = 0;
+  struct DeadlockProbeState
+  {
+    std::promise<void> completed;
+    std::atomic<int> enqueueCalls = 0;
+    std::atomic<bool> enqueueSucceeded = false;
+    std::exception_ptr workerException;
+    std::optional<mcp_http::ServerResponse> response;
+  };
 
-  server.setRequestHandler(
-    [&server, &enqueueCalls](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> mcp_http::StreamableRequestResult
+  auto server = std::make_shared<mcp_http::StreamableHttpServer>();
+  auto state = std::make_shared<DeadlockProbeState>();
+
+  server->setRequestHandler(
+    [server, state](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> mcp_http::StreamableRequestResult
     {
       mcp::jsonrpc::Notification queuedFromHandler;
       queuedFromHandler.method = "notifications/queued-from-handler";
-      enqueueCalls.fetch_add(1);
-      static_cast<void>(server.enqueueServerMessage(mcp::jsonrpc::Message {queuedFromHandler}));
+      state->enqueueCalls.fetch_add(1);
+      state->enqueueSucceeded.store(server->enqueueServerMessage(mcp::jsonrpc::Message {queuedFromHandler}));
 
       mcp_http::StreamableRequestResult result;
       result.useSse = true;
@@ -587,16 +599,39 @@ TEST_CASE("Streamable HTTP avoids deadlock when handler enqueues server message"
       return result;
     });
 
-  std::future<mcp_http::ServerResponse> responseFuture =
-    std::async(std::launch::async, [&server]() -> mcp_http::ServerResponse { return server.handleRequest(makeServerPostRequest(makeJsonRpcRequestBody(17, "ping"))); });
+  std::future<void> completionFuture = state->completed.get_future();
+  std::thread worker(
+    [server, state]() -> void
+    {
+      try
+      {
+        state->response = server->handleRequest(makeServerPostRequest(makeJsonRpcRequestBody(17, "ping")));
+      }
+      catch (...)
+      {
+        state->workerException = std::current_exception();
+      }
 
-  REQUIRE(responseFuture.wait_for(500ms) == std::future_status::ready);
+      state->completed.set_value();
+    });
 
-  const mcp_http::ServerResponse postResponse = responseFuture.get();
+  if (completionFuture.wait_for(500ms) != std::future_status::ready)
+  {
+    worker.detach();
+    FAIL("handleRequest did not complete before timeout; possible deadlock in handler reentry path");
+  }
+
+  worker.join();
+
+  REQUIRE_FALSE(static_cast<bool>(state->workerException));
+  REQUIRE(state->response.has_value());
+  REQUIRE(state->enqueueCalls.load() == 1);
+  REQUIRE(state->enqueueSucceeded.load());
+
+  const mcp_http::ServerResponse &postResponse = *state->response;
   REQUIRE(postResponse.statusCode == 200);
   REQUIRE(postResponse.sse.has_value());
   REQUIRE(postResponse.sse->events.size() == 3);
-  REQUIRE(enqueueCalls.load() == 1);
 
   const mcp::jsonrpc::Message preResponseMessage = mcp::jsonrpc::parseMessage(postResponse.sse->events[1].data);
   REQUIRE(std::holds_alternative<mcp::jsonrpc::Notification>(preResponseMessage));
