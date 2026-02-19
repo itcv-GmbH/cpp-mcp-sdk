@@ -1,4 +1,4 @@
-# Review Report: task-019 (/ Client Core (connect, initialize/initialized, base RPC calls))
+# Review Report: task-019 (/ Expand Unit Tests: OAuth Client (PKCE/Step-up/Redirect policy))
 
 ## Status
 **PASS**
@@ -10,12 +10,8 @@
 - [x] No unauthorized architectural changes.
 
 ## Verification Output
-*   **Command Run:** `cmake --build build && ctest --test-dir build`
-*   **Result:** Pass (14/14 tests passed).
-*   **Command Run:** `./build/tests/mcp_sdk_test_client "Client recovers from local initialize send failure and allows retry"`
-*   **Result:** Pass (12 assertions): initialize local send failure returns error, lifecycle resets to `kCreated`, retry succeeds, and `notifications/initialized` is sent.
-*   **Command Run:** `./build/tests/mcp_sdk_test_client "Client sendRequestAsync is non-blocking and invokes callback asynchronously"`
-*   **Result:** Pass (9 assertions): `sendRequestAsync` returns without waiting for response and callback runs asynchronously.
+*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_auth_oauth_client_test_authorization --output-on-failure`
+*   **Result:** Pass (1/1 test passed: `mcp_sdk_auth_oauth_client_test_authorization`).
 
 ## Issues Found (If FAIL)
 *   **Critical:** None.
