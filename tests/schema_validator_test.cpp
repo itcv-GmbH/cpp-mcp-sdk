@@ -137,4 +137,142 @@ TEST_CASE("JSON-RPC parser applies MCP method-specific schema validation", "[sch
   }
 }
 
+TEST_CASE("Schema validator metadata contains required fields", "[schema][validator][metadata]")
+{
+  const mcp::schema::Validator validator = mcp::schema::Validator::loadPinnedMcpSchema();
+  const mcp::schema::PinnedSchemaMetadata &metadata = validator.metadata();
+
+  REQUIRE_FALSE(metadata.localPath.empty());
+  REQUIRE_FALSE(metadata.sha256.empty());
+  REQUIRE_FALSE(metadata.upstreamSchemaUrl.empty());
+  REQUIRE_FALSE(metadata.upstreamRef.empty());
+}
+
+TEST_CASE("validateInstance succeeds for known definition with valid instance", "[schema][validator]")
+{
+  const mcp::schema::Validator validator = mcp::schema::Validator::loadPinnedMcpSchema();
+  const mcp::schema::JsonValue validRequest = mcp::schema::JsonValue::parse(R"({
+    "jsonrpc":"2.0",
+    "id":1,
+    "method":"test",
+    "params":{}
+  })");
+
+  const mcp::schema::ValidationResult result = validator.validateInstance(validRequest, "JSONRPCRequest");
+  REQUIRE(result.valid);
+  REQUIRE(result.diagnostics.empty());
+}
+
+TEST_CASE("validateInstance fails for unknown definition with diagnostic", "[schema][validator]")
+{
+  const mcp::schema::Validator validator = mcp::schema::Validator::loadPinnedMcpSchema();
+  const mcp::schema::JsonValue validRequest = mcp::schema::JsonValue::parse(R"({
+    "jsonrpc":"2.0",
+    "id":1,
+    "method":"test"
+  })");
+
+  const mcp::schema::ValidationResult result = validator.validateInstance(validRequest, "UnknownDefinitionXYZ");
+  REQUIRE_FALSE(result.valid);
+  REQUIRE_FALSE(result.diagnostics.empty());
+  REQUIRE(test_detail::containsText(result.diagnostics.front().message, "UnknownDefinitionXYZ"));
+}
+
+TEST_CASE("validateMcpMethodMessage handles unknown methods gracefully", "[schema][validator]")
+{
+  const mcp::schema::Validator validator = mcp::schema::Validator::loadPinnedMcpSchema();
+
+  SECTION("Unknown method with id validates as generic JSONRPCRequest")
+  {
+    const mcp::schema::JsonValue unknownMethodRequest = mcp::schema::JsonValue::parse(R"({
+      "jsonrpc":"2.0",
+      "id":1,
+      "method":"unknown/method",
+      "params":{}
+    })");
+
+    const mcp::schema::ValidationResult result = validator.validateMcpMethodMessage(unknownMethodRequest);
+    REQUIRE(result.valid);
+    REQUIRE(result.diagnostics.empty());
+  }
+
+  SECTION("Unknown method without id validates as JSONRPCNotification")
+  {
+    const mcp::schema::JsonValue unknownMethodNotification = mcp::schema::JsonValue::parse(R"({
+      "jsonrpc":"2.0",
+      "method":"unknown/notification",
+      "params":{}
+    })");
+
+    const mcp::schema::ValidationResult result = validator.validateMcpMethodMessage(unknownMethodNotification);
+    REQUIRE(result.valid);
+    REQUIRE(result.diagnostics.empty());
+  }
+
+  SECTION("Unknown method with invalid type produces diagnostics")
+  {
+    const mcp::schema::JsonValue invalidUnknownMethod = mcp::schema::JsonValue::parse(R"({
+      "jsonrpc":"2.0",
+      "method":123
+    })");
+
+    const mcp::schema::ValidationResult result = validator.validateMcpMethodMessage(invalidUnknownMethod);
+    REQUIRE_FALSE(result.valid);
+    REQUIRE_FALSE(result.diagnostics.empty());
+  }
+}
+
+TEST_CASE("formatDiagnostics includes key fields for multiple diagnostics", "[schema][validator]")
+{
+  const mcp::schema::Validator validator = mcp::schema::Validator::loadPinnedMcpSchema();
+  const mcp::schema::JsonValue invalidInstance = mcp::schema::JsonValue::parse(R"({
+    "jsonrpc":"2.0",
+    "id":"invalid-string-id",
+    "method":123,
+    "params":"not-an-object"
+  })");
+
+  const mcp::schema::ValidationResult result = validator.validateInstance(invalidInstance, "JSONRPCRequest");
+  REQUIRE_FALSE(result.valid);
+  REQUIRE(result.diagnostics.size() > 1);
+
+  const std::string diagnostics = mcp::schema::formatDiagnostics(result);
+
+  REQUIRE(test_detail::containsText(diagnostics, "instanceLocation"));
+  REQUIRE(test_detail::containsText(diagnostics, "evaluationPath"));
+  REQUIRE(test_detail::containsText(diagnostics, "schemaLocation"));
+  REQUIRE(test_detail::containsText(diagnostics, "error"));
+
+  const std::vector<std::string> diagnosticObjects = [&diagnostics]
+  {
+    std::vector<std::string> objects;
+    std::size_t start = 0;
+    std::size_t braceDepth = 0;
+    std::size_t objectStart = std::string::npos;
+    for (std::size_t i = 0; i < diagnostics.size(); ++i)
+    {
+      if (diagnostics[i] == '{')
+      {
+        if (braceDepth == 0)
+        {
+          objectStart = i;
+        }
+        ++braceDepth;
+      }
+      else if (diagnostics[i] == '}')
+      {
+        --braceDepth;
+        if (braceDepth == 0 && objectStart != std::string::npos)
+        {
+          objects.emplace_back(diagnostics.substr(objectStart, i - objectStart + 1));
+          objectStart = std::string::npos;
+        }
+      }
+    }
+    return objects;
+  }();
+
+  REQUIRE(diagnosticObjects.size() > 1);
+}
+
 // NOLINTEND(readability-function-cognitive-complexity)
