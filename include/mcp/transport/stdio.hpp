@@ -92,22 +92,27 @@ struct StdioAttachOptions
 class StdioTransport final : public Transport
 {
 public:
-  explicit StdioTransport(StdioServerOptions options = {});
-  explicit StdioTransport(const StdioClientOptions &options);
+  [[deprecated(
+    "StdioTransport instance constructors are deprecated. Use static StdioTransport::run() for servers or StdioTransport::spawnSubprocess() for clients. Instance-level Transport "
+    "API is not supported for stdio.")]] explicit StdioTransport(StdioServerOptions options = {});
+  [[deprecated(
+    "StdioTransport instance constructors are deprecated. Use static StdioTransport::run() for servers or StdioTransport::spawnSubprocess() for clients. Instance-level Transport "
+    "API is not supported for stdio.")]] explicit StdioTransport(const StdioClientOptions &options);
 
-  auto attach(std::weak_ptr<Session> session) -> void override;
-  auto start() -> void override;
-  auto stop() -> void override;
-  auto isRunning() const noexcept -> bool override;
-  auto send(jsonrpc::Message message) -> void override;
+  [[deprecated("StdioTransport::attach() is deprecated and has no effect. Use static StdioTransport::run() or StdioTransport::attach(Router&, istream&, ostream&) instead.")]] auto
+  attach(std::weak_ptr<Session> session) -> void override;
+  [[deprecated("StdioTransport::start() is deprecated and has no effect. Use static StdioTransport::run() instead.")]] auto start() -> void override;
+  [[deprecated("StdioTransport::stop() is deprecated and has no effect. Use static StdioTransport::run() instead.")]] auto stop() -> void override;
+  [[deprecated("StdioTransport::isRunning() is deprecated. The instance-level Transport API is not supported for stdio.")]] auto isRunning() const noexcept -> bool override;
+  [[deprecated(
+    "StdioTransport::send() is deprecated. Use static StdioTransport::run() or StdioTransport::attach() instead. The instance-level Transport API is not supported for "
+    "stdio.")]] auto
+  send(jsonrpc::Message message) -> void override;
 
   static auto run(jsonrpc::Router &router, StdioServerOptions options = {}) -> void;
   static auto attach(jsonrpc::Router &router, std::istream &serverStdout, std::ostream &serverStdin, StdioAttachOptions options = {}) -> void;
   static auto routeIncomingLine(jsonrpc::Router &router, std::string_view line, std::ostream &output, std::ostream *stderrOutput, StdioAttachOptions options = {}) -> bool;
   [[nodiscard]] static auto spawnSubprocess(const StdioSubprocessSpawnOptions &options) -> StdioSubprocess;
-
-private:
-  bool running_ = false;
 };
 
 }  // namespace mcp::transport

@@ -379,3 +379,83 @@ TEST_CASE("Stdio transport parse error emission keeps stdout MCP-only", "[transp
   }
   REQUIRE(lineCount == 1);
 }
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while,cppcoreguidelines-avoid-goto)
+TEST_CASE("StdioTransport instance API is deprecated and throws with clear guidance", "[transport][stdio][regression]")
+{
+  // Regression test: Ensure instance-level StdioTransport API throws with clear guidance
+  // instead of silently ignoring options or partially working.
+  // See: task-013 - Clarify StdioTransport Instance API
+
+  SECTION("Server options constructor throws with guidance")
+  {
+    mcp::transport::StdioServerOptions options {.allowStderrLogs = true};
+
+    try
+    {
+      // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto)
+      mcp::transport::StdioTransport transport(options);
+      FAIL("Expected constructor to throw std::logic_error");
+    }
+    catch (const std::logic_error &error)
+    {
+      const std::string message = error.what();
+      REQUIRE(message.find("deprecated") != std::string::npos);
+      REQUIRE(message.find("StdioTransport::run") != std::string::npos);
+    }
+  }
+
+  SECTION("Client options constructor throws with guidance")
+  {
+    mcp::transport::StdioClientOptions options {.executablePath = "/bin/false"};
+
+    try
+    {
+      // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto)
+      mcp::transport::StdioTransport transport(options);
+      FAIL("Expected constructor to throw std::logic_error");
+    }
+    catch (const std::logic_error &error)
+    {
+      const std::string message = error.what();
+      REQUIRE(message.find("deprecated") != std::string::npos);
+      REQUIRE(message.find("spawnSubprocess") != std::string::npos);
+    }
+  }
+
+  SECTION("Default constructor throws with guidance")
+  {
+    try
+    {
+      // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto)
+      mcp::transport::StdioTransport transport;
+      FAIL("Expected constructor to throw std::logic_error");
+    }
+    catch (const std::logic_error &error)
+    {
+      const std::string message = error.what();
+      REQUIRE(message.find("deprecated") != std::string::npos);
+    }
+  }
+
+  SECTION("Static utilities remain functional")
+  {
+    // Verify static methods are NOT deprecated and still work
+    mcp::jsonrpc::Router router;
+    registerPingHandler(router);
+
+    std::ostringstream stdoutCapture;
+    std::ostringstream stderrCapture;
+    const mcp::transport::StdioAttachOptions attachOptions {.allowStderrLogs = true, .emitParseErrors = false};
+
+    // Static routeIncomingLine should work without throwing
+    const std::string validMessage = R"({"jsonrpc":"2.0","id":1,"method":"ping"})";
+    // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto)
+    REQUIRE_NOTHROW(mcp::transport::StdioTransport::routeIncomingLine(router, validMessage, stdoutCapture, &stderrCapture, attachOptions));
+
+    // Verify it actually routed
+    REQUIRE_FALSE(stdoutCapture.str().empty());
+    const auto message = mcp::jsonrpc::parseMessage(stdoutCapture.str());
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(message));
+  }
+}
