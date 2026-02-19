@@ -1,4 +1,4 @@
-# Review Report: task-016 (/ Resources (list/read/templates/subscribe + notifications))
+# Review Report: task-016 (/ Expand Unit Tests: HTTP Runtime (URL/TLS error paths))
 
 ## Status
 **PASS**
@@ -10,14 +10,14 @@
 - [x] No unauthorized architectural changes.
 
 ## Verification Output
-*   **Command Run:** `cmake --build build`
-*   **Result:** Pass. Build completed successfully (all targets built, including `mcp_sdk_example_minimal`).
+*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_transport_http_runtime_test --output-on-failure`
+*   **Result:** Pass. `mcp_sdk_transport_http_runtime_test` passed (`1/1`). Coverage includes invalid URL `std::invalid_argument` cases, TLS-disabled behavior under preprocessor guard, and missing cert/key rejection cases.
 
-*   **Command Run:** `ctest --test-dir build`
-*   **Result:** Pass. `13/13` tests passed.
+*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_transport_http_tls_test --output-on-failure`
+*   **Result:** Pass. `mcp_sdk_transport_http_tls_test` passed (`1/1`). HTTPS-only assertions are guarded behind `#if MCP_SDK_ENABLE_TLS`.
 
-*   **Command Run:** `ctest --test-dir build -R mcp_sdk_server_test -V`
-*   **Result:** Pass. Server test suite passed with `81 assertions` across `11 test cases`, covering resources pagination, missing-resource `-32002`, and subscription capability gating.
+*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_transport_http_runtime_test --output-on-failure && ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_transport_http_tls_test --output-on-failure`
+*   **Result:** Pass. Re-run succeeded for both test targets, supporting deterministic behavior.
 
 ## Issues Found (If FAIL)
 *   **Critical:** None.
