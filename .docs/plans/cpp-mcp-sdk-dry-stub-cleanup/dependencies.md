@@ -15,7 +15,7 @@
 - [x] `task-010`: Deduplicate Client Initialize JSON Building (Depends on: `task-004`)
 
 ## Phase 3: Stub / API Cleanup (Blocked by Phase 2)
-- [ ] `task-011`: Session Lifecycle API De-Slop (Depends on: `task-010`)
+- [x] `task-011`: Session Lifecycle API De-Slop (Depends on: `task-010`)
 - [ ] `task-012`: Remove or Hard-Disable HttpTransport Stub (Depends on: `task-011`)
 - [ ] `task-013`: Clarify StdioTransport Instance API (Depends on: `task-011`)
 
