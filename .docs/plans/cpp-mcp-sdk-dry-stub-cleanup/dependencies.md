@@ -1,10 +1,10 @@
 # Dependency Graph
 
 ## Phase 1: Foundations (Must complete first)
-- [ ] `task-001`: Add Internal ASCII Helpers + Tests
-- [ ] `task-002`: Add Internal Base64url Helpers + Tests
-- [ ] `task-003`: Add Internal Absolute URL Parser + Tests
-- [ ] `task-004`: Add Initialize/Capabilities JSON Codec + Tests
+- [x] `task-001`: Add Internal ASCII Helpers + Tests
+- [x] `task-002`: Add Internal Base64url Helpers + Tests
+- [x] `task-003`: Add Internal Absolute URL Parser + Tests
+- [x] `task-004`: Add Initialize/Capabilities JSON Codec + Tests
 
 ## Phase 2: DRY Refactors (Blocked by Phase 1)
 - [ ] `task-005`: Refactor Pagination Cursor Base64url (Depends on: `task-002`)
