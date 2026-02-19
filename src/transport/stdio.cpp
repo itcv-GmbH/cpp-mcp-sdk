@@ -642,7 +642,7 @@ auto StdioSubprocess::capturedStderr() const -> std::string
 StdioTransport::StdioTransport(StdioServerOptions /*options*/)
 {
   throw std::logic_error(
-    "StdioTransport instance constructors are deprecated and throw. "
+    "StdioTransport instance constructors are deprecated and throws. "
     "For servers, use static StdioTransport::run(). "
     "For clients, use mcp::Client::connectStdio() or StdioTransport::spawnSubprocess().");
 }
@@ -650,7 +650,7 @@ StdioTransport::StdioTransport(StdioServerOptions /*options*/)
 StdioTransport::StdioTransport(const StdioClientOptions & /*options*/)
 {
   throw std::logic_error(
-    "StdioTransport instance constructors are deprecated and throw. "
+    "StdioTransport instance constructors are deprecated and throws. "
     "For servers, use static StdioTransport::run(). "
     "For clients, use mcp::Client::connectStdio() or StdioTransport::spawnSubprocess().");
 }
