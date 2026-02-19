@@ -75,6 +75,7 @@ public:
   static auto create(SessionOptions options = {}) -> std::shared_ptr<Client>;
 
   explicit Client(std::shared_ptr<Session> session);
+  ~Client() noexcept;
 
   auto session() const noexcept -> const std::shared_ptr<Session> &;
 
@@ -201,8 +202,8 @@ private:
   std::optional<UrlElicitationCompletionHandler> urlElicitationCompletionHandler_;
   std::unordered_set<std::string> pendingUrlElicitationIds_;
   std::shared_ptr<util::TaskReceiver> taskReceiver_;
-  std::shared_ptr<boost::asio::thread_pool> asyncWorkPool_;
-  std::shared_ptr<std::atomic<bool>> asyncWorkEnabled_;
+  std::unique_ptr<boost::asio::thread_pool> asyncWorkPool_;
+  std::atomic<bool> asyncWorkEnabled_ {true};
   std::optional<jsonrpc::RequestId> pendingInitializeRequestId_;
   std::int64_t nextRequestId_ = 1;
 };

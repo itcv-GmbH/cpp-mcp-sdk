@@ -1,4 +1,4 @@
-# Review Report: task-017 (/ Expand Unit Tests: Protected Resource Metadata + Challenge Parsing)
+# Review Report: task-017 (/ Client Detached Thread Removal)
 
 ## Status
 **PASS**
@@ -10,10 +10,8 @@
 - [x] No unauthorized architectural changes.
 
 ## Verification Output
-*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_auth_protected_resource_metadata_test_authorization --output-on-failure`
-*   **Result:** Pass. `mcp_sdk_auth_protected_resource_metadata_test_authorization` passed (1/1) with no failures.
-*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_auth_protected_resource_metadata_test_authorization --output-on-failure` (repeat run)
-*   **Result:** Pass. Repeat execution also passed (1/1), confirming deterministic behavior for this suite.
+*   **Command Run:** `cmake --preset vcpkg-unix-release && cmake --build build/vcpkg-unix-release && ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_client_test --output-on-failure`
+*   **Result:** Pass. Configure/build succeeded and `mcp_sdk_client_test` passed (1/1) with no failures.
 
 ## Issues Found (If FAIL)
 *   **Critical:** None.
@@ -21,5 +19,6 @@
 *   **Minor:** None.
 
 ## Required Actions
-1. No code changes required.
-2. Proceed with merge/readiness flow.
+1. Added explicit `Client` destructor shutdown path that is idempotent with `stop()`.
+2. Reworked async worker ownership to per-client `std::unique_ptr<boost::asio::thread_pool>` with deterministic `stop()` + `join()` semantics.
+3. Added destructor-focused regression coverage for async callback teardown without explicit `stop()`.

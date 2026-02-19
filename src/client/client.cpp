@@ -1168,8 +1168,7 @@ auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex initialization required by MCP protocol
 Client::Client(std::shared_ptr<Session> session)
   : session_(std::move(session))
-  , asyncWorkPool_(std::make_shared<boost::asio::thread_pool>(kClientAsyncWorkerCount))
-  , asyncWorkEnabled_(std::make_shared<std::atomic<bool>>(true))
+  , asyncWorkPool_(std::make_unique<boost::asio::thread_pool>(kClientAsyncWorkerCount))
 {
   if (!session_)
   {
@@ -1201,7 +1200,14 @@ Client::Client(std::shared_ptr<Session> session)
         return;
       }
 
-      session->sendNotification(std::string(kTasksStatusNotificationMethod), util::taskToJson(task));
+      try
+      {
+        session->sendNotification(std::string(kTasksStatusNotificationMethod), util::taskToJson(task));
+      }
+      catch (const std::exception &error)
+      {
+        static_cast<void>(error);
+      }
     });
 
   router_.registerRequestHandler(std::string(kPingMethod),
@@ -1372,7 +1378,7 @@ Client::Client(std::shared_ptr<Session> session)
 
         if (!postManagedTask(taskWorker))
         {
-          taskWorker();
+          static_cast<void>(taskReceiver->cancelTask(taskContext, taskId, std::string("Task cancelled because client is stopping.")));
         }
 
         jsonrpc::SuccessResponse response;
@@ -1497,7 +1503,7 @@ Client::Client(std::shared_ptr<Session> session)
 
           if (!postManagedTask(taskWorker))
           {
-            taskWorker();
+            static_cast<void>(taskReceiver->cancelTask(taskContext, taskId, std::string("Task cancelled because client is stopping.")));
           }
 
           jsonrpc::SuccessResponse response;
@@ -1738,6 +1744,18 @@ Client::Client(std::shared_ptr<Session> session)
                                           (*completionHandler)(ElicitationCreateContext {context}, elicitationId);
                                         }
                                       });
+}
+
+Client::~Client() noexcept
+{
+  try
+  {
+    stop();
+  }
+  catch (const std::exception &error)
+  {
+    static_cast<void>(error);
+  }
 }
 
 auto Client::session() const noexcept -> const std::shared_ptr<Session> &
@@ -2151,16 +2169,19 @@ auto Client::start() -> void
 
 auto Client::stop() -> void
 {
+  std::unique_ptr<boost::asio::thread_pool> asyncWorkPool;
   std::shared_ptr<transport::Transport> transport;
   {
     const std::scoped_lock lock(mutex_);
-    if (asyncWorkEnabled_)
-    {
-      asyncWorkEnabled_->store(false);
-    }
-
-    asyncWorkPool_.reset();
+    asyncWorkEnabled_.store(false);
+    asyncWorkPool = std::move(asyncWorkPool_);
     transport = transport_;
+  }
+
+  if (asyncWorkPool)
+  {
+    asyncWorkPool->stop();
+    asyncWorkPool->join();
   }
 
   if (transport && transport->isRunning())
@@ -2241,24 +2262,12 @@ auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestO
 auto Client::sendRequestAsync(std::string method, jsonrpc::JsonValue params, const ResponseCallback &callback, RequestOptions options) -> void
 {
   auto responseFuture = sendRequest(std::move(method), std::move(params), options);
-
-  std::shared_ptr<std::atomic<bool>> asyncWorkEnabled;
-  {
-    const std::scoped_lock lock(mutex_);
-    asyncWorkEnabled = asyncWorkEnabled_;
-  }
-
-  if (!asyncWorkEnabled || !asyncWorkEnabled->load())
-  {
-    return;
-  }
-
   auto responseFuturePtr = std::make_shared<std::future<jsonrpc::Response>>(std::move(responseFuture));
 
   static_cast<void>(postManagedTask(
-    [callback, responseFuturePtr, asyncWorkEnabled]() mutable -> void
+    [this, callback, responseFuturePtr]() mutable -> void
     {
-      while (asyncWorkEnabled->load())
+      while (asyncWorkEnabled_.load())
       {
         const auto status = responseFuturePtr->wait_for(kAsyncCallbackPollInterval);
         if (status != std::future_status::ready)
@@ -2266,7 +2275,7 @@ auto Client::sendRequestAsync(std::string method, jsonrpc::JsonValue params, con
           continue;
         }
 
-        if (!asyncWorkEnabled->load())
+        if (!asyncWorkEnabled_.load())
         {
           return;
         }
@@ -2514,26 +2523,13 @@ auto Client::isPendingInitializeResponse(const jsonrpc::Response &response) cons
 
 auto Client::postManagedTask(std::function<void()> task) -> bool
 {
-  std::shared_ptr<boost::asio::thread_pool> asyncWorkPool;
-  std::shared_ptr<std::atomic<bool>> asyncWorkEnabled;
-  {
-    const std::scoped_lock lock(mutex_);
-    asyncWorkPool = asyncWorkPool_;
-    asyncWorkEnabled = asyncWorkEnabled_;
-  }
-
-  if (!asyncWorkPool || !asyncWorkEnabled || !asyncWorkEnabled->load())
+  const std::scoped_lock lock(mutex_);
+  if (!asyncWorkEnabled_.load() || !asyncWorkPool_)
   {
     return false;
   }
 
-  boost::asio::thread_pool &pool = *asyncWorkPool;
-  boost::asio::post(pool,
-                    [poolKeepAlive = std::move(asyncWorkPool), task = std::move(task)]() mutable -> void
-                    {
-                      static_cast<void>(poolKeepAlive);
-                      task();
-                    });
+  boost::asio::post(*asyncWorkPool_, std::move(task));
 
   return true;
 }
