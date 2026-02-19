@@ -10,11 +10,11 @@
 - [x] `task-005`: Unit Tests: Crypto RNG + Runtime Limits Defaults (Depends on: `task-001`)
 
 ## Phase 3: Core Semantics Tests (Parallel; blocked by Phase 1)
-- [ ] `task-006`: Expand Unit Tests: Schema Validator (Depends on: `task-001`)
-- [ ] `task-007`: Expand Unit Tests: JSON-RPC Messages (Depends on: `task-001`)
-- [ ] `task-008`: Expand Unit Tests: JSON-RPC Router (Depends on: `task-001`)
-- [ ] `task-009`: Expand Unit Tests: Lifecycle State Machine (Depends on: `task-001`)
-- [ ] `task-010`: Expand Unit Tests: Tasks Store + Receiver (Depends on: `task-001`)
+- [x] `task-006`: Expand Unit Tests: Schema Validator (Depends on: `task-001`)
+- [x] `task-007`: Expand Unit Tests: JSON-RPC Messages (Depends on: `task-001`)
+- [x] `task-008`: Expand Unit Tests: JSON-RPC Router (Depends on: `task-001`)
+- [x] `task-009`: Expand Unit Tests: Lifecycle State Machine (Depends on: `task-001`)
+- [x] `task-010`: Expand Unit Tests: Tasks Store + Receiver (Depends on: `task-001`)
 
 ## Phase 4: Transport Tests (Parallel; blocked by Phase 1)
 - [ ] `task-011`: Expand Unit Tests: Stdio Transport (Depends on: `task-001`)
