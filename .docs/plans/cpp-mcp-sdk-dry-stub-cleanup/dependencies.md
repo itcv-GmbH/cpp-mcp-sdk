@@ -7,12 +7,12 @@
 - [x] `task-004`: Add Initialize/Capabilities JSON Codec + Tests
 
 ## Phase 2: DRY Refactors (Blocked by Phase 1)
-- [ ] `task-005`: Refactor Pagination Cursor Base64url (Depends on: `task-002`)
-- [ ] `task-006`: Refactor OAuth PKCE Base64url (Depends on: `task-002`)
-- [ ] `task-007`: Refactor HTTP Header/Origin ASCII Helpers (Depends on: `task-001`)
-- [ ] `task-008`: Refactor Auth ASCII + Absolute URL Parsing (Depends on: `task-001`, `task-003`)
-- [ ] `task-009`: Refactor HTTP Client Endpoint URL Parsing (Depends on: `task-001`, `task-003`)
-- [ ] `task-010`: Deduplicate Client Initialize JSON Building (Depends on: `task-004`)
+- [x] `task-005`: Refactor Pagination Cursor Base64url (Depends on: `task-002`)
+- [x] `task-006`: Refactor OAuth PKCE Base64url (Depends on: `task-002`)
+- [x] `task-007`: Refactor HTTP Header/Origin ASCII Helpers (Depends on: `task-001`)
+- [x] `task-008`: Refactor Auth ASCII + Absolute URL Parsing (Depends on: `task-001`, `task-003`)
+- [x] `task-009`: Refactor HTTP Client Endpoint URL Parsing (Depends on: `task-001`, `task-003`)
+- [x] `task-010`: Deduplicate Client Initialize JSON Building (Depends on: `task-004`)
 
 ## Phase 3: Stub / API Cleanup (Blocked by Phase 2)
 - [ ] `task-011`: Session Lifecycle API De-Slop (Depends on: `task-010`)
