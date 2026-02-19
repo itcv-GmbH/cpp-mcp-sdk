@@ -1,25 +1,27 @@
-# Review Report: task-008 (/ Implement stdio Transport (Server + Client I/O))
+# Review Report: task-008 (/ Expand Unit Tests: JSON-RPC Router)
 
 ## Status
-**PASS**
+**FAIL**
 *(Note: Use PASS only if the code is perfect, secure, matches the plan, and tests pass.)*
 
 ## Compliance Check
 - [x] Implementation matches `task-008.md` instructions.
-- [x] Definition of Done met.
+- [ ] Definition of Done met.
 - [x] No unauthorized architectural changes.
 
 ## Verification Output
-*   **Command Run:** `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build && ctest --test-dir build`
-*   **Result:** Pass. Build succeeded and all tests passed (6/6), including `mcp_sdk_transport_stdio_test`.
-*   **Command Run:** `ctest --test-dir build -R mcp_sdk_transport_stdio_test -V`
-*   **Result:** Pass. The stdio suite passed (4 test cases, 16 assertions) and confirms: unterminated EOF fragments rejected/not routed, intentional CR/CRLF handling with embedded violations rejected, invalid UTF-8 inbound rejection, attach + run path coverage, stdout MCP-only, and stderr diagnostics.
+*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_jsonrpc_router_test --output-on-failure`
+*   **Result:** Pass. `mcp_sdk_jsonrpc_router_test` passed (1/1).
+*   **Command Run:** `git diff --name-only main...HEAD`
+*   **Result:** Pass. Only `tests/jsonrpc_router_test.cpp` changed; no production code modifications detected.
+*   **Command Run:** `rg --line-number "sleep_for" tests/jsonrpc_router_test.cpp`
+*   **Result:** Fail for determinism requirement. Sleep-based polling remains at `tests/jsonrpc_router_test.cpp:73`.
 
 ## Issues Found (If FAIL)
 *   **Critical:** None.
-*   **Major:** None.
+*   **Major:** Tests are not fully deterministic per review criteria because `waitForMessageCount(...)` uses `std::this_thread::sleep_for(...)`, introducing timing-based polling.
 *   **Minor:** None.
 
 ## Required Actions
-1. No code changes required for task-008.
-2. Continue with downstream transport work (`task-009`) when scheduled.
+1. Replace sleep-based polling in `tests/jsonrpc_router_test.cpp` with deterministic synchronization (for example, promise/condition-variable signaling from the outbound sender callback).
+2. Update affected assertions to wait on explicit events instead of elapsed time so the suite satisfies the "no sleeps" requirement.

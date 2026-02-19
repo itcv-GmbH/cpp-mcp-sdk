@@ -1,11 +1,11 @@
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <future>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -35,8 +35,6 @@ static constexpr double kProgressQuarter = 0.25;
 static constexpr double kProgressLate = 0.8;
 static constexpr double kProgressHalf = 0.5;
 
-static constexpr std::int64_t kWaitPollAttempts = 40;
-static constexpr std::int64_t kWaitPollMillis = 5;
 static constexpr std::int64_t kRequestTimeoutMillis = 30;
 static constexpr std::int64_t kInitializeTimeoutMillis = 20;
 static constexpr std::int64_t kResponseWaitMillis = 500;
@@ -58,39 +56,42 @@ static auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::fut
   return promise.get_future();
 }
 
-static auto waitForMessageCount(const std::vector<mcp::jsonrpc::Message> &messages, std::mutex &messagesMutex, std::size_t expectedCount) -> void
+class MessageCapture
 {
-  for (std::int64_t attempt = 0; attempt < kWaitPollAttempts; ++attempt)
+public:
+  auto record(mcp::jsonrpc::Message message) -> void
   {
     {
-      const std::scoped_lock lock(messagesMutex);
-      if (messages.size() >= expectedCount)
-      {
-        return;
-      }
+      const std::scoped_lock lock(mutex_);
+      messages_.push_back(std::move(message));
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(kWaitPollMillis));
+    messagesCv_.notify_all();
   }
-}
 
-static auto copyMessages(const std::vector<mcp::jsonrpc::Message> &messages, std::mutex &messagesMutex) -> std::vector<mcp::jsonrpc::Message>
-{
-  const std::scoped_lock lock(messagesMutex);
-  return messages;
-}
+  [[nodiscard]] auto waitForMessageCount(std::size_t expectedCount, std::chrono::milliseconds timeout) -> bool
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return messagesCv_.wait_for(lock, timeout, [&]() -> bool { return messages_.size() >= expectedCount; });
+  }
 
-static auto messageCount(const std::vector<mcp::jsonrpc::Message> &messages, std::mutex &messagesMutex) -> std::size_t
-{
-  const std::scoped_lock lock(messagesMutex);
-  return messages.size();
-}
+  [[nodiscard]] auto messageCount() const -> std::size_t
+  {
+    const std::scoped_lock lock(mutex_);
+    return messages_.size();
+  }
 
-static auto recordMessage(std::vector<mcp::jsonrpc::Message> &messages, std::mutex &messagesMutex, mcp::jsonrpc::Message message) -> void
-{
-  const std::scoped_lock lock(messagesMutex);
-  messages.push_back(std::move(message));
-}
+  [[nodiscard]] auto copyMessages() const -> std::vector<mcp::jsonrpc::Message>
+  {
+    const std::scoped_lock lock(mutex_);
+    return messages_;
+  }
+
+private:
+  mutable std::mutex mutex_;
+  std::condition_variable messagesCv_;
+  std::vector<mcp::jsonrpc::Message> messages_;
+};
 
 // NOLINTBEGIN(readability-function-cognitive-complexity)
 
@@ -160,10 +161,9 @@ TEST_CASE("Router allows same request id from different senders", "[jsonrpc][rou
 TEST_CASE("Router correlates concurrent outbound responses to the correct waiters", "[jsonrpc][router]")
 {
   mcp::jsonrpc::Router router;
-  std::mutex outboundMessagesMutex;
-  std::vector<mcp::jsonrpc::Message> outboundMessages;
-  router.setOutboundMessageSender([&outboundMessages, &outboundMessagesMutex](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
-                                  { recordMessage(outboundMessages, outboundMessagesMutex, std::move(message)); });
+  MessageCapture outboundMessages;
+  router.setOutboundMessageSender([&outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+                                  { outboundMessages.record(std::move(message)); });
 
   const mcp::jsonrpc::RequestContext context;
 
@@ -180,7 +180,8 @@ TEST_CASE("Router correlates concurrent outbound responses to the correct waiter
   std::future<mcp::jsonrpc::Response> firstFuture = router.sendRequest(context, firstRequest);
   std::future<mcp::jsonrpc::Response> secondFuture = router.sendRequest(context, secondRequest);
 
-  REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 2);
+  REQUIRE(outboundMessages.waitForMessageCount(2, std::chrono::milliseconds(kResponseWaitMillis)));
+  REQUIRE(outboundMessages.messageCount() == 2);
 
   mcp::jsonrpc::SuccessResponse secondResponse;
   secondResponse.id = kOutboundRequestIdB;
@@ -205,10 +206,9 @@ TEST_CASE("Router correlates concurrent outbound responses to the correct waiter
 TEST_CASE("Router times out outbound requests, emits cancellation, and ignores late responses", "[jsonrpc][router]")
 {
   mcp::jsonrpc::Router router;
-  std::mutex outboundMessagesMutex;
-  std::vector<mcp::jsonrpc::Message> outboundMessages;
-  router.setOutboundMessageSender([&outboundMessages, &outboundMessagesMutex](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
-                                  { recordMessage(outboundMessages, outboundMessagesMutex, std::move(message)); });
+  MessageCapture outboundMessages;
+  router.setOutboundMessageSender([&outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+                                  { outboundMessages.record(std::move(message)); });
 
   const mcp::jsonrpc::RequestContext context;
 
@@ -234,10 +234,10 @@ TEST_CASE("Router times out outbound requests, emits cancellation, and ignores l
   }
   REQUIRE(timeoutError.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInternalError));
 
-  waitForMessageCount(outboundMessages, outboundMessagesMutex, 2);
-  REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 2);
+  REQUIRE(outboundMessages.waitForMessageCount(2, std::chrono::milliseconds(kResponseWaitMillis)));
+  REQUIRE(outboundMessages.messageCount() == 2);
 
-  const std::vector<mcp::jsonrpc::Message> snapshot = copyMessages(outboundMessages, outboundMessagesMutex);
+  const std::vector<mcp::jsonrpc::Message> snapshot = outboundMessages.copyMessages();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::Notification>(snapshot[1]));
 
   const auto &cancelNotification = std::get<mcp::jsonrpc::Notification>(snapshot[1]);
@@ -299,13 +299,12 @@ TEST_CASE("Router ignores unknown response ids and rejects responses to notifica
 TEST_CASE("Router does not emit cancellation notification when initialize times out", "[jsonrpc][router]")
 {
   mcp::jsonrpc::Router router;
-  std::mutex outboundMessagesMutex;
-  std::vector<mcp::jsonrpc::Message> outboundMessages;
+  MessageCapture outboundMessages;
   std::promise<void> cancelPromise;
   std::future<void> cancelFuture = cancelPromise.get_future();
   std::atomic_bool cancelObserved {false};
   router.setOutboundMessageSender(
-    [&outboundMessages, &outboundMessagesMutex, &cancelPromise, &cancelObserved](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+    [&outboundMessages, &cancelPromise, &cancelObserved](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
     {
       if (std::holds_alternative<mcp::jsonrpc::Notification>(message))
       {
@@ -316,7 +315,7 @@ TEST_CASE("Router does not emit cancellation notification when initialize times 
         }
       }
 
-      recordMessage(outboundMessages, outboundMessagesMutex, std::move(message));
+      outboundMessages.record(std::move(message));
     });
 
   const mcp::jsonrpc::RequestContext context;
@@ -333,9 +332,10 @@ TEST_CASE("Router does not emit cancellation notification when initialize times 
   REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
 
   REQUIRE(cancelFuture.wait_for(std::chrono::milliseconds(kInitializeTimeoutMillis * 3)) == std::future_status::timeout);
-  REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 1);
+  REQUIRE(outboundMessages.waitForMessageCount(1, std::chrono::milliseconds(kResponseWaitMillis)));
+  REQUIRE(outboundMessages.messageCount() == 1);
 
-  const std::vector<mcp::jsonrpc::Message> snapshot = copyMessages(outboundMessages, outboundMessagesMutex);
+  const std::vector<mcp::jsonrpc::Message> snapshot = outboundMessages.copyMessages();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(snapshot[0]));
 }
 
@@ -528,10 +528,9 @@ TEST_CASE("Router routes progress notifications by token without leaks", "[jsonr
 TEST_CASE("Router can emit progress notifications from an inbound request progress token", "[jsonrpc][router]")
 {
   mcp::jsonrpc::Router router;
-  std::mutex outboundMessagesMutex;
-  std::vector<mcp::jsonrpc::Message> outboundMessages;
-  router.setOutboundMessageSender([&outboundMessages, &outboundMessagesMutex](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
-                                  { recordMessage(outboundMessages, outboundMessagesMutex, std::move(message)); });
+  MessageCapture outboundMessages;
+  router.setOutboundMessageSender([&outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+                                  { outboundMessages.record(std::move(message)); });
 
   std::promise<void> unblockHandler;
   auto unblockFuture = unblockHandler.get_future();
@@ -560,10 +559,11 @@ TEST_CASE("Router can emit progress notifications from an inbound request progre
   std::future<mcp::jsonrpc::Response> responseFuture = router.dispatchRequest(context, inboundRequest);
 
   REQUIRE(router.emitProgress(context, inboundRequest, kProgressHalf, 1.0, "halfway"));
-  REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 1);
+  REQUIRE(outboundMessages.waitForMessageCount(1, std::chrono::milliseconds(kResponseWaitMillis)));
+  REQUIRE(outboundMessages.messageCount() == 1);
 
   REQUIRE_FALSE(router.emitProgress(context, inboundRequest, 0.4, 1.0, "backwards"));
-  REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 1);
+  REQUIRE(outboundMessages.messageCount() == 1);
 
   unblockHandler.set_value();
   REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
@@ -571,7 +571,7 @@ TEST_CASE("Router can emit progress notifications from an inbound request progre
 
   REQUIRE_FALSE(router.emitProgress(context, inboundRequest, kProgressLate, 1.0, "late"));
 
-  const std::vector<mcp::jsonrpc::Message> snapshot = copyMessages(outboundMessages, outboundMessagesMutex);
+  const std::vector<mcp::jsonrpc::Message> snapshot = outboundMessages.copyMessages();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::Notification>(snapshot[0]));
 
   const auto &progressNotification = std::get<mcp::jsonrpc::Notification>(snapshot[0]);
@@ -587,10 +587,9 @@ TEST_CASE("Router can emit progress notifications from an inbound request progre
 TEST_CASE("Router timeout sends protocol-valid tasks/cancel after late CreateTaskResult", "[jsonrpc][router]")
 {
   mcp::jsonrpc::Router router;
-  std::mutex outboundMessagesMutex;
-  std::vector<mcp::jsonrpc::Message> outboundMessages;
-  router.setOutboundMessageSender([&outboundMessages, &outboundMessagesMutex](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
-                                  { recordMessage(outboundMessages, outboundMessagesMutex, std::move(message)); });
+  MessageCapture outboundMessages;
+  router.setOutboundMessageSender([&outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+                                  { outboundMessages.record(std::move(message)); });
 
   const mcp::jsonrpc::RequestContext context;
 
@@ -608,8 +607,8 @@ TEST_CASE("Router timeout sends protocol-valid tasks/cancel after late CreateTas
   std::future<mcp::jsonrpc::Response> responseFuture = router.sendRequest(context, request, options);
   REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
 
-  waitForMessageCount(outboundMessages, outboundMessagesMutex, 1);
-  REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 1);
+  REQUIRE(outboundMessages.waitForMessageCount(1, std::chrono::milliseconds(kResponseWaitMillis)));
+  REQUIRE(outboundMessages.messageCount() == 1);
 
   mcp::jsonrpc::SuccessResponse lateTaskCreateResponse;
   lateTaskCreateResponse.id = kTaskTimeoutRequestId;
@@ -622,10 +621,10 @@ TEST_CASE("Router timeout sends protocol-valid tasks/cancel after late CreateTas
 
   REQUIRE_FALSE(router.dispatchResponse(context, mcp::jsonrpc::Response {lateTaskCreateResponse}));
 
-  waitForMessageCount(outboundMessages, outboundMessagesMutex, 2);
-  REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 2);
+  REQUIRE(outboundMessages.waitForMessageCount(2, std::chrono::milliseconds(kResponseWaitMillis)));
+  REQUIRE(outboundMessages.messageCount() == 2);
 
-  const std::vector<mcp::jsonrpc::Message> snapshot = copyMessages(outboundMessages, outboundMessagesMutex);
+  const std::vector<mcp::jsonrpc::Message> snapshot = outboundMessages.copyMessages();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(snapshot[1]));
   const auto &cancelRequest = std::get<mcp::jsonrpc::Request>(snapshot[1]);
   REQUIRE(cancelRequest.method == "tasks/cancel");
@@ -639,10 +638,9 @@ TEST_CASE("Router timeout sends protocol-valid tasks/cancel after late CreateTas
 TEST_CASE("Router scopes inbound cancellation by sender and direction", "[jsonrpc][router]")
 {
   mcp::jsonrpc::Router router;
-  std::mutex outboundMessagesMutex;
-  std::vector<mcp::jsonrpc::Message> outboundMessages;
-  router.setOutboundMessageSender([&outboundMessages, &outboundMessagesMutex](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
-                                  { recordMessage(outboundMessages, outboundMessagesMutex, std::move(message)); });
+  MessageCapture outboundMessages;
+  router.setOutboundMessageSender([&outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+                                  { outboundMessages.record(std::move(message)); });
 
   std::promise<void> releaseInboundHandler;
   auto releaseInboundHandlerFuture = releaseInboundHandler.get_future();
@@ -698,8 +696,8 @@ TEST_CASE("Router scopes inbound cancellation by sender and direction", "[jsonrp
   std::future<mcp::jsonrpc::Response> outboundFuture = router.sendRequest(senderA, outboundRequest, options);
   REQUIRE(outboundFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
 
-  waitForMessageCount(outboundMessages, outboundMessagesMutex, 3);
-  const std::vector<mcp::jsonrpc::Message> snapshot = copyMessages(outboundMessages, outboundMessagesMutex);
+  REQUIRE(outboundMessages.waitForMessageCount(3, std::chrono::milliseconds(kResponseWaitMillis)));
+  const std::vector<mcp::jsonrpc::Message> snapshot = outboundMessages.copyMessages();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::Notification>(snapshot[2]));
   const auto &outboundCancellation = std::get<mcp::jsonrpc::Notification>(snapshot[2]);
   REQUIRE(outboundCancellation.method == "notifications/cancelled");
