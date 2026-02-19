@@ -22,6 +22,7 @@
 #include <jsoncons_ext/jsonschema/json_schema.hpp>
 #include <jsoncons_ext/jsonschema/json_schema_factory.hpp>
 #include <jsoncons_ext/jsonschema/validation_message.hpp>
+#include <mcp/detail/base64url.hpp>
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
@@ -439,131 +440,12 @@ auto isValidCursorChar(char value) -> bool
 
 auto encodeCursorPayload(std::string_view payload) -> std::string
 {
-  constexpr std::string_view alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-  std::string encoded;
-  encoded.reserve(((payload.size() + 2) / 3) * 4);
-
-  std::size_t index = 0;
-  while (index + 3 <= payload.size())
-  {
-    const std::uint32_t chunk = (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index])) << kBase64Shift16)
-      | (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index + 1])) << kBase64Shift8) | static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index + 2]));
-
-    encoded.push_back(alphabet[(chunk >> kBase64Shift18) & kBase64Mask6Bit]);
-    encoded.push_back(alphabet[(chunk >> kBase64Shift12) & kBase64Mask6Bit]);
-    encoded.push_back(alphabet[(chunk >> kBase64Shift6) & kBase64Mask6Bit]);
-    encoded.push_back(alphabet[chunk & kBase64Mask6Bit]);
-    index += 3;
-  }
-
-  const std::size_t remaining = payload.size() - index;
-  if (remaining == 1)
-  {
-    const std::uint32_t chunk = static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index])) << kBase64Shift16;
-    encoded.push_back(alphabet[(chunk >> kBase64Shift18) & kBase64Mask6Bit]);
-    encoded.push_back(alphabet[(chunk >> kBase64Shift12) & kBase64Mask6Bit]);
-  }
-  else if (remaining == 2)
-  {
-    const std::uint32_t chunk = (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index])) << kBase64Shift16)
-      | (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[index + 1])) << kBase64Shift8);
-    encoded.push_back(alphabet[(chunk >> kBase64Shift18) & kBase64Mask6Bit]);
-    encoded.push_back(alphabet[(chunk >> kBase64Shift12) & kBase64Mask6Bit]);
-    encoded.push_back(alphabet[(chunk >> kBase64Shift6) & kBase64Mask6Bit]);
-  }
-
-  return encoded;
+  return encodeBase64UrlNoPad(payload);
 }
 
-auto decodeCursorPayload(std::string_view encoded) -> std::optional<std::string>  // NOLINT(readability-function-cognitive-complexity)
+auto decodeCursorPayload(std::string_view encoded) -> std::optional<std::string>
 {
-  if (encoded.empty())
-  {
-    return std::nullopt;
-  }
-
-  auto decodeChar = [](char value) -> std::optional<std::uint32_t>
-  {
-    if (value >= 'A' && value <= 'Z')
-    {
-      return static_cast<std::uint32_t>(value - 'A');
-    }
-    if (value >= 'a' && value <= 'z')
-    {
-      return static_cast<std::uint32_t>(value - 'a') + kBase64LowercaseOffset;
-    }
-    if (value >= '0' && value <= '9')
-    {
-      return static_cast<std::uint32_t>(value - '0') + kBase64DigitOffset;
-    }
-    if (value == '-')
-    {
-      return kBase64DashValue;
-    }
-    if (value == '_')
-    {
-      return kBase64UnderscoreValue;
-    }
-
-    return std::nullopt;
-  };
-
-  const std::size_t remainder = encoded.size() % 4;
-  if (remainder == 1)
-  {
-    return std::nullopt;
-  }
-
-  std::string decoded;
-  decoded.reserve((encoded.size() * 3) / 4);
-
-  std::size_t index = 0;
-  while (index + 4 <= encoded.size())
-  {
-    const auto firstValue = decodeChar(encoded[index]);
-    const auto secondValue = decodeChar(encoded[index + 1]);
-    const auto thirdValue = decodeChar(encoded[index + 2]);
-    const auto fourthValue = decodeChar(encoded[index + 3]);
-    if (!firstValue.has_value() || !secondValue.has_value() || !thirdValue.has_value() || !fourthValue.has_value())
-    {
-      return std::nullopt;
-    }
-
-    const std::uint32_t chunk = (*firstValue << kBase64Shift18) | (*secondValue << kBase64Shift12) | (*thirdValue << kBase64Shift6) | *fourthValue;
-    decoded.push_back(static_cast<char>((chunk >> kBase64Shift16) & kBase64Mask8Bit));
-    decoded.push_back(static_cast<char>((chunk >> kBase64Shift8) & kBase64Mask8Bit));
-    decoded.push_back(static_cast<char>(chunk & kBase64Mask8Bit));
-    index += 4;
-  }
-
-  if (remainder == 2)
-  {
-    const auto firstValue = decodeChar(encoded[index]);
-    const auto secondValue = decodeChar(encoded[index + 1]);
-    if (!firstValue.has_value() || !secondValue.has_value())
-    {
-      return std::nullopt;
-    }
-
-    const std::uint32_t chunk = (*firstValue << kBase64Shift18) | (*secondValue << kBase64Shift12);
-    decoded.push_back(static_cast<char>((chunk >> kBase64Shift16) & kBase64Mask8Bit));
-  }
-  else if (remainder == 3)
-  {
-    const auto firstValue = decodeChar(encoded[index]);
-    const auto secondValue = decodeChar(encoded[index + 1]);
-    const auto thirdValue = decodeChar(encoded[index + 2]);
-    if (!firstValue.has_value() || !secondValue.has_value() || !thirdValue.has_value())
-    {
-      return std::nullopt;
-    }
-
-    const std::uint32_t chunk = (*firstValue << kBase64Shift18) | (*secondValue << kBase64Shift12) | (*thirdValue << kBase64Shift6);
-    decoded.push_back(static_cast<char>((chunk >> kBase64Shift16) & kBase64Mask8Bit));
-    decoded.push_back(static_cast<char>((chunk >> kBase64Shift8) & kBase64Mask8Bit));
-  }
-
-  return decoded;
+  return decodeBase64UrlNoPad(encoded);
 }
 
 auto makePaginationCursor(ListEndpoint endpoint, std::size_t startIndex) -> std::string
