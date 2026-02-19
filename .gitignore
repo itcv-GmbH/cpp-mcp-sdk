@@ -39,3 +39,6 @@ Testing/
 
 .cache/
 build**/
+
+# Worktrees
+.worktrees/
