@@ -102,3 +102,79 @@ jobs:
 
       - name: Test (ctest)
         run: ctest --test-dir "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --output-on-failure
+
+  feature-matrix-test:
+    name: Feature Matrix / ${{ matrix.variant }} / Linux Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [auth-off, auth-off-tls-off]
+        include:
+          - variant: auth-off
+            cmake_flags: -DMCP_SDK_ENABLE_AUTH=OFF
+          - variant: auth-off-tls-off
+            cmake_flags: -DMCP_SDK_ENABLE_AUTH=OFF -DMCP_SDK_ENABLE_TLS=OFF
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_INSTALLED_DIR: ${{ github.workspace }}/vcpkg_installed
+      VCPKG_COMMIT_ID: 120deac3062162151622ca4860575a33844ba10b
+      BUILD_DIR: build/ci-feature-matrix-${{ matrix.variant }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate pinned vcpkg baseline
+        run: |
+          baseline=$(jq -r '."builtin-baseline"' vcpkg.json)
+          if [ "$baseline" != "$VCPKG_COMMIT_ID" ]; then
+            echo "vcpkg baseline mismatch. Expected '$VCPKG_COMMIT_ID', found '$baseline'."
+            exit 1
+          fi
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_ROOT }}/downloads
+            ${{ env.VCPKG_INSTALLED_DIR }}
+          key: vcpkg-linux-x64-linux-${{ env.VCPKG_COMMIT_ID }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-linux-x64-linux-${{ env.VCPKG_COMMIT_ID }}-
+
+      - name: Bootstrap pinned vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout "$VCPKG_COMMIT_ID"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Install dependencies (manifest mode)
+        run: |
+          "$VCPKG_ROOT/vcpkg" install --triplet x64-linux --x-manifest-root "$GITHUB_WORKSPACE" --x-install-root "$VCPKG_INSTALLED_DIR"
+
+      - name: Configure
+        run: |
+          cmake --preset vcpkg-unix-release \
+            -B "$BUILD_DIR" \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D VCPKG_TARGET_TRIPLET=x64-linux \
+            -D VCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
+            -D MCP_SDK_BUILD_TESTS=ON \
+            -D MCP_SDK_BUILD_EXAMPLES=OFF \
+            ${{ matrix.cmake_flags }}
+
+      - name: Build
+        run: cmake --build "$BUILD_DIR" --parallel
+
+      - name: Test - Auth Disabled Specific
+        run: ctest --test-dir "$BUILD_DIR" -R mcp_sdk_auth_oauth_client_disabled_test --output-on-failure
+
+      - name: Test - Remaining Compatible Tests
+        run: ctest --test-dir "$BUILD_DIR" --output-on-failure -E "authorization|mcp_sdk_auth_oauth_client_disabled_test"
