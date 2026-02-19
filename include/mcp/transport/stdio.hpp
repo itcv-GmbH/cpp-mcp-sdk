@@ -93,20 +93,36 @@ class StdioTransport final : public Transport
 {
 public:
   [[deprecated(
-    "StdioTransport instance constructors are deprecated. Use static StdioTransport::run() for servers or StdioTransport::spawnSubprocess() for clients. Instance-level Transport "
-    "API is not supported for stdio.")]] explicit StdioTransport(StdioServerOptions options = {});
+    "StdioTransport instance constructors are deprecated and throw. "
+    "For servers, use static StdioTransport::run(). "
+    "For clients, use mcp::Client::connectStdio() or StdioTransport::spawnSubprocess().")]] explicit StdioTransport(StdioServerOptions options = {});
   [[deprecated(
-    "StdioTransport instance constructors are deprecated. Use static StdioTransport::run() for servers or StdioTransport::spawnSubprocess() for clients. Instance-level Transport "
-    "API is not supported for stdio.")]] explicit StdioTransport(const StdioClientOptions &options);
+    "StdioTransport instance constructors are deprecated and throw. "
+    "For servers, use static StdioTransport::run(). "
+    "For clients, use mcp::Client::connectStdio() or StdioTransport::spawnSubprocess().")]] explicit StdioTransport(const StdioClientOptions &options);
 
-  [[deprecated("StdioTransport::attach() is deprecated and has no effect. Use static StdioTransport::run() or StdioTransport::attach(Router&, istream&, ostream&) instead.")]] auto
-  attach(std::weak_ptr<Session> session) -> void override;
-  [[deprecated("StdioTransport::start() is deprecated and has no effect. Use static StdioTransport::run() instead.")]] auto start() -> void override;
-  [[deprecated("StdioTransport::stop() is deprecated and has no effect. Use static StdioTransport::run() instead.")]] auto stop() -> void override;
-  [[deprecated("StdioTransport::isRunning() is deprecated. The instance-level Transport API is not supported for stdio.")]] auto isRunning() const noexcept -> bool override;
   [[deprecated(
-    "StdioTransport::send() is deprecated. Use static StdioTransport::run() or StdioTransport::attach() instead. The instance-level Transport API is not supported for "
-    "stdio.")]] auto
+    "StdioTransport::attach() is deprecated and throws. "
+    "For servers, use static StdioTransport::run(). "
+    "For clients, use mcp::Client::connectStdio().")]] auto
+  attach(std::weak_ptr<Session> session) -> void override;
+  [[deprecated(
+    "StdioTransport::start() is deprecated and throws. "
+    "Use static StdioTransport::run() instead.")]] auto
+  start() -> void override;
+  [[deprecated(
+    "StdioTransport::stop() is deprecated and throws. "
+    "Use static StdioTransport::run() instead.")]] auto
+  stop() -> void override;
+  [[deprecated(
+    "StdioTransport::isRunning() is deprecated. "
+    "For servers, use static StdioTransport::run(). "
+    "For clients, use mcp::Client::connectStdio().")]] auto
+  isRunning() const noexcept -> bool override;
+  [[deprecated(
+    "StdioTransport::send() is deprecated and throws. "
+    "For servers, use static StdioTransport::run(). "
+    "For clients, use mcp::Client::connectStdio().")]] auto
   send(jsonrpc::Message message) -> void override;
 
   static auto run(jsonrpc::Router &router, StdioServerOptions options = {}) -> void;

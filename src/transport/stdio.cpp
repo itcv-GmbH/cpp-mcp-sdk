@@ -642,39 +642,39 @@ auto StdioSubprocess::capturedStderr() const -> std::string
 StdioTransport::StdioTransport(StdioServerOptions /*options*/)
 {
   throw std::logic_error(
-    "StdioTransport instance constructors are deprecated and removed. "
-    "Use static StdioTransport::run() for stdio servers, or StdioTransport::spawnSubprocess() for stdio clients. "
-    "The instance-level Transport API is not supported for stdio.");
+    "StdioTransport instance constructors are deprecated and throw. "
+    "For servers, use static StdioTransport::run(). "
+    "For clients, use mcp::Client::connectStdio() or StdioTransport::spawnSubprocess().");
 }
 
 StdioTransport::StdioTransport(const StdioClientOptions & /*options*/)
 {
   throw std::logic_error(
-    "StdioTransport instance constructors are deprecated and removed. "
-    "Use static StdioTransport::run() for stdio servers, or StdioTransport::spawnSubprocess() for stdio clients. "
-    "The instance-level Transport API is not supported for stdio.");
+    "StdioTransport instance constructors are deprecated and throw. "
+    "For servers, use static StdioTransport::run(). "
+    "For clients, use mcp::Client::connectStdio() or StdioTransport::spawnSubprocess().");
 }
 
 auto StdioTransport::attach(std::weak_ptr<Session> /*session*/) -> void
 {
   throw std::logic_error(
-    "StdioTransport::attach() is deprecated and removed. "
-    "Use static StdioTransport::run() for blocking stdio server handling, "
-    "or StdioTransport::attach(Router&, istream&, ostream&) for custom stream handling.");
+    "StdioTransport::attach() is deprecated and throws. "
+    "For servers, use static StdioTransport::run(). "
+    "For clients, use mcp::Client::connectStdio().");
 }
 
 auto StdioTransport::start() -> void
 {
   throw std::logic_error(
-    "StdioTransport::start() is deprecated and removed. "
-    "Use static StdioTransport::run() for blocking stdio server handling.");
+    "StdioTransport::start() is deprecated and throws. "
+    "Use static StdioTransport::run() instead.");
 }
 
 auto StdioTransport::stop() -> void
 {
   throw std::logic_error(
-    "StdioTransport::stop() is deprecated and removed. "
-    "Use static StdioTransport::run() for blocking stdio server handling.");
+    "StdioTransport::stop() is deprecated and throws. "
+    "Use static StdioTransport::run() instead.");
 }
 
 auto StdioTransport::isRunning() const noexcept -> bool
@@ -685,9 +685,9 @@ auto StdioTransport::isRunning() const noexcept -> bool
 auto StdioTransport::send(jsonrpc::Message /*message*/) -> void
 {
   throw std::logic_error(
-    "StdioTransport::send() is deprecated and removed. "
-    "Use static StdioTransport::run() or StdioTransport::attach(Router&, istream&, ostream&) instead. "
-    "The instance-level Transport API is not supported for stdio.");
+    "StdioTransport::send() is deprecated and throws. "
+    "For servers, use static StdioTransport::run(). "
+    "For clients, use mcp::Client::connectStdio().");
 }
 
 auto StdioTransport::run(jsonrpc::Router &router, StdioServerOptions options) -> void

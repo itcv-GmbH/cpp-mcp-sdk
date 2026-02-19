@@ -401,7 +401,9 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
     {
       const std::string message = error.what();
       REQUIRE(message.find("deprecated") != std::string::npos);
-      REQUIRE(message.find("StdioTransport::run") != std::string::npos);
+      REQUIRE(message.find("throws") != std::string::npos);
+      REQUIRE(message.find("StdioTransport::run()") != std::string::npos);
+      REQUIRE(message.find("mcp::Client::connectStdio()") != std::string::npos);
     }
   }
 
@@ -419,7 +421,8 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
     {
       const std::string message = error.what();
       REQUIRE(message.find("deprecated") != std::string::npos);
-      REQUIRE(message.find("spawnSubprocess") != std::string::npos);
+      REQUIRE(message.find("throws") != std::string::npos);
+      REQUIRE(message.find("mcp::Client::connectStdio()") != std::string::npos);
     }
   }
 
@@ -435,6 +438,9 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
     {
       const std::string message = error.what();
       REQUIRE(message.find("deprecated") != std::string::npos);
+      REQUIRE(message.find("throws") != std::string::npos);
+      REQUIRE(message.find("StdioTransport::run()") != std::string::npos);
+      REQUIRE(message.find("mcp::Client::connectStdio()") != std::string::npos);
     }
   }
 
