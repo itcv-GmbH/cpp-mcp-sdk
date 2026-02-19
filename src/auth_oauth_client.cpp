@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <mcp/auth/oauth_client.hpp>
+#include <mcp/detail/base64url.hpp>
 #include <mcp/security/crypto_random.hpp>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
@@ -710,55 +711,6 @@ auto appendFormParameter(std::string &body, std::string_view name, std::string_v
   body += percentEncodeComponent(value);
 }
 
-auto base64UrlEncode(const std::vector<std::uint8_t> &input) -> std::string
-{
-  static constexpr char kBase64Alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-  std::string encoded;
-  encoded.reserve(((input.size() + 2U) / 3U) * 4U);
-
-  std::size_t index = 0;
-  while (index + 2U < input.size())
-  {
-    const std::uint32_t triple =
-      (static_cast<std::uint32_t>(input[index]) << 16U) | (static_cast<std::uint32_t>(input[index + 1U]) << 8U) | static_cast<std::uint32_t>(input[index + 2U]);
-
-    encoded.push_back(kBase64Alphabet[(triple >> 18U) & 0x3FU]);
-    encoded.push_back(kBase64Alphabet[(triple >> 12U) & 0x3FU]);
-    encoded.push_back(kBase64Alphabet[(triple >> 6U) & 0x3FU]);
-    encoded.push_back(kBase64Alphabet[triple & 0x3FU]);
-    index += 3U;
-  }
-
-  const std::size_t remainder = input.size() - index;
-  if (remainder == 1U)
-  {
-    const std::uint32_t triple = static_cast<std::uint32_t>(input[index]) << 16U;
-    encoded.push_back(kBase64Alphabet[(triple >> 18U) & 0x3FU]);
-    encoded.push_back(kBase64Alphabet[(triple >> 12U) & 0x3FU]);
-    encoded.push_back('=');
-    encoded.push_back('=');
-  }
-  else if (remainder == 2U)
-  {
-    const std::uint32_t triple = (static_cast<std::uint32_t>(input[index]) << 16U) | (static_cast<std::uint32_t>(input[index + 1U]) << 8U);
-    encoded.push_back(kBase64Alphabet[(triple >> 18U) & 0x3FU]);
-    encoded.push_back(kBase64Alphabet[(triple >> 12U) & 0x3FU]);
-    encoded.push_back(kBase64Alphabet[(triple >> 6U) & 0x3FU]);
-    encoded.push_back('=');
-  }
-
-  std::replace(encoded.begin(), encoded.end(), '+', '-');
-  std::replace(encoded.begin(), encoded.end(), '/', '_');
-
-  while (!encoded.empty() && encoded.back() == '=')
-  {
-    encoded.pop_back();
-  }
-
-  return encoded;
-}
-
 auto sha256Digest(std::string_view value) -> std::vector<std::uint8_t>
 {
   std::array<unsigned char, SHA256_DIGEST_LENGTH> digest {};
@@ -827,7 +779,7 @@ auto generatePkceCodePair(std::size_t verifierEntropyBytes) -> PkceCodePair
   }
 
   const std::vector<std::uint8_t> verifierEntropy = security::cryptoRandomBytes(verifierEntropyBytes);
-  const std::string codeVerifier = base64UrlEncode(verifierEntropy);
+  const std::string codeVerifier = mcp::detail::encodeBase64UrlNoPad(std::string_view(reinterpret_cast<const char *>(verifierEntropy.data()), verifierEntropy.size()));
   if (codeVerifier.size() < kPkceVerifierMinLength || codeVerifier.size() > kPkceVerifierMaxLength)
   {
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, "PKCE verifier length must be between 43 and 128 characters; adjust verifierEntropyBytes accordingly");
@@ -837,7 +789,7 @@ auto generatePkceCodePair(std::size_t verifierEntropyBytes) -> PkceCodePair
 
   PkceCodePair pair;
   pair.codeVerifier = codeVerifier;
-  pair.codeChallenge = base64UrlEncode(codeChallengeDigest);
+  pair.codeChallenge = mcp::detail::encodeBase64UrlNoPad(std::string_view(reinterpret_cast<const char *>(codeChallengeDigest.data()), codeChallengeDigest.size()));
   pair.codeChallengeMethod = std::string(kPkceMethodS256);
   return pair;
 }
