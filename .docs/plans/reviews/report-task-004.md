@@ -1,8 +1,8 @@
-# Review Report: task-004 (Pinned Schema + SDK Version Helpers)
+# Review Report: task-004 (Add Initialize/Capabilities JSON Codec + Tests)
 
 ## Status
 **PASS**
-*(Note: DoD assertions are implemented, no production code changes were introduced, and verification commands passed.)*
+*(Note: Use PASS only if the code is perfect, secure, matches the plan, and tests pass.)*
 
 ## Compliance Check
 - [x] Implementation matches `task-[id].md` instructions.
@@ -10,12 +10,12 @@
 - [x] No unauthorized architectural changes.
 
 ## Verification Output
-*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_schema_pinned_schema_test --output-on-failure`
-*   **Result:** Pass (1/1 test passed; 0 failed).
-*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_sdk_version_test --output-on-failure`
-*   **Result:** Pass (1/1 test passed; 0 failed).
-*   **Command Run:** `git diff --name-status main...HEAD`
-*   **Result:** Pass (only `tests/schema_pinned_schema_test.cpp` and `tests/sdk_version_test.cpp` changed; no production code changes).
+*   **Command Run:** `cmake --preset vcpkg-unix-release && cmake --build build/vcpkg-unix-release && ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_detail_initialize_codec_test --output-on-failure`
+*   **Result:** Pass (configure/build succeeded; `mcp_sdk_detail_initialize_codec_test` passed 1/1 with 0 failures).
+*   **Command Run:** `git diff --name-status origin/main...HEAD`
+*   **Result:** Pass (only expected task files changed: shared codec header/source, session/client integration, CMake wiring, and codec tests).
+*   **Command Run:** `grep(pattern: "auto\\s+(parseIcon|iconToJson|implementationToJson|parseImplementation|clientCapabilitiesToJson|serverCapabilitiesToJson|parseClientCapabilities|parseServerCapabilities)\\b", path: src/client, include: client.cpp)` and same pattern for `src/lifecycle/session.cpp`
+*   **Result:** Pass (no local helper definitions remain in production files; shared helpers are consumed from `include/mcp/detail/initialize_codec.hpp`/`src/detail/initialize_codec.cpp`).
 
 ## Issues Found (If FAIL)
 *   **Critical:** None.
@@ -24,4 +24,4 @@
 
 ## Required Actions
 1. No action required.
-2. Proceed to merge when ready.
+2. Ready to merge after normal branch checks.
