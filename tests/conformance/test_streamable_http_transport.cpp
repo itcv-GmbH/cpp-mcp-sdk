@@ -36,6 +36,7 @@ auto makeHeaderedRequest(mcp_http::ServerRequestMethod method,
   if (body.has_value())
   {
     request.body = std::string(*body);
+    mcp_http::setHeader(request.headers, mcp_http::kHeaderContentType, "application/json");
   }
 
   if (sessionId.has_value())

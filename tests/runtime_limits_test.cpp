@@ -49,6 +49,7 @@ auto makeServerRequest(mcp_http::ServerRequestMethod method,
   if (body.has_value())
   {
     request.body = std::move(*body);
+    mcp_http::setHeader(request.headers, mcp_http::kHeaderContentType, "application/json");
   }
 
   if (lastEventId.has_value())

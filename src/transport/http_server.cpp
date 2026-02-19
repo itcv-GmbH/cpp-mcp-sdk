@@ -53,6 +53,7 @@ static constexpr std::string_view kWwwAuthenticateErrorInsufficientScope = "insu
 static constexpr std::string_view kWellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource";
 static constexpr std::string_view kLegacyDefaultPostEndpointPath = "/rpc";
 static constexpr std::string_view kLegacyDefaultSseEndpointPath = "/events";
+static constexpr std::string_view kJsonContentType = "application/json";
 static constexpr std::uint64_t kDecimalBase = 10U;
 
 enum class BearerTokenParseStatus : std::uint8_t
@@ -412,6 +413,18 @@ static auto sessionKey(const std::optional<std::string> &sessionId) -> std::stri
 static auto makeJsonRpcErrorBody(std::string message) -> std::string
 {
   return jsonrpc::serializeMessage(jsonrpc::Message {jsonrpc::makeUnknownIdErrorResponse(jsonrpc::makeInvalidRequestError(std::nullopt, std::move(message)))});
+}
+
+static auto normalizeContentType(std::string_view contentType) -> std::string
+{
+  std::string normalized = detail::toLowerAscii(contentType);
+  const std::size_t parametersSeparator = normalized.find(';');
+  if (parametersSeparator != std::string::npos)
+  {
+    normalized = normalized.substr(0, parametersSeparator);
+  }
+
+  return std::string(detail::trimAsciiWhitespace(normalized));
 }
 
 static auto makeEvent(std::string eventId, std::string data) -> mcp::http::sse::Event
@@ -1062,6 +1075,18 @@ struct StreamableHttpServer::Impl
   // NOLINTNEXTLINE(readability-function-cognitive-complexity)
   auto handlePost(const ServerRequest &request) -> ServerResponse
   {
+    const auto contentType = getHeader(request.headers, kHeaderContentType);
+    if (!contentType.has_value())
+    {
+      return jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("Missing required Content-Type header. Expected application/json."));
+    }
+
+    const std::string normalizedContentType = normalizeContentType(*contentType);
+    if (normalizedContentType != kJsonContentType)
+    {
+      return jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("Invalid Content-Type header. Expected application/json."));
+    }
+
     if (request.body.size() > options.http.limits.maxMessageSizeBytes)
     {
       return jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("Request body exceeds configured max message size."));

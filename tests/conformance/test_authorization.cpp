@@ -269,6 +269,7 @@ TEST_CASE("Authorization 401 challenge includes RFC9728 resource_metadata", "[co
   request.method = mcp_http::ServerRequestMethod::kPost;
   request.path = "/mcp";
   request.body = makeRequestBody(1, "ping");
+  mcp_http::setHeader(request.headers, mcp_http::kHeaderContentType, "application/json");
 
   const mcp_http::ServerResponse response = server.handleRequest(request);
   REQUIRE(response.statusCode == 401);
