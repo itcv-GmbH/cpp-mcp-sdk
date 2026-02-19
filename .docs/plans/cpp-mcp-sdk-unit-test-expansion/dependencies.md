@@ -4,10 +4,10 @@
 - [x] `task-001`: Scaffold New Unit Test Targets
 
 ## Phase 2: Helper Contract Tests (Parallel; blocked by Phase 1)
-- [ ] `task-002`: Unit Tests: Cancellation Helpers (Depends on: `task-001`)
-- [ ] `task-003`: Unit Tests: Progress Helpers (Depends on: `task-001`)
-- [ ] `task-004`: Unit Tests: Pinned Schema + SDK Version Helpers (Depends on: `task-001`)
-- [ ] `task-005`: Unit Tests: Crypto RNG + Runtime Limits Defaults (Depends on: `task-001`)
+- [x] `task-002`: Unit Tests: Cancellation Helpers (Depends on: `task-001`)
+- [x] `task-003`: Unit Tests: Progress Helpers (Depends on: `task-001`)
+- [x] `task-004`: Unit Tests: Pinned Schema + SDK Version Helpers (Depends on: `task-001`)
+- [x] `task-005`: Unit Tests: Crypto RNG + Runtime Limits Defaults (Depends on: `task-001`)
 
 ## Phase 3: Core Semantics Tests (Parallel; blocked by Phase 1)
 - [ ] `task-006`: Expand Unit Tests: Schema Validator (Depends on: `task-001`)
