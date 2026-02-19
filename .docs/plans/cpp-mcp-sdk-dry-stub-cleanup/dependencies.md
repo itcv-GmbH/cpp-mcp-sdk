@@ -20,10 +20,10 @@
 - [x] `task-013`: Clarify StdioTransport Instance API (Depends on: `task-011`)
 
 ## Phase 4: Concurrency Hardening (Blocked by Phase 2)
-- [ ] `task-014`: Fix StreamableHttpServer Handler Locking (Depends on: `task-007`)
+- [x] `task-014`: Fix StreamableHttpServer Handler Locking (Depends on: `task-007`)
 
 ## Phase 4b: Threading Hardening (Optional; Blocked by Phase 2)
-- [ ] `task-016`: Router Detached Thread Removal (Depends on: `task-001`)
+- [x] `task-016`: Router Detached Thread Removal (Depends on: `task-001`)
 - [ ] `task-017`: Client Detached Thread Removal (Depends on: `task-016`)
 
 ## Phase 5: Final Gate (Blocked by Phases 3-4)
