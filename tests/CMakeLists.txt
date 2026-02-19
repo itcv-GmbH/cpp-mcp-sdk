@@ -386,6 +386,16 @@ target_link_libraries(mcp_sdk_test_auth_oauth_client_disabled
 
 add_test(NAME mcp_sdk_auth_oauth_client_disabled_test COMMAND mcp_sdk_test_auth_oauth_client_disabled)
 
+add_executable(mcp_sdk_test_detail_ascii detail_ascii_test.cpp)
+
+target_link_libraries(mcp_sdk_test_detail_ascii
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_detail_ascii_test COMMAND mcp_sdk_test_detail_ascii)
+
 if(MCP_SDK_INTEGRATION_TESTS)
     add_subdirectory(integration)
 endif()
