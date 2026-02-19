@@ -27,7 +27,8 @@ auto makeHeaderedRequest(mcp_http::ServerRequestMethod method,
                          std::optional<std::string_view> body = std::nullopt,
                          std::optional<std::string_view> sessionId = std::nullopt,
                          std::optional<std::string_view> lastEventId = std::nullopt,
-                         std::optional<std::string_view> authorization = std::nullopt) -> mcp_http::ServerRequest
+                         std::optional<std::string_view> authorization = std::nullopt,
+                         std::optional<std::string_view> contentType = std::optional<std::string_view> {"application/json"}) -> mcp_http::ServerRequest
 {
   mcp_http::ServerRequest request;
   request.method = method;
@@ -36,6 +37,11 @@ auto makeHeaderedRequest(mcp_http::ServerRequestMethod method,
   if (body.has_value())
   {
     request.body = std::string(*body);
+
+    if (contentType.has_value())
+    {
+      mcp_http::setHeader(request.headers, mcp_http::kHeaderContentType, std::string(*contentType));
+    }
   }
 
   if (sessionId.has_value())
@@ -299,6 +305,69 @@ TEST_CASE("HTTP server Last-Event-ID replay is stream-local", "[transport][http]
   REQUIRE(replayB.sse->events.empty());
 }
 
+TEST_CASE("HTTP server Last-Event-ID resume rejects cross-stream and stale IDs", "[transport][http][server]")
+{
+  SECTION("Cross-stream Last-Event-ID is rejected with 404")
+  {
+    mcp_http::StreamableHttpServerOptions options;
+    options.http.requireSessionId = true;
+
+    mcp_http::StreamableHttpServer server(options);
+    server.upsertSession("session-a", mcp_http::SessionLookupState::kActive, std::string(mcp::kLatestProtocolVersion));
+    server.upsertSession("session-b", mcp_http::SessionLookupState::kActive, std::string(mcp::kLatestProtocolVersion));
+
+    const mcp_http::ServerResponse streamA = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, "session-a"));
+    const mcp_http::ServerResponse streamB = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, "session-b"));
+
+    REQUIRE(streamA.statusCode == 200);
+    REQUIRE(streamA.sse.has_value());
+    REQUIRE(streamA.sse->events.size() == 1);
+    REQUIRE(streamA.sse->events.front().id.has_value());
+
+    REQUIRE(streamB.statusCode == 200);
+    REQUIRE(streamB.sse.has_value());
+
+    const std::string streamAEventId = *streamA.sse->events.front().id;
+    const mcp_http::ServerResponse crossStreamResume =
+      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, "session-b", streamAEventId));
+
+    REQUIRE(crossStreamResume.statusCode == 404);
+    REQUIRE_FALSE(crossStreamResume.sse.has_value());
+  }
+
+  SECTION("Stale Last-Event-ID is rejected with 409")
+  {
+    mcp_http::StreamableHttpServerOptions options;
+    options.http.limits.maxSseBufferedMessages = 1;
+    options.http.requireSessionId = true;
+
+    mcp_http::StreamableHttpServer server(options);
+    server.upsertSession("session-live", mcp_http::SessionLookupState::kActive, std::string(mcp::kLatestProtocolVersion));
+
+    const mcp_http::ServerResponse opened = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, "session-live"));
+    REQUIRE(opened.statusCode == 200);
+    REQUIRE(opened.sse.has_value());
+    REQUIRE(opened.sse->events.size() == 1);
+    REQUIRE(opened.sse->events.front().id.has_value());
+
+    mcp::jsonrpc::Notification first;
+    first.method = "notifications/first";
+    REQUIRE(server.enqueueServerMessage(mcp::jsonrpc::Message {first}, "session-live"));
+
+    mcp::jsonrpc::Notification second;
+    second.method = "notifications/second";
+    REQUIRE(server.enqueueServerMessage(mcp::jsonrpc::Message {second}, "session-live"));
+
+    const std::string primingEventId = *opened.sse->events.front().id;
+    const mcp_http::ServerResponse staleResume =
+      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, "session-live", primingEventId));
+
+    REQUIRE(staleResume.statusCode == 409);
+    REQUIRE_FALSE(staleResume.sse.has_value());
+    REQUIRE(staleResume.body.find("retained SSE buffer window") != std::string::npos);
+  }
+}
+
 TEST_CASE("HTTP server emits SSE priming event with event ID and empty data", "[transport][http][server]")
 {
   mcp_http::StreamableHttpServer server;
@@ -353,6 +422,25 @@ TEST_CASE("HTTP server returns 405 when GET SSE is disabled", "[transport][http]
   const mcp_http::ServerResponse response = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp"));
 
   REQUIRE(response.statusCode == 405);
+}
+
+TEST_CASE("HTTP server rejects POST bodies with missing or invalid Content-Type", "[transport][http][server]")
+{
+  mcp_http::StreamableHttpServer server;
+
+  SECTION("Missing Content-Type")
+  {
+    const mcp_http::ServerResponse response =
+      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", "{}", std::nullopt, std::nullopt, std::nullopt, std::nullopt));
+    REQUIRE(response.statusCode == 400);
+  }
+
+  SECTION("Invalid Content-Type")
+  {
+    const mcp_http::ServerResponse response =
+      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", "{}", std::nullopt, std::nullopt, std::nullopt, "text/plain"));
+    REQUIRE(response.statusCode == 400);
+  }
 }
 
 TEST_CASE("HTTP server rejects POST bodies that are not a single JSON-RPC message", "[transport][http][server]")
