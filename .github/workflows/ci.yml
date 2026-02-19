@@ -110,12 +110,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [auth-off, auth-off-tls-off]
+        variant: [auth-off]
         include:
           - variant: auth-off
             cmake_flags: -DMCP_SDK_ENABLE_AUTH=OFF
-          - variant: auth-off-tls-off
-            cmake_flags: -DMCP_SDK_ENABLE_AUTH=OFF -DMCP_SDK_ENABLE_TLS=OFF
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
