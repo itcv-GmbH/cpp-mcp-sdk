@@ -81,6 +81,7 @@ TEST_CASE("HTTP runtime server runs in HTTP or HTTPS mode from config", "[transp
     REQUIRE(response.body == "ok");
   }
 
+#if MCP_SDK_ENABLE_TLS
   SECTION("HTTPS mode")
   {
     mcp_transport::HttpServerOptions serverOptions = makeServerOptions();
@@ -102,8 +103,10 @@ TEST_CASE("HTTP runtime server runs in HTTP or HTTPS mode from config", "[transp
     REQUIRE(response.statusCode == 200);
     REQUIRE(response.body == "ok");
   }
+#endif
 }
 
+#if MCP_SDK_ENABLE_TLS
 TEST_CASE("HTTPS client verification is enabled by default", "[transport][http][tls]")
 {
   mcp_transport::HttpServerOptions serverOptions = makeServerOptions();
@@ -119,5 +122,6 @@ TEST_CASE("HTTPS client verification is enabled by default", "[transport][http][
   const mcp_transport::HttpClientRuntime client(makeClientOptions(endpointUrl("https", server.localPort())));
   REQUIRE_THROWS(client.execute(makePostRequest()));
 }
+#endif
 
 // NOLINTEND(llvm-prefer-static-over-anonymous-namespace, cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
