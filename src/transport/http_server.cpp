@@ -189,7 +189,7 @@ static auto parseBearerToken(const HeaderList &headers) -> BearerTokenParseResul
   }
 
   const std::string_view scheme = trimmedAuthorization.substr(0, schemeSeparator);
-  if (!detail::equalsIgnoreCase(scheme, kBearerScheme))
+  if (!detail::equalsIgnoreCaseAscii(scheme, kBearerScheme))
   {
     BearerTokenParseResult result;
     result.status = BearerTokenParseStatus::kInvalid;

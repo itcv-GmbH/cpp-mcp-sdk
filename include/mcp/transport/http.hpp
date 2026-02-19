@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <mcp/auth/oauth_server.hpp>
+#include <mcp/detail/ascii.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/limits.hpp>
@@ -82,59 +83,15 @@ inline constexpr std::uint16_t kHttpStatusForbidden = 403;
 inline constexpr std::uint16_t kHttpStatusNotFound = 404;
 inline constexpr std::uint32_t kDefaultRetryMilliseconds = 1000U;
 
-inline auto toLowerAscii(std::string_view text) -> std::string
-{
-  std::string normalized;
-  normalized.reserve(text.size());
-
-  for (const char character : text)
-  {
-    normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
-  }
-
-  return normalized;
-}
-
-inline auto equalsIgnoreCase(std::string_view left, std::string_view right) -> bool
-{
-  if (left.size() != right.size())
-  {
-    return false;
-  }
-
-  for (std::size_t index = 0; index < left.size(); ++index)
-  {
-    if (std::tolower(static_cast<unsigned char>(left[index])) != std::tolower(static_cast<unsigned char>(right[index])))
-    {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-inline auto trimAsciiWhitespace(std::string_view value) -> std::string_view
-{
-  std::size_t begin = 0;
-  while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0)
-  {
-    ++begin;
-  }
-
-  std::size_t end = value.size();
-  while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0)
-  {
-    --end;
-  }
-
-  return value.substr(begin, end - begin);
-}
+using ::mcp::detail::equalsIgnoreCaseAscii;
+using ::mcp::detail::toLowerAscii;
+using ::mcp::detail::trimAsciiWhitespace;
 
 }  // namespace detail
 
 inline auto setHeader(HeaderList &headers, std::string_view name, std::string value) -> void
 {
-  const auto existing = std::find_if(headers.begin(), headers.end(), [name](const Header &header) -> bool { return detail::equalsIgnoreCase(header.name, name); });
+  const auto existing = std::find_if(headers.begin(), headers.end(), [name](const Header &header) -> bool { return detail::equalsIgnoreCaseAscii(header.name, name); });
 
   if (existing != headers.end())
   {
@@ -147,7 +104,7 @@ inline auto setHeader(HeaderList &headers, std::string_view name, std::string va
 
 inline auto getHeader(const HeaderList &headers, std::string_view name) -> std::optional<std::string>
 {
-  const auto existing = std::find_if(headers.begin(), headers.end(), [name](const Header &header) -> bool { return detail::equalsIgnoreCase(header.name, name); });
+  const auto existing = std::find_if(headers.begin(), headers.end(), [name](const Header &header) -> bool { return detail::equalsIgnoreCaseAscii(header.name, name); });
 
   if (existing == headers.end())
   {

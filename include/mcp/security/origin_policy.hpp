@@ -8,6 +8,8 @@
 #include <string_view>
 #include <vector>
 
+#include <mcp/detail/ascii.hpp>
+
 namespace mcp::security
 {
 
@@ -30,6 +32,9 @@ namespace detail
 inline constexpr std::uint32_t kPortDecimalBase = 10U;
 inline constexpr std::uint32_t kMaxTcpPort = 65535U;
 
+using ::mcp::detail::toLowerAscii;
+using ::mcp::detail::trimAsciiWhitespace;
+
 struct ParsedOrigin
 {
   std::string scheme;
@@ -37,36 +42,6 @@ struct ParsedOrigin
   std::optional<std::uint16_t> port;
   bool ipv6Literal = false;
 };
-
-inline auto toLowerAscii(std::string_view value) -> std::string
-{
-  std::string normalized;
-  normalized.reserve(value.size());
-
-  for (const char character : value)
-  {
-    normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
-  }
-
-  return normalized;
-}
-
-inline auto trimAsciiWhitespace(std::string_view value) -> std::string_view
-{
-  std::size_t begin = 0;
-  while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0)
-  {
-    ++begin;
-  }
-
-  std::size_t end = value.size();
-  while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0)
-  {
-    --end;
-  }
-
-  return value.substr(begin, end - begin);
-}
 
 inline auto isValidScheme(std::string_view scheme) -> bool
 {
