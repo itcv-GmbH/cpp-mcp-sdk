@@ -279,6 +279,32 @@ TEST_CASE("Dynamic registration response JSON missing required fields is rejecte
     }
   }
 
+  SECTION("missing redirect_uris in response and no fallback is rejected")
+  {
+    // Remove fallback redirect URIs from request config
+    request.strategyConfiguration.dynamic.redirectUris.clear();
+
+    request.httpExecutor = [](const mcp::auth::ClientRegistrationHttpRequest &) -> mcp::auth::ClientRegistrationHttpResponse
+    {
+      mcp::auth::ClientRegistrationHttpResponse response;
+      response.statusCode = 201;
+      // Response JSON omits redirect_uris and has no client_secret
+      response.body = R"({"client_id": "test-client-123", "token_endpoint_auth_method": "none"})";
+      return response;
+    };
+
+    try
+    {
+      static_cast<void>(mcp::auth::resolveClientRegistration(request));
+      FAIL("Expected metadata validation error for missing redirect_uris");
+    }
+    catch (const mcp::auth::ClientRegistrationError &error)
+    {
+      REQUIRE(error.code() == mcp::auth::ClientRegistrationErrorCode::kMetadataValidation);
+      REQUIRE(std::string(error.what()).find("redirect_uris") != std::string::npos);
+    }
+  }
+
   SECTION("invalid JSON is rejected")
   {
     request.httpExecutor = [](const mcp::auth::ClientRegistrationHttpRequest &) -> mcp::auth::ClientRegistrationHttpResponse
