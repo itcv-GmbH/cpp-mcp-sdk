@@ -1,7 +1,7 @@
 # Dependency Graph
 
 ## Phase 1: Scaffolding (Must complete first)
-- [ ] `task-001`: Scaffold New Unit Test Targets
+- [x] `task-001`: Scaffold New Unit Test Targets
 
 ## Phase 2: Helper Contract Tests (Parallel; blocked by Phase 1)
 - [ ] `task-002`: Unit Tests: Cancellation Helpers (Depends on: `task-001`)
