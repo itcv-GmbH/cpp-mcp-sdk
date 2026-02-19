@@ -1073,7 +1073,7 @@ struct StreamableHttpServer::Impl
   }
 
   // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-  auto handlePost(const ServerRequest &request) -> ServerResponse
+  auto handlePost(const ServerRequest &request, std::unique_lock<std::mutex> &lock) -> ServerResponse
   {
     const auto contentType = getHeader(request.headers, kHeaderContentType);
     if (!contentType.has_value())
@@ -1119,7 +1119,25 @@ struct StreamableHttpServer::Impl
 
     if (std::holds_alternative<jsonrpc::Notification>(message))
     {
-      const bool accepted = !notificationHandler || notificationHandler(context, std::get<jsonrpc::Notification>(message));
+      const jsonrpc::Notification &notification = std::get<jsonrpc::Notification>(message);
+      const StreamableNotificationHandler notificationHandlerCopy = notificationHandler;
+      bool accepted = true;
+      if (notificationHandlerCopy)
+      {
+        lock.unlock();
+        try
+        {
+          accepted = notificationHandlerCopy(context, notification);
+        }
+        catch (...)
+        {
+          lock.lock();
+          throw;
+        }
+
+        lock.lock();
+      }
+
       return accepted ? statusResponse(kStatusAccepted) : jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("Notification was rejected by server policy"));
     }
 
@@ -1128,16 +1146,45 @@ struct StreamableHttpServer::Impl
       const jsonrpc::Response typedResponse = std::holds_alternative<jsonrpc::SuccessResponse>(message) ? jsonrpc::Response {std::get<jsonrpc::SuccessResponse>(message)}
                                                                                                         : jsonrpc::Response {std::get<jsonrpc::ErrorResponse>(message)};
 
-      const bool accepted = !responseHandler || responseHandler(context, typedResponse);
+      const StreamableResponseHandler responseHandlerCopy = responseHandler;
+      bool accepted = true;
+      if (responseHandlerCopy)
+      {
+        lock.unlock();
+        try
+        {
+          accepted = responseHandlerCopy(context, typedResponse);
+        }
+        catch (...)
+        {
+          lock.lock();
+          throw;
+        }
+
+        lock.lock();
+      }
+
       return accepted ? statusResponse(kStatusAccepted) : jsonResponse(kStatusBadRequest, makeJsonRpcErrorBody("Response was rejected by server policy"));
     }
 
     const jsonrpc::Request &typedRequest = std::get<jsonrpc::Request>(message);
 
     StreamableRequestResult requestResult;
-    if (requestHandler)
+    const StreamableRequestHandler requestHandlerCopy = requestHandler;
+    if (requestHandlerCopy)
     {
-      requestResult = requestHandler(context, typedRequest);
+      lock.unlock();
+      try
+      {
+        requestResult = requestHandlerCopy(context, typedRequest);
+      }
+      catch (...)
+      {
+        lock.lock();
+        throw;
+      }
+
+      lock.lock();
     }
     else
     {
@@ -1189,9 +1236,9 @@ struct StreamableHttpServer::Impl
     return sseResponse(stream, std::move(outboundEvents), stream.terminated ? kTerminateStream : kKeepStreamOpen);
   }
 
-  auto handleLegacyPost(const ServerRequest &request) -> ServerResponse
+  auto handleLegacyPost(const ServerRequest &request, std::unique_lock<std::mutex> &lock) -> ServerResponse
   {
-    ServerResponse modernResponse = handlePost(request);
+    ServerResponse modernResponse = handlePost(request, lock);
     if (modernResponse.statusCode >= kStatusBadRequest)
     {
       return modernResponse;
@@ -1380,6 +1427,8 @@ struct StreamableHttpServer::Impl
 
   auto handleRequest(const ServerRequest &request) -> ServerResponse
   {
+    std::unique_lock<std::mutex> lock(mutex);
+
     const std::optional<ServerResponse> protectedResourceMetadataResponse = handleProtectedResourceMetadataRequest(request);
     if (protectedResourceMetadataResponse.has_value())
     {
@@ -1395,7 +1444,7 @@ struct StreamableHttpServer::Impl
 
       if (request.path == legacyCompatibility.postEndpointPath)
       {
-        return request.method == ServerRequestMethod::kPost ? handleLegacyPost(request) : statusResponse(kStatusMethodNotAllowed);
+        return request.method == ServerRequestMethod::kPost ? handleLegacyPost(request, lock) : statusResponse(kStatusMethodNotAllowed);
       }
     }
 
@@ -1407,7 +1456,7 @@ struct StreamableHttpServer::Impl
     switch (request.method)
     {
       case ServerRequestMethod::kPost:
-        return handlePost(request);
+        return handlePost(request, lock);
       case ServerRequestMethod::kGet:
         return handleGet(request);
       case ServerRequestMethod::kDelete:
@@ -1515,7 +1564,6 @@ auto StreamableHttpServer::setSessionState(std::string_view sessionId, SessionLo
 
 auto StreamableHttpServer::handleRequest(const ServerRequest &request) -> ServerResponse
 {
-  const std::scoped_lock lock(impl_->mutex);
   return impl_->handleRequest(request);
 }
 

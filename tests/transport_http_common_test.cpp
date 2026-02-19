@@ -1,9 +1,15 @@
+#include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <future>
 #include <iterator>
+#include <optional>
 #include <string>
+#include <utility>
 
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
 #include <catch2/catch_test_macros.hpp>
+#include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/version.hpp>
@@ -47,6 +53,24 @@ auto makeBaseRequest() -> beast_http::request<beast_http::string_body>
   beast_http::request<beast_http::string_body> request {beast_http::verb::post, "/mcp", 11};
   request.set(beast_http::field::origin, "http://localhost:6274");
   request.set("MCP-Protocol-Version", std::string(mcp::kLatestProtocolVersion));
+  return request;
+}
+
+auto makeJsonRpcRequestBody(std::int64_t id, std::string method) -> std::string
+{
+  mcp::jsonrpc::Request request;
+  request.id = id;
+  request.method = std::move(method);
+  return mcp::jsonrpc::serializeMessage(mcp::jsonrpc::Message {request});
+}
+
+auto makeServerPostRequest(std::string body) -> mcp_http::ServerRequest
+{
+  mcp_http::ServerRequest request;
+  request.method = mcp_http::ServerRequestMethod::kPost;
+  request.path = "/mcp";
+  request.body = std::move(body);
+  mcp_http::setHeader(request.headers, mcp_http::kHeaderContentType, "application/json");
   return request;
 }
 
@@ -531,6 +555,56 @@ TEST_CASE("Protocol fallback behavior only applies when version cannot be inferr
     const auto result = harness.handle(request);
     REQUIRE(result.accepted);
   }
+}
+
+TEST_CASE("Streamable HTTP avoids deadlock when handler enqueues server message", "[transport][http][common]")
+{
+  using namespace std::chrono_literals;
+
+  mcp_http::StreamableHttpServer server;
+  std::atomic<int> enqueueCalls = 0;
+
+  server.setRequestHandler(
+    [&server, &enqueueCalls](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> mcp_http::StreamableRequestResult
+    {
+      mcp::jsonrpc::Notification queuedFromHandler;
+      queuedFromHandler.method = "notifications/queued-from-handler";
+      enqueueCalls.fetch_add(1);
+      static_cast<void>(server.enqueueServerMessage(mcp::jsonrpc::Message {queuedFromHandler}));
+
+      mcp_http::StreamableRequestResult result;
+      result.useSse = true;
+
+      mcp::jsonrpc::Notification preResponse;
+      preResponse.method = "notifications/pre-response";
+      result.preResponseMessages.push_back(mcp::jsonrpc::Message {preResponse});
+
+      mcp::jsonrpc::SuccessResponse response;
+      response.id = request.id;
+      response.result = mcp::jsonrpc::JsonValue::object();
+      response.result["ok"] = true;
+      result.response = response;
+      return result;
+    });
+
+  std::future<mcp_http::ServerResponse> responseFuture =
+    std::async(std::launch::async, [&server]() -> mcp_http::ServerResponse { return server.handleRequest(makeServerPostRequest(makeJsonRpcRequestBody(17, "ping"))); });
+
+  REQUIRE(responseFuture.wait_for(500ms) == std::future_status::ready);
+
+  const mcp_http::ServerResponse postResponse = responseFuture.get();
+  REQUIRE(postResponse.statusCode == 200);
+  REQUIRE(postResponse.sse.has_value());
+  REQUIRE(postResponse.sse->events.size() == 3);
+  REQUIRE(enqueueCalls.load() == 1);
+
+  const mcp::jsonrpc::Message preResponseMessage = mcp::jsonrpc::parseMessage(postResponse.sse->events[1].data);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::Notification>(preResponseMessage));
+  REQUIRE(std::get<mcp::jsonrpc::Notification>(preResponseMessage).method == "notifications/pre-response");
+
+  const mcp::jsonrpc::Message responseMessage = mcp::jsonrpc::parseMessage(postResponse.sse->events[2].data);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(responseMessage));
+  REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(responseMessage).id == mcp::jsonrpc::RequestId {std::int64_t {17}});
 }
 
 // NOLINTEND(misc-include-cleaner, llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
