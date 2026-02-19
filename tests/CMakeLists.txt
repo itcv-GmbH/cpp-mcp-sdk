@@ -143,6 +143,16 @@ target_link_libraries(mcp_sdk_test_lifecycle
 
 add_test(NAME mcp_sdk_lifecycle_test COMMAND mcp_sdk_test_lifecycle)
 
+add_executable(mcp_sdk_test_detail_initialize_codec detail_initialize_codec_test.cpp)
+
+target_link_libraries(mcp_sdk_test_detail_initialize_codec
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_detail_initialize_codec_test COMMAND mcp_sdk_test_detail_initialize_codec)
+
 add_executable(mcp_sdk_test_client client_test.cpp)
 
 target_link_libraries(mcp_sdk_test_client

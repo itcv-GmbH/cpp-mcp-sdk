@@ -48,6 +48,7 @@ set(MCP_SDK_SOURCES
     src/auth_protected_resource_metadata.cpp
     src/client/client.cpp
     src/lifecycle/session.cpp
+    src/detail/initialize_codec.cpp
     src/security/crypto_random.cpp
     src/server/server.cpp
     src/schema/validator.cpp
