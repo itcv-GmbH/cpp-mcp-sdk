@@ -44,15 +44,20 @@ TEST_CASE("Client must send initialize as first request", "[lifecycle][client][e
 {
   Session session;
   session.setRole(SessionRole::kClient);
+  REQUIRE(session.state() == SessionState::kCreated);
+  REQUIRE(session.canSendRequest("initialize"));
+  REQUIRE_FALSE(session.canSendRequest("ping"));
 
   // Trying to send any request other than initialize should throw
   jsoncons::json params = jsoncons::json::object();
   REQUIRE_THROWS_AS(session.sendRequest("ping", params), LifecycleError);
   REQUIRE_THROWS_AS(session.sendRequest("tools/list", params), LifecycleError);
+  REQUIRE(session.state() == SessionState::kCreated);
 
   // Sending initialize should succeed (doesn't actually send, just validates)
   // Note: sendRequest currently returns a placeholder future, so it won't throw for initialize
   REQUIRE_NOTHROW(session.sendRequest("initialize", params));
+  REQUIRE(session.state() == SessionState::kInitializing);
 }
 
 TEST_CASE("Client can only send ping while waiting for initialize response", "[lifecycle][client][enforcement]")
@@ -72,8 +77,13 @@ TEST_CASE("Client can only send ping while waiting for initialize response", "[l
   REQUIRE(session.state() == SessionState::kInitializing);
 
   // Now only ping should be allowed
+  REQUIRE(session.canSendRequest("ping"));
+  REQUIRE_FALSE(session.canSendRequest("initialize"));
+  REQUIRE_FALSE(session.canSendRequest("tools/list"));
+
   jsoncons::json params = jsoncons::json::object();
   REQUIRE_NOTHROW(session.sendRequest("ping", params));
+  REQUIRE_THROWS_AS(session.sendRequest("initialize", params), LifecycleError);
   REQUIRE_THROWS_AS(session.sendRequest("tools/list", params), LifecycleError);
 }
 
@@ -82,7 +92,11 @@ TEST_CASE("Client cannot send initialized notification before initialization com
   Session session;
   session.setRole(SessionRole::kClient);
 
-  // Should not be able to send initialized notification before initialize completes
+  // Should not be able to send initialized notification before initialize completes.
+  jsoncons::json initParams = jsoncons::json::object();
+  REQUIRE_NOTHROW(session.sendRequest("initialize", initParams));
+  REQUIRE(session.state() == SessionState::kInitializing);
+
   REQUIRE_THROWS_AS(session.sendNotification("notifications/initialized"), LifecycleError);
 }
 
@@ -188,11 +202,14 @@ TEST_CASE("Server returns actionable error when it supports no protocol versions
 
   const auto &errorResp = std::get<jsonrpc::ErrorResponse>(response);
   REQUIRE(errorResp.error.code == -32602);
+  REQUIRE(errorResp.error.message.find("Protocol negotiation failed") != std::string::npos);
   REQUIRE(errorResp.error.data.has_value());
   const auto &errorData = *errorResp.error.data;
   REQUIRE(errorData.contains("supported"));
   REQUIRE(errorData.contains("requested"));
   REQUIRE(errorData["requested"].as<std::string>() == "2025-11-25");
+  REQUIRE(errorData["supported"].is_array());
+  REQUIRE(errorData["supported"].empty());
 }
 
 TEST_CASE("Server rejects requests before initialization", "[lifecycle][server][enforcement]")
@@ -205,6 +222,59 @@ TEST_CASE("Server rejects requests before initialization", "[lifecycle][server][
   REQUIRE(session.canHandleRequest("ping"));
   REQUIRE_FALSE(session.canHandleRequest("tools/list"));
   REQUIRE_FALSE(session.canHandleRequest("resources/read"));
+}
+
+TEST_CASE("Server pre-init restrictions allow only lifecycle-safe traffic", "[lifecycle][server][enforcement]")
+{
+  Session session;
+  session.setRole(SessionRole::kServer);
+
+  SECTION("created state allows only initialize and ping requests")
+  {
+    REQUIRE(session.state() == SessionState::kCreated);
+    REQUIRE(session.canHandleRequest("initialize"));
+    REQUIRE(session.canHandleRequest("ping"));
+    REQUIRE_FALSE(session.canHandleRequest("logging/setLevel"));
+    REQUIRE_FALSE(session.canHandleRequest("tools/list"));
+
+    REQUIRE(session.canSendRequest("ping"));
+    REQUIRE_FALSE(session.canSendRequest("tools/list"));
+
+    jsoncons::json params = jsoncons::json::object();
+    REQUIRE_NOTHROW(session.sendRequest("ping", params));
+    REQUIRE_THROWS_AS(session.sendRequest("tools/list", params), LifecycleError);
+
+    REQUIRE_FALSE(session.canSendNotification("notifications/message"));
+    REQUIRE_THROWS_AS(session.sendNotification("notifications/message"), LifecycleError);
+  }
+
+  SECTION("initialized state allows ping and logging before operating")
+  {
+    jsonrpc::Request request;
+    request.id = std::int64_t {1};
+    request.method = "initialize";
+    request.params = jsoncons::json::object();
+    (*request.params)["protocolVersion"] = std::string(kLatestProtocolVersion);
+    (*request.params)["capabilities"] = jsoncons::json::object();
+    (*request.params)["clientInfo"] = jsoncons::json::object();
+    (*request.params)["clientInfo"]["name"] = "test-client";
+    (*request.params)["clientInfo"]["version"] = "1.0.0";
+
+    const auto initResponse = session.handleInitializeRequest(request);
+    REQUIRE(std::holds_alternative<jsonrpc::SuccessResponse>(initResponse));
+    REQUIRE(session.state() == SessionState::kInitialized);
+
+    REQUIRE_FALSE(session.canHandleRequest("initialize"));
+    REQUIRE(session.canHandleRequest("ping"));
+    REQUIRE(session.canHandleRequest("logging/setLevel"));
+    REQUIRE_FALSE(session.canHandleRequest("tools/list"));
+
+    REQUIRE(session.canSendRequest("ping"));
+    REQUIRE_FALSE(session.canSendRequest("tools/list"));
+
+    REQUIRE(session.canSendNotification("notifications/message"));
+    REQUIRE_NOTHROW(session.sendNotification("notifications/message"));
+  }
 }
 
 TEST_CASE("Server transitions to operating after initialized notification", "[lifecycle][server]")
@@ -315,6 +385,9 @@ TEST_CASE("Client negotiation failure reports actionable version error", "[lifec
     const std::string errorMessage = error.what();
     REQUIRE(errorMessage.find("unsupported protocol version") != std::string::npos);
     REQUIRE(errorMessage.find("1900-01-01") != std::string::npos);
+    REQUIRE(errorMessage.find(std::string(kLatestProtocolVersion)) != std::string::npos);
+    REQUIRE(errorMessage.find(std::string(kLegacyProtocolVersion)) != std::string::npos);
+    REQUIRE(session.state() == SessionState::kCreated);
   }
 }
 
@@ -332,6 +405,8 @@ TEST_CASE("Capability negotiation preserves experimental capabilities", "[lifecy
   (*initializeRequest.params)["capabilities"]["roots"] = jsoncons::json::object();
   (*initializeRequest.params)["capabilities"]["experimental"] = jsoncons::json::object();
   (*initializeRequest.params)["capabilities"]["experimental"]["x-test"] = jsoncons::json::object();
+  (*initializeRequest.params)["capabilities"]["experimental"]["x-test"]["enabled"] = true;
+  (*initializeRequest.params)["capabilities"]["experimental"]["x-test"]["cohort"] = "beta";
   (*initializeRequest.params)["clientInfo"] = jsoncons::json::object();
   (*initializeRequest.params)["clientInfo"]["name"] = "test-client";
   (*initializeRequest.params)["clientInfo"]["version"] = "1.0.0";
@@ -340,6 +415,11 @@ TEST_CASE("Capability negotiation preserves experimental capabilities", "[lifecy
   REQUIRE(std::holds_alternative<jsonrpc::SuccessResponse>(initServerResponse));
   REQUIRE(serverSession.checkCapability("roots"));
   REQUIRE(serverSession.checkCapability("experimental"));
+  REQUIRE(serverSession.negotiatedParameters().has_value());
+  REQUIRE(serverSession.negotiatedParameters()->clientCapabilities().experimental().has_value());
+  const auto &clientExperimental = *serverSession.negotiatedParameters()->clientCapabilities().experimental();
+  REQUIRE(clientExperimental["x-test"]["enabled"].as<bool>());
+  REQUIRE(clientExperimental["x-test"]["cohort"].as<std::string>() == "beta");
 
   Session clientSession;
   clientSession.setRole(SessionRole::kClient);
@@ -354,6 +434,8 @@ TEST_CASE("Capability negotiation preserves experimental capabilities", "[lifecy
   initializeResponse.result["capabilities"]["tools"] = jsoncons::json::object();
   initializeResponse.result["capabilities"]["experimental"] = jsoncons::json::object();
   initializeResponse.result["capabilities"]["experimental"]["y-test"] = jsoncons::json::object();
+  initializeResponse.result["capabilities"]["experimental"]["y-test"]["enabled"] = true;
+  initializeResponse.result["capabilities"]["experimental"]["y-test"]["maxBatch"] = 8;
   initializeResponse.result["serverInfo"] = jsoncons::json::object();
   initializeResponse.result["serverInfo"]["name"] = "test-server";
   initializeResponse.result["serverInfo"]["version"] = "1.0.0";
@@ -361,6 +443,11 @@ TEST_CASE("Capability negotiation preserves experimental capabilities", "[lifecy
   REQUIRE_NOTHROW(clientSession.handleInitializeResponse(jsonrpc::Response {initializeResponse}));
   REQUIRE(clientSession.checkCapability("tools"));
   REQUIRE(clientSession.checkCapability("experimental"));
+  REQUIRE(clientSession.negotiatedParameters().has_value());
+  REQUIRE(clientSession.negotiatedParameters()->serverCapabilities().experimental().has_value());
+  const auto &serverExperimental = *clientSession.negotiatedParameters()->serverCapabilities().experimental();
+  REQUIRE(serverExperimental["y-test"]["enabled"].as<bool>());
+  REQUIRE(serverExperimental["y-test"]["maxBatch"].as<int>() == 8);
 }
 
 TEST_CASE("Elicitation fallback parsing only enables form for explicit empty object", "[lifecycle][capabilities][elicitation]")
