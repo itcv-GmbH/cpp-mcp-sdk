@@ -596,6 +596,43 @@ TEST_CASE("Client convenience APIs enforce negotiated capability gating", "[clie
 
 TEST_CASE("Client roots/list enforces negotiated capability and provider gating", "[client][roots][capabilities]")
 {
+  SECTION("roots/list returns method not found before initialize when roots are only configured locally")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::RootsCapability rootsCapability;
+    rootsCapability.listChanged = true;
+    mcp::ClientInitializeConfiguration configuration;
+    configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(configuration));
+    client->setRootsProvider(
+      [](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry>
+      {
+        return {
+          mcp::RootEntry {"file:///workspace/project-a", std::optional<std::string> {"Project A"}, std::nullopt},
+        };
+      });
+
+    mcp::jsonrpc::Request listRootsRequest;
+    listRootsRequest.id = std::int64_t {9000};
+    listRootsRequest.method = "roots/list";
+    listRootsRequest.params = mcp::jsonrpc::JsonValue::object();
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, listRootsRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kMethodNotFound));
+    REQUIRE(error.error.message == "Roots not supported");
+    REQUIRE(error.error.data.has_value());
+    if (error.error.data.has_value())
+    {
+      REQUIRE((*error.error.data)["reason"].as<std::string>() == "Client does not have roots capability");
+    }
+  }
+
   SECTION("roots/list returns method not found when roots capability is not negotiated")
   {
     auto client = mcp::Client::create();
@@ -910,6 +947,179 @@ TEST_CASE("Client sampling/createMessage validates roles and tool capability", "
     REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
     const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
     REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+  }
+
+  SECTION("sampling/createMessage rejects mixed user content when tool_result is present")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::SamplingCapability samplingCapability;
+    mcp::ClientInitializeConfiguration configuration;
+    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(configuration));
+
+    client->setSamplingCreateMessageHandler(
+      [](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &) -> std::optional<mcp::jsonrpc::JsonValue>
+      {
+        mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
+        result["role"] = "assistant";
+        result["model"] = "test-model";
+        result["content"] = mcp::jsonrpc::JsonValue::object();
+        result["content"]["type"] = "text";
+        result["content"]["text"] = "ok";
+        return result;
+      });
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    mcp::jsonrpc::Request samplingRequest;
+    samplingRequest.id = std::int64_t {9105};
+    samplingRequest.method = "sampling/createMessage";
+    samplingRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*samplingRequest.params)["maxTokens"] = 64;
+    (*samplingRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+
+    mcp::jsonrpc::JsonValue firstMessage = mcp::jsonrpc::JsonValue::object();
+    firstMessage["role"] = "user";
+    firstMessage["content"] = mcp::jsonrpc::JsonValue::object();
+    firstMessage["content"]["type"] = "text";
+    firstMessage["content"]["text"] = "look up weather";
+    (*samplingRequest.params)["messages"].push_back(std::move(firstMessage));
+
+    mcp::jsonrpc::JsonValue assistantToolUseMessage = mcp::jsonrpc::JsonValue::object();
+    assistantToolUseMessage["role"] = "assistant";
+    assistantToolUseMessage["content"] = mcp::jsonrpc::JsonValue::array();
+
+    mcp::jsonrpc::JsonValue toolUse = mcp::jsonrpc::JsonValue::object();
+    toolUse["type"] = "tool_use";
+    toolUse["id"] = "call-1";
+    toolUse["name"] = "lookup_weather";
+    toolUse["input"] = mcp::jsonrpc::JsonValue::object();
+    assistantToolUseMessage["content"].push_back(std::move(toolUse));
+    (*samplingRequest.params)["messages"].push_back(std::move(assistantToolUseMessage));
+
+    mcp::jsonrpc::JsonValue invalidToolResultMessage = mcp::jsonrpc::JsonValue::object();
+    invalidToolResultMessage["role"] = "user";
+    invalidToolResultMessage["content"] = mcp::jsonrpc::JsonValue::array();
+
+    mcp::jsonrpc::JsonValue textBlock = mcp::jsonrpc::JsonValue::object();
+    textBlock["type"] = "text";
+    textBlock["text"] = "mixing content types";
+    invalidToolResultMessage["content"].push_back(std::move(textBlock));
+
+    mcp::jsonrpc::JsonValue toolResult = mcp::jsonrpc::JsonValue::object();
+    toolResult["type"] = "tool_result";
+    toolResult["toolUseId"] = "call-1";
+    toolResult["content"] = mcp::jsonrpc::JsonValue::array();
+    mcp::jsonrpc::JsonValue resultContent = mcp::jsonrpc::JsonValue::object();
+    resultContent["type"] = "text";
+    resultContent["text"] = "sunny";
+    toolResult["content"].push_back(std::move(resultContent));
+    invalidToolResultMessage["content"].push_back(std::move(toolResult));
+
+    (*samplingRequest.params)["messages"].push_back(std::move(invalidToolResultMessage));
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, samplingRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+    REQUIRE(error.error.message == "sampling/createMessage user messages with tool_result must contain only tool_result blocks");
+  }
+
+  SECTION("sampling/createMessage rejects unbalanced tool_use and tool_result IDs")
+  {
+    auto client = mcp::Client::create();
+    auto transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::SamplingCapability samplingCapability;
+    mcp::ClientInitializeConfiguration configuration;
+    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(configuration));
+
+    client->setSamplingCreateMessageHandler(
+      [](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &) -> std::optional<mcp::jsonrpc::JsonValue>
+      {
+        mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
+        result["role"] = "assistant";
+        result["model"] = "test-model";
+        result["content"] = mcp::jsonrpc::JsonValue::object();
+        result["content"]["type"] = "text";
+        result["content"]["text"] = "ok";
+        return result;
+      });
+
+    auto initializeFuture = client->initialize();
+    const auto outboundMessages = transport->messages();
+    REQUIRE(outboundMessages.size() == 1);
+    const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+    static_cast<void>(initializeFuture.get());
+
+    mcp::jsonrpc::Request samplingRequest;
+    samplingRequest.id = std::int64_t {9106};
+    samplingRequest.method = "sampling/createMessage";
+    samplingRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*samplingRequest.params)["maxTokens"] = 64;
+    (*samplingRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+
+    mcp::jsonrpc::JsonValue firstMessage = mcp::jsonrpc::JsonValue::object();
+    firstMessage["role"] = "user";
+    firstMessage["content"] = mcp::jsonrpc::JsonValue::object();
+    firstMessage["content"]["type"] = "text";
+    firstMessage["content"]["text"] = "look up weather";
+    (*samplingRequest.params)["messages"].push_back(std::move(firstMessage));
+
+    mcp::jsonrpc::JsonValue assistantToolUseMessage = mcp::jsonrpc::JsonValue::object();
+    assistantToolUseMessage["role"] = "assistant";
+    assistantToolUseMessage["content"] = mcp::jsonrpc::JsonValue::array();
+
+    mcp::jsonrpc::JsonValue toolUseA = mcp::jsonrpc::JsonValue::object();
+    toolUseA["type"] = "tool_use";
+    toolUseA["id"] = "call-a";
+    toolUseA["name"] = "lookup_weather";
+    toolUseA["input"] = mcp::jsonrpc::JsonValue::object();
+    assistantToolUseMessage["content"].push_back(std::move(toolUseA));
+
+    mcp::jsonrpc::JsonValue toolUseB = mcp::jsonrpc::JsonValue::object();
+    toolUseB["type"] = "tool_use";
+    toolUseB["id"] = "call-b";
+    toolUseB["name"] = "lookup_weather";
+    toolUseB["input"] = mcp::jsonrpc::JsonValue::object();
+    assistantToolUseMessage["content"].push_back(std::move(toolUseB));
+
+    (*samplingRequest.params)["messages"].push_back(std::move(assistantToolUseMessage));
+
+    mcp::jsonrpc::JsonValue incompleteToolResultMessage = mcp::jsonrpc::JsonValue::object();
+    incompleteToolResultMessage["role"] = "user";
+    incompleteToolResultMessage["content"] = mcp::jsonrpc::JsonValue::array();
+
+    mcp::jsonrpc::JsonValue toolResult = mcp::jsonrpc::JsonValue::object();
+    toolResult["type"] = "tool_result";
+    toolResult["toolUseId"] = "call-a";
+    toolResult["content"] = mcp::jsonrpc::JsonValue::array();
+    mcp::jsonrpc::JsonValue resultContent = mcp::jsonrpc::JsonValue::object();
+    resultContent["type"] = "text";
+    resultContent["text"] = "sunny";
+    toolResult["content"].push_back(std::move(resultContent));
+    incompleteToolResultMessage["content"].push_back(std::move(toolResult));
+
+    (*samplingRequest.params)["messages"].push_back(std::move(incompleteToolResultMessage));
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, samplingRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams));
+    REQUIRE(error.error.message == "sampling/createMessage tool_use and tool_result blocks must be balanced in sequence");
   }
 }
 
@@ -1782,6 +1992,7 @@ TEST_CASE("Client tracks URL elicitation completion notifications and ignores un
 
   const auto urlResponse = client->handleRequest(mcp::jsonrpc::RequestContext {}, urlRequest).get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(urlResponse));
+  REQUIRE(completedIds.empty());
 
   mcp::jsonrpc::Notification unknownNotification;
   unknownNotification.method = "notifications/elicitation/complete";
@@ -1835,6 +2046,9 @@ TEST_CASE("Elicitation helper APIs support URL consent and URLElicitationRequire
   errorData["elicitations"].push_back(std::move(elicitation));
 
   const mcp::JsonRpcError urlRequiredError = mcp::jsonrpc::makeUrlElicitationRequiredError(std::move(errorData), "URL action required");
+  REQUIRE(urlRequiredError.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kUrlElicitationRequired));
+  REQUIRE(urlRequiredError.message == "URL action required");
+
   const auto parsed = mcp::parseUrlElicitationRequiredError(urlRequiredError);
   REQUIRE(parsed.has_value());
   if (parsed.has_value())
@@ -1843,6 +2057,23 @@ TEST_CASE("Elicitation helper APIs support URL consent and URLElicitationRequire
     REQUIRE(parsed->elicitations[0].elicitationId == "elic-required");
     REQUIRE(parsed->elicitations[0].url == "https://example.com/connect");
   }
+
+  mcp::JsonRpcError wrongCode = urlRequiredError;
+  wrongCode.code = static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidParams);
+  REQUIRE_FALSE(mcp::parseUrlElicitationRequiredError(wrongCode).has_value());
+
+  mcp::JsonRpcError missingElicitations = urlRequiredError;
+  missingElicitations.data = mcp::jsonrpc::JsonValue::object();
+  REQUIRE_FALSE(mcp::parseUrlElicitationRequiredError(missingElicitations).has_value());
+
+  mcp::JsonRpcError malformedItem = urlRequiredError;
+  malformedItem.data = mcp::jsonrpc::JsonValue::object();
+  (*malformedItem.data)["elicitations"] = mcp::jsonrpc::JsonValue::array();
+  mcp::jsonrpc::JsonValue malformedElicitation = mcp::jsonrpc::JsonValue::object();
+  malformedElicitation["mode"] = "url";
+  malformedElicitation["elicitationId"] = "missing-fields";
+  (*malformedItem.data)["elicitations"].push_back(std::move(malformedElicitation));
+  REQUIRE_FALSE(mcp::parseUrlElicitationRequiredError(malformedItem).has_value());
 }
 
 TEST_CASE("Client pagination helpers detect cursor cycles", "[client][pagination][helpers]")
@@ -1913,6 +2144,161 @@ TEST_CASE("Client pagination helpers enforce max page limit", "[client][paginati
   {
     REQUIRE(std::string(error.what()) == "Pagination exceeded maximum page limit");
   }
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("Client pagination helpers pass and honor cursors for list endpoints", "[client][pagination][helpers]")
+{
+  mcp::ToolsCapability toolsCapability;
+  mcp::ResourcesCapability resourcesCapability;
+  mcp::PromptsCapability promptsCapability;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
+
+  auto server = mcp::Server::create(std::move(configuration));
+
+  for (std::size_t index = 0; index < kRoundTripItemCount; ++index)
+  {
+    server->registerTool(makeToolDefinition("cursor-tool-" + std::to_string(index)),
+                         [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                         {
+                           mcp::CallToolResult result;
+                           result.content = mcp::jsonrpc::JsonValue::array();
+                           return result;
+                         });
+
+    const std::string uri = "resource://cursor-item-" + std::to_string(index);
+    mcp::ResourceDefinition resourceDefinition;
+    resourceDefinition.uri = uri;
+    resourceDefinition.name = "cursor-resource-" + std::to_string(index);
+    // NOLINTNEXTLINE(bugprone-exception-escape)
+    server->registerResource(resourceDefinition,
+                             [uri](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>  // NOLINT(bugprone-exception-escape)
+                             {
+                               return {
+                                 mcp::ResourceContent::text(uri, "value-" + uri, std::string("text/plain")),
+                               };
+                             });
+
+    mcp::ResourceTemplateDefinition templateDefinition;
+    templateDefinition.uriTemplate = "resource://cursor-template/{id-" + std::to_string(index) + "}";
+    templateDefinition.name = "cursor-template-" + std::to_string(index);
+    server->registerResourceTemplate(std::move(templateDefinition));
+
+    server->registerPrompt(makePromptDefinition("cursor-prompt-" + std::to_string(index)),
+                           [](const mcp::PromptGetContext &) -> mcp::PromptGetResult
+                           {
+                             mcp::PromptGetResult result;
+                             result.messages = {};
+                             return result;
+                           });
+  }
+
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<InMemoryClientServerTransport>(server, client);
+  client->attachTransport(transport);
+  client->start();
+
+  const auto initializeResponse = client->initialize().get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initializeResponse));
+
+  std::vector<std::optional<std::string>> toolsRequestCursors;
+  std::vector<std::optional<std::string>> toolsResponseCursors;
+  std::size_t observedTools = 0;
+  client->forEachPage(
+    [&client, &toolsRequestCursors, &toolsResponseCursors](const std::optional<std::string> &cursor) -> mcp::ListToolsResult
+    {
+      toolsRequestCursors.push_back(cursor);
+      mcp::ListToolsResult page = client->listTools(cursor);
+      toolsResponseCursors.push_back(page.nextCursor);
+      return page;
+    },
+    [&observedTools](const mcp::ListToolsResult &page) -> void { observedTools += page.tools.size(); });
+
+  REQUIRE(toolsRequestCursors.size() == 2);
+  REQUIRE_FALSE(toolsRequestCursors[0].has_value());
+  REQUIRE(toolsResponseCursors[0].has_value());
+  REQUIRE(toolsRequestCursors[1] == toolsResponseCursors[0]);
+  REQUIRE_FALSE(toolsResponseCursors[1].has_value());
+  REQUIRE(observedTools == kRoundTripItemCount);
+
+  std::vector<std::optional<std::string>> resourcesRequestCursors;
+  std::vector<std::optional<std::string>> resourcesResponseCursors;
+  std::size_t observedResources = 0;
+  client->forEachPage(
+    [&client, &resourcesRequestCursors, &resourcesResponseCursors](const std::optional<std::string> &cursor) -> mcp::ListResourcesResult
+    {
+      resourcesRequestCursors.push_back(cursor);
+      mcp::ListResourcesResult page = client->listResources(cursor);
+      resourcesResponseCursors.push_back(page.nextCursor);
+      return page;
+    },
+    [&observedResources](const mcp::ListResourcesResult &page) -> void { observedResources += page.resources.size(); });
+
+  REQUIRE(resourcesRequestCursors.size() == 2);
+  REQUIRE_FALSE(resourcesRequestCursors[0].has_value());
+  REQUIRE(resourcesResponseCursors[0].has_value());
+  REQUIRE(resourcesRequestCursors[1] == resourcesResponseCursors[0]);
+  REQUIRE_FALSE(resourcesResponseCursors[1].has_value());
+  REQUIRE(observedResources == kRoundTripItemCount);
+
+  std::vector<std::optional<std::string>> promptsRequestCursors;
+  std::vector<std::optional<std::string>> promptsResponseCursors;
+  std::size_t observedPrompts = 0;
+  client->forEachPage(
+    [&client, &promptsRequestCursors, &promptsResponseCursors](const std::optional<std::string> &cursor) -> mcp::ListPromptsResult
+    {
+      promptsRequestCursors.push_back(cursor);
+      mcp::ListPromptsResult page = client->listPrompts(cursor);
+      promptsResponseCursors.push_back(page.nextCursor);
+      return page;
+    },
+    [&observedPrompts](const mcp::ListPromptsResult &page) -> void { observedPrompts += page.prompts.size(); });
+
+  REQUIRE(promptsRequestCursors.size() == 2);
+  REQUIRE_FALSE(promptsRequestCursors[0].has_value());
+  REQUIRE(promptsResponseCursors[0].has_value());
+  REQUIRE(promptsRequestCursors[1] == promptsResponseCursors[0]);
+  REQUIRE_FALSE(promptsResponseCursors[1].has_value());
+  REQUIRE(observedPrompts == kRoundTripItemCount);
+
+  std::vector<std::optional<std::string>> templatesRequestCursors;
+  std::vector<std::optional<std::string>> templatesResponseCursors;
+  std::size_t observedTemplates = 0;
+  client->forEachPage(
+    [&client, &templatesRequestCursors, &templatesResponseCursors](const std::optional<std::string> &cursor) -> mcp::ListResourceTemplatesResult
+    {
+      templatesRequestCursors.push_back(cursor);
+      mcp::ListResourceTemplatesResult page = client->listResourceTemplates(cursor);
+      templatesResponseCursors.push_back(page.nextCursor);
+      return page;
+    },
+    [&observedTemplates](const mcp::ListResourceTemplatesResult &page) -> void { observedTemplates += page.resourceTemplates.size(); });
+
+  REQUIRE(templatesRequestCursors.size() == 2);
+  REQUIRE_FALSE(templatesRequestCursors[0].has_value());
+  REQUIRE(templatesResponseCursors[0].has_value());
+  REQUIRE(templatesRequestCursors[1] == templatesResponseCursors[0]);
+  REQUIRE_FALSE(templatesResponseCursors[1].has_value());
+  REQUIRE(observedTemplates == kRoundTripItemCount);
+
+  const auto firstToolsPage = client->listTools();
+  REQUIRE(firstToolsPage.nextCursor.has_value());
+
+  std::vector<std::optional<std::string>> resumedToolsRequestCursors;
+  const auto resumedTools = client->collectAllPages<mcp::ToolDefinition>(
+    [&client, &resumedToolsRequestCursors](const std::optional<std::string> &cursor) -> mcp::ListToolsResult
+    {
+      resumedToolsRequestCursors.push_back(cursor);
+      return client->listTools(cursor);
+    },
+    [](const mcp::ListToolsResult &page) -> const std::vector<mcp::ToolDefinition> & { return page.tools; },
+    firstToolsPage.nextCursor);
+
+  REQUIRE(resumedToolsRequestCursors.size() == 1);
+  REQUIRE(resumedToolsRequestCursors[0] == firstToolsPage.nextCursor);
+  REQUIRE(resumedTools.size() == (kRoundTripItemCount - firstToolsPage.tools.size()));
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
