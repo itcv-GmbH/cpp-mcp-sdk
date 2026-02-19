@@ -420,5 +420,86 @@ TEST_CASE("HTTP client supports GET listen stream alongside POST SSE resume with
   REQUIRE(resumedStreamIds.size() >= 2);
 }
 
+TEST_CASE("HTTP client legacy fallback normalizes absolute endpoint targets", "[transport][http][client]")
+{
+  mcp_http::StreamableHttpClientOptions options = makeClientOptions();
+  options.endpointUrl = "http://localhost/mcp";
+  options.enableLegacyHttpSseFallback = true;
+  options.legacyFallbackSsePath = "http://localhost/events#ignored";
+  options.legacyFallbackPostPath = "http://localhost:80?mode=legacy#fragment";
+
+  std::vector<mcp_http::ServerRequest> observedRequests;
+  mcp_http::StreamableHttpClient client(std::move(options),
+                                        [&observedRequests](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+                                        {
+                                          observedRequests.push_back(request);
+
+                                          if (observedRequests.size() == 1)
+                                          {
+                                            mcp_http::ServerResponse response;
+                                            response.statusCode = 404;
+                                            return response;
+                                          }
+
+                                          if (observedRequests.size() == 2)
+                                          {
+                                            REQUIRE(request.method == mcp_http::ServerRequestMethod::kGet);
+                                            REQUIRE(request.path == "/events");
+
+                                            mcp::http::sse::Event endpointEvent;
+                                            endpointEvent.event = "endpoint";
+                                            endpointEvent.data = "";
+
+                                            mcp_http::ServerResponse response;
+                                            response.statusCode = 200;
+                                            mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "text/event-stream");
+                                            response.body = mcp::http::sse::encodeEvents({endpointEvent});
+                                            return response;
+                                          }
+
+                                          if (observedRequests.size() == 3)
+                                          {
+                                            REQUIRE(request.method == mcp_http::ServerRequestMethod::kPost);
+                                            REQUIRE(request.path == "/?mode=legacy");
+
+                                            mcp_http::ServerResponse response;
+                                            response.statusCode = 200;
+                                            mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "application/json");
+                                            response.body = mcp::jsonrpc::serializeMessage(makeSuccessResponse(501));
+                                            return response;
+                                          }
+
+                                          FAIL("Unexpected request in legacy fallback endpoint normalization test.");
+                                          return {};
+                                        });
+
+  const mcp_http::StreamableHttpSendResult result = client.send(makeRequest(501, "initialize"));
+  REQUIRE(result.statusCode == 200);
+  REQUIRE(result.response.has_value());
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(*result.response));
+  REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(*result.response).id == mcp::jsonrpc::RequestId {std::int64_t {501}});
+}
+
+TEST_CASE("HTTP client legacy fallback rejects userinfo in absolute endpoint targets", "[transport][http][client]")
+{
+  mcp_http::StreamableHttpClientOptions options = makeClientOptions();
+  options.endpointUrl = "http://localhost/mcp";
+  options.enableLegacyHttpSseFallback = true;
+  options.legacyFallbackPostPath = "http://user@localhost/rpc";
+
+  std::vector<mcp_http::ServerRequest> observedRequests;
+  mcp_http::StreamableHttpClient client(std::move(options),
+                                        [&observedRequests](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+                                        {
+                                          observedRequests.push_back(request);
+                                          mcp_http::ServerResponse response;
+                                          response.statusCode = 404;
+                                          return response;
+                                        });
+
+  requireExceptionContains([&client]() -> void { static_cast<void>(client.send(makeRequest(502, "initialize"))); }, {"absolute path", "same-origin"});
+  REQUIRE(observedRequests.size() == 1);
+}
+
 // NOLINTEND(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
 // readability-magic-numbers, misc-const-correctness)

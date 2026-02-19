@@ -1,3 +1,5 @@
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -63,6 +65,12 @@ TEST_CASE("HttpClientRuntime rejects invalid endpoint URLs", "[transport][http][
     REQUIRE_THROWS_AS(mcp_transport::HttpClientRuntime(makeClientOptions("http:///mcp")), std::invalid_argument);
   }
 
+  SECTION("userinfo in authority throws std::invalid_argument")
+  {
+    REQUIRE_THROWS_AS(mcp_transport::HttpClientRuntime(makeClientOptions("http://user@localhost/mcp")), std::invalid_argument);
+    REQUIRE_THROWS_AS(mcp_transport::HttpClientRuntime(makeClientOptions("https://user:pass@localhost/mcp")), std::invalid_argument);
+  }
+
   SECTION("invalid IPv6 authority throws std::invalid_argument")
   {
     // Missing closing bracket
@@ -77,6 +85,47 @@ TEST_CASE("HttpClientRuntime rejects invalid endpoint URLs", "[transport][http][
     // Only opening bracket without content
     REQUIRE_THROWS_AS(mcp_transport::HttpClientRuntime(makeClientOptions("http://[")), std::invalid_argument);  // NOLINT(bugprone-throw-keyword-missing)
   }
+}
+
+TEST_CASE("HttpClientRuntime normalizes endpoint request target and strips fragments", "[transport][http][runtime][url]")
+{
+  mcp_transport::HttpServerRuntime server(makeServerOptions());
+
+  std::mutex observedMutex;
+  std::optional<std::string> observedPath;
+  server.setRequestHandler(
+    [&observedMutex, &observedPath](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+    {
+      {
+        const std::scoped_lock lock(observedMutex);
+        observedPath = request.path;
+      }
+
+      mcp_http::ServerResponse response;
+      response.statusCode = 200;
+      response.body = "ok";
+      return response;
+    });
+  server.start();
+
+  const std::string endpoint = "http://127.0.0.1:" + std::to_string(server.localPort()) + "?mode=test#fragment";
+  const mcp_transport::HttpClientRuntime client(makeClientOptions(endpoint));
+
+  mcp_http::ServerRequest request;
+  request.method = mcp_http::ServerRequestMethod::kPost;
+  request.path.clear();
+  request.body = "{}";
+
+  const mcp_http::ServerResponse response = client.execute(request);
+  REQUIRE(response.statusCode == 200);
+
+  {
+    const std::scoped_lock lock(observedMutex);
+    REQUIRE(observedPath.has_value());
+    REQUIRE(*observedPath == "/?mode=test");
+  }
+
+  server.stop();
 }
 
 #if !MCP_SDK_ENABLE_TLS

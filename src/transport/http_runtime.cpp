@@ -17,6 +17,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>  // NOLINT(misc-include-cleaner)
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
+#include <mcp/detail/url.hpp>
 #include <mcp/transport/http.hpp>
 
 #if MCP_SDK_ENABLE_TLS
@@ -76,74 +77,33 @@ auto parseEndpointUrl(std::string_view endpointUrl) -> ParsedEndpointUrl
     throw std::invalid_argument("HTTP endpoint URL must not be empty.");
   }
 
-  const std::size_t schemeSeparator = endpointUrl.find("://");
-  if (schemeSeparator == std::string_view::npos)
+  const std::optional<mcp::detail::ParsedAbsoluteUrl> parsedAbsolute = mcp::detail::parseAbsoluteUrl(endpointUrl);
+  if (!parsedAbsolute.has_value())
   {
-    throw std::invalid_argument("HTTP endpoint URL must include an explicit scheme.");
+    throw std::invalid_argument("HTTP endpoint URL must be a valid absolute URL.");
   }
 
   ParsedEndpointUrl parsed;
-  parsed.scheme = http::detail::toLowerAscii(endpointUrl.substr(0, schemeSeparator));
+  parsed.scheme = parsedAbsolute->scheme;
   if (parsed.scheme == "http")
   {
     parsed.useTls = false;
-    parsed.port = "80";
   }
   else if (parsed.scheme == "https")
   {
     parsed.useTls = true;
-    parsed.port = "443";
   }
   else
   {
     throw std::invalid_argument("HTTP endpoint URL must use http:// or https://.");
   }
 
-  const std::size_t authorityBegin = schemeSeparator + 3;
-  const std::size_t pathBegin = endpointUrl.find('/', authorityBegin);
-  const std::string_view authority = pathBegin == std::string_view::npos ? endpointUrl.substr(authorityBegin) : endpointUrl.substr(authorityBegin, pathBegin - authorityBegin);
-  parsed.path = pathBegin == std::string_view::npos ? "/" : std::string(endpointUrl.substr(pathBegin));
-  if (parsed.path.empty())
+  parsed.host = parsedAbsolute->host;
+  parsed.port = std::to_string(parsedAbsolute->port);
+  parsed.path = parsedAbsolute->path;
+  if (parsedAbsolute->query.has_value())
   {
-    parsed.path = "/";
-  }
-
-  if (authority.empty())
-  {
-    throw std::invalid_argument("HTTP endpoint URL authority must not be empty.");
-  }
-
-  if (authority.front() == '[')
-  {
-    const std::size_t ipv6End = authority.find(']');
-    if (ipv6End == std::string_view::npos)
-    {
-      throw std::invalid_argument("HTTP endpoint URL contains an invalid IPv6 authority.");
-    }
-
-    parsed.host = std::string(authority.substr(1, ipv6End - 1));
-    if (ipv6End + 1 < authority.size())
-    {
-      if (authority[ipv6End + 1] != ':')
-      {
-        throw std::invalid_argument("HTTP endpoint URL contains an invalid IPv6 port separator.");
-      }
-
-      parsed.port = std::string(authority.substr(ipv6End + 2));
-    }
-  }
-  else
-  {
-    const std::size_t portSeparator = authority.rfind(':');
-    if (portSeparator == std::string_view::npos)
-    {
-      parsed.host = std::string(authority);
-    }
-    else
-    {
-      parsed.host = std::string(authority.substr(0, portSeparator));
-      parsed.port = std::string(authority.substr(portSeparator + 1));
-    }
+    parsed.path += "?" + *parsedAbsolute->query;
   }
 
   if (parsed.host.empty())

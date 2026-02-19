@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include <mcp/detail/url.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/transport/http.hpp>
@@ -107,69 +108,29 @@ static auto normalizeRequestTarget(std::string_view rawTarget) -> std::string
 
 static auto parseHttpEndpointUrl(std::string_view endpointUrl) -> std::optional<ParsedHttpEndpointUrl>
 {
-  const std::size_t schemeSeparator = endpointUrl.find("://");
-  if (schemeSeparator == std::string_view::npos)
+  const std::optional<mcp::detail::ParsedAbsoluteUrl> parsedAbsolute = mcp::detail::parseAbsoluteUrl(endpointUrl);
+  if (!parsedAbsolute.has_value())
   {
     return std::nullopt;
   }
 
   ParsedHttpEndpointUrl parsed;
-  parsed.scheme = detail::toLowerAscii(endpointUrl.substr(0, schemeSeparator));
-  if (parsed.scheme == "http")
-  {
-    parsed.port = "80";
-  }
-  else if (parsed.scheme == "https")
-  {
-    parsed.port = "443";
-  }
-  else
+  parsed.scheme = parsedAbsolute->scheme;
+  if (parsed.scheme != "http" && parsed.scheme != "https")
   {
     return std::nullopt;
   }
 
-  const std::size_t authorityBegin = schemeSeparator + 3;
-  const std::size_t targetBegin = endpointUrl.find_first_of("/?#", authorityBegin);
-  const std::string_view authority = targetBegin == std::string_view::npos ? endpointUrl.substr(authorityBegin) : endpointUrl.substr(authorityBegin, targetBegin - authorityBegin);
-  if (authority.empty() || authority.find('@') != std::string_view::npos)
+  parsed.host = parsedAbsolute->host;
+  parsed.port = std::to_string(parsedAbsolute->port);
+
+  std::string requestTarget = parsedAbsolute->path;
+  if (parsedAbsolute->query.has_value())
   {
-    return std::nullopt;
+    requestTarget += "?" + *parsedAbsolute->query;
   }
 
-  parsed.requestTarget = targetBegin == std::string_view::npos ? "/" : normalizeRequestTarget(endpointUrl.substr(targetBegin));
-
-  if (authority.front() == '[')
-  {
-    const std::size_t ipv6End = authority.find(']');
-    if (ipv6End == std::string_view::npos)
-    {
-      return std::nullopt;
-    }
-
-    parsed.host = detail::toLowerAscii(authority.substr(1, ipv6End - 1));
-    if (ipv6End + 1 < authority.size())
-    {
-      if (authority[ipv6End + 1] != ':')
-      {
-        return std::nullopt;
-      }
-
-      parsed.port = std::string(authority.substr(ipv6End + 2));
-    }
-  }
-  else
-  {
-    const std::size_t portSeparator = authority.rfind(':');
-    if (portSeparator == std::string_view::npos)
-    {
-      parsed.host = detail::toLowerAscii(authority);
-    }
-    else
-    {
-      parsed.host = detail::toLowerAscii(authority.substr(0, portSeparator));
-      parsed.port = std::string(authority.substr(portSeparator + 1));
-    }
-  }
+  parsed.requestTarget = normalizeRequestTarget(requestTarget);
 
   if (parsed.host.empty() || parsed.port.empty())
   {
