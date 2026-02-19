@@ -307,6 +307,18 @@ TEST_CASE("HTTP server Last-Event-ID replay is stream-local", "[transport][http]
 
 TEST_CASE("HTTP server Last-Event-ID resume rejects cross-stream and stale IDs", "[transport][http][server]")
 {
+  SECTION("Malformed Last-Event-ID is rejected with 400")
+  {
+    mcp_http::StreamableHttpServer server;
+
+    const mcp_http::ServerResponse malformedResume =
+      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, std::nullopt, "not-a-valid-event-id"));
+
+    REQUIRE(malformedResume.statusCode == 400);
+    REQUIRE_FALSE(malformedResume.sse.has_value());
+    REQUIRE(malformedResume.body.find("Invalid Last-Event-ID") != std::string::npos);
+  }
+
   SECTION("Cross-stream Last-Event-ID is rejected with 404")
   {
     mcp_http::StreamableHttpServerOptions options;
@@ -427,19 +439,22 @@ TEST_CASE("HTTP server returns 405 when GET SSE is disabled", "[transport][http]
 TEST_CASE("HTTP server rejects POST bodies with missing or invalid Content-Type", "[transport][http][server]")
 {
   mcp_http::StreamableHttpServer server;
+  const std::string validRequestBody = makeRequestBody(64, "ping");
 
   SECTION("Missing Content-Type")
   {
     const mcp_http::ServerResponse response =
-      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", "{}", std::nullopt, std::nullopt, std::nullopt, std::nullopt));
+      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", validRequestBody, std::nullopt, std::nullopt, std::nullopt, std::nullopt));
     REQUIRE(response.statusCode == 400);
+    REQUIRE(response.body.find("Content-Type") != std::string::npos);
   }
 
   SECTION("Invalid Content-Type")
   {
     const mcp_http::ServerResponse response =
-      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", "{}", std::nullopt, std::nullopt, std::nullopt, "text/plain"));
+      server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", validRequestBody, std::nullopt, std::nullopt, std::nullopt, "text/plain"));
     REQUIRE(response.statusCode == 400);
+    REQUIRE(response.body.find("Content-Type") != std::string::npos);
   }
 }
 
