@@ -27,4 +27,4 @@
 - [x] `task-017`: Client Detached Thread Removal (Depends on: `task-016`)
 
 ## Phase 5: Final Gate (Blocked by Phases 3-4)
-- [ ] `task-015`: Full Regression + Conformance Run (Depends on: `task-012`, `task-013`, `task-014`)
+- [x] `task-015`: Full Regression + Conformance Run (Depends on: `task-012`, `task-013`, `task-014`)
