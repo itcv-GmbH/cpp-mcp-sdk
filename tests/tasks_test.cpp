@@ -2,7 +2,6 @@
 #include <future>
 #include <optional>
 #include <string>
-#include <thread>
 
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/errors.hpp>
@@ -41,13 +40,25 @@ TEST_CASE("InMemoryTaskStore enforces valid transitions and terminal immutabilit
   REQUIRE(created.error == mcp::util::TaskStoreError::kNone);
   REQUIRE(created.task.status == mcp::util::TaskStatus::kWorking);
 
+  const mcp::util::TaskRecordResult workingToWorking = store.updateTaskStatus(created.task.taskId, mcp::util::TaskStatus::kWorking, std::nullopt, std::nullopt);
+  REQUIRE(workingToWorking.error == mcp::util::TaskStoreError::kInvalidTransition);
+
   const mcp::util::TaskRecordResult inputRequired = store.updateTaskStatus(created.task.taskId, mcp::util::TaskStatus::kInputRequired, std::string("Need input"), std::nullopt);
   REQUIRE(inputRequired.error == mcp::util::TaskStoreError::kNone);
   REQUIRE(inputRequired.task.status == mcp::util::TaskStatus::kInputRequired);
 
+  const mcp::util::TaskRecordResult inputRequiredToInputRequired = store.updateTaskStatus(created.task.taskId, mcp::util::TaskStatus::kInputRequired, std::nullopt, std::nullopt);
+  REQUIRE(inputRequiredToInputRequired.error == mcp::util::TaskStoreError::kInvalidTransition);
+
   const mcp::util::TaskRecordResult backToWorking = store.updateTaskStatus(created.task.taskId, mcp::util::TaskStatus::kWorking, std::nullopt, std::nullopt);
   REQUIRE(backToWorking.error == mcp::util::TaskStoreError::kNone);
   REQUIRE(backToWorking.task.status == mcp::util::TaskStatus::kWorking);
+
+  mcp::jsonrpc::JsonValue invalidResultPayload = mcp::jsonrpc::JsonValue::object();
+  invalidResultPayload["ok"] = true;
+  const mcp::util::TaskRecordResult invalidTerminalStatus =
+    store.setTaskResult(created.task.taskId, mcp::util::TaskStatus::kWorking, std::nullopt, std::move(invalidResultPayload), std::nullopt);
+  REQUIRE(invalidTerminalStatus.error == mcp::util::TaskStoreError::kInvalidTransition);
 
   mcp::jsonrpc::JsonValue result = mcp::jsonrpc::JsonValue::object();
   result["ok"] = true;
@@ -58,6 +69,12 @@ TEST_CASE("InMemoryTaskStore enforces valid transitions and terminal immutabilit
   const mcp::util::TaskRecordResult immutable = store.updateTaskStatus(created.task.taskId, mcp::util::TaskStatus::kWorking, std::nullopt, std::nullopt);
   REQUIRE(immutable.error == mcp::util::TaskStoreError::kTerminalImmutable);
 
+  mcp::JsonRpcError cancellationError;
+  cancellationError.code = static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidRequest);
+  cancellationError.message = "cancel should fail";
+  const mcp::util::TaskRecordResult terminalCancel = store.cancelTask(created.task.taskId, std::string("late cancel"), std::move(cancellationError), std::nullopt);
+  REQUIRE(terminalCancel.error == mcp::util::TaskStoreError::kTerminalImmutable);
+
   mcp::JsonRpcError failure;
   failure.code = static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInternalError);
   failure.message = "late error";
@@ -66,7 +83,7 @@ TEST_CASE("InMemoryTaskStore enforces valid transitions and terminal immutabilit
   REQUIRE(lateError.error == mcp::util::TaskStoreError::kTerminalImmutable);
 }
 
-TEST_CASE("TaskReceiver cancellation rejects terminal tasks", "[tasks][cancel]")
+TEST_CASE("TaskReceiver cancellation handles running and terminal tasks", "[tasks][cancel]")
 {
   auto store = std::make_shared<mcp::util::InMemoryTaskStore>();
   mcp::util::TaskReceiver receiver(store);
@@ -76,14 +93,33 @@ TEST_CASE("TaskReceiver cancellation rejects terminal tasks", "[tasks][cancel]")
 
   mcp::util::TaskAugmentationRequest augmentation;
   augmentation.requested = true;
-  const mcp::util::CreateTaskResult task = receiver.createTask(context, augmentation);
+  const mcp::util::CreateTaskResult runningTask = receiver.createTask(context, augmentation);
 
-  mcp::jsonrpc::Request cancelRequest = makeTaskRequest("tasks/cancel", 1, task.task.taskId);
-  const mcp::jsonrpc::Response firstCancel = receiver.handleTasksCancelRequest(context, cancelRequest);
+  mcp::jsonrpc::Request cancelRunningRequest = makeTaskRequest("tasks/cancel", 1, runningTask.task.taskId);
+  const mcp::jsonrpc::Response firstCancel = receiver.handleTasksCancelRequest(context, cancelRunningRequest);
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(firstCancel));
+  REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(firstCancel).result["status"].as<std::string>() == "cancelled");
 
-  const mcp::jsonrpc::Response secondCancel = receiver.handleTasksCancelRequest(context, cancelRequest);
+  const mcp::jsonrpc::Response cancelledResult = receiver.handleTasksResultRequest(context, makeTaskRequest("tasks/result", 2, runningTask.task.taskId));
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(cancelledResult));
+  const auto &cancelledResultError = std::get<mcp::jsonrpc::ErrorResponse>(cancelledResult);
+  REQUIRE(cancelledResultError.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInvalidRequest));
+  REQUIRE(cancelledResultError.error.message == "The task was cancelled by request.");
+
+  const mcp::jsonrpc::Response secondCancel = receiver.handleTasksCancelRequest(context, cancelRunningRequest);
   assertInvalidParams(secondCancel);
+
+  const mcp::util::CreateTaskResult terminalTask = receiver.createTask(context, augmentation);
+
+  mcp::jsonrpc::SuccessResponse success;
+  success.id = std::int64_t {0};
+  success.result = mcp::jsonrpc::JsonValue::object();
+  success.result["content"] = mcp::jsonrpc::JsonValue::array();
+  success.result["isError"] = false;
+  static_cast<void>(receiver.completeTaskWithResponse(context, terminalTask.task.taskId, mcp::jsonrpc::Response {std::move(success)}));
+
+  const mcp::jsonrpc::Response cancelCompleted = receiver.handleTasksCancelRequest(context, makeTaskRequest("tasks/cancel", 3, terminalTask.task.taskId));
+  assertInvalidParams(cancelCompleted);
 }
 
 TEST_CASE("TaskReceiver tasks/result blocks until terminal and then unblocks", "[tasks][result][blocking]")
@@ -109,12 +145,15 @@ TEST_CASE("TaskReceiver tasks/result blocks until terminal and then unblocks", "
   success.result = mcp::jsonrpc::JsonValue::object();
   success.result["content"] = mcp::jsonrpc::JsonValue::array();
   success.result["isError"] = false;
+  success.result["_meta"] = mcp::jsonrpc::JsonValue::object();
+  success.result["_meta"]["upstream"] = "worker";
   static_cast<void>(receiver.completeTaskWithResponse(context, createdTask.task.taskId, mcp::jsonrpc::Response {std::move(success)}));
 
   const mcp::jsonrpc::Response resultResponse = resultFuture.get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(resultResponse));
   const auto &successResult = std::get<mcp::jsonrpc::SuccessResponse>(resultResponse);
   REQUIRE(successResult.result.contains("_meta"));
+  REQUIRE(successResult.result["_meta"]["upstream"].as<std::string>() == "worker");
   REQUIRE(successResult.result["_meta"].contains(std::string(mcp::util::kRelatedTaskMetadataKey)));
   REQUIRE(successResult.result["_meta"][std::string(mcp::util::kRelatedTaskMetadataKey)]["taskId"].as<std::string>() == createdTask.task.taskId);
 }
@@ -198,8 +237,14 @@ TEST_CASE("TaskReceiver enforces auth-context binding", "[tasks][auth]")
   const mcp::jsonrpc::Response deniedGet = receiver.handleTasksGetRequest(authB, makeTaskRequest("tasks/get", 21, createdTask.task.taskId));
   assertInvalidParams(deniedGet);
 
+  const mcp::jsonrpc::Response deniedResult = receiver.handleTasksResultRequest(authB, makeTaskRequest("tasks/result", 22, createdTask.task.taskId));
+  assertInvalidParams(deniedResult);
+
+  const mcp::jsonrpc::Response deniedCancel = receiver.handleTasksCancelRequest(authB, makeTaskRequest("tasks/cancel", 23, createdTask.task.taskId));
+  assertInvalidParams(deniedCancel);
+
   mcp::jsonrpc::Request listA;
-  listA.id = std::int64_t {22};
+  listA.id = std::int64_t {24};
   listA.method = "tasks/list";
   listA.params = mcp::jsonrpc::JsonValue::object();
   const mcp::jsonrpc::Response listForA = receiver.handleTasksListRequest(authA, listA);
@@ -207,7 +252,7 @@ TEST_CASE("TaskReceiver enforces auth-context binding", "[tasks][auth]")
   REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(listForA).result["tasks"].size() == 1);
 
   mcp::jsonrpc::Request listB = listA;
-  listB.id = std::int64_t {23};
+  listB.id = std::int64_t {25};
   const mcp::jsonrpc::Response listForB = receiver.handleTasksListRequest(authB, listB);
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(listForB));
   REQUIRE(std::get<mcp::jsonrpc::SuccessResponse>(listForB).result["tasks"].size() == 0);
@@ -235,7 +280,7 @@ TEST_CASE("TaskReceiver allows access to unbound tasks across auth contexts", "[
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(getFromAuthB));
 }
 
-TEST_CASE("TaskReceiver supports ttl:null and finite ttl expiration", "[tasks][ttl]")
+TEST_CASE("TaskReceiver supports ttl:null and store enforces ttl upper bound", "[tasks][ttl]")
 {
   auto store = std::make_shared<mcp::util::InMemoryTaskStore>();
   mcp::util::TaskReceiver receiver(store);
@@ -260,7 +305,20 @@ TEST_CASE("TaskReceiver supports ttl:null and finite ttl expiration", "[tasks][t
   REQUIRE(finiteTtlTask.task.ttl.has_value());
   REQUIRE(*finiteTtlTask.task.ttl == 10);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(30));
-  const mcp::jsonrpc::Response expiredGet = receiver.handleTasksGetRequest(context, makeTaskRequest("tasks/get", 30, finiteTtlTask.task.taskId));
-  assertInvalidParams(expiredGet);
+  mcp::util::InMemoryTaskStoreOptions constrainedOptions;
+  constrainedOptions.maxTaskTtlMilliseconds = 15;
+  mcp::util::InMemoryTaskStore constrainedStore(constrainedOptions);
+
+  mcp::util::TaskCreateOptions atLimit;
+  atLimit.ttl = 15;
+  const mcp::util::TaskRecordResult atLimitTask = constrainedStore.createTask(std::move(atLimit));
+  REQUIRE(atLimitTask.error == mcp::util::TaskStoreError::kNone);
+  REQUIRE(atLimitTask.task.ttl.has_value());
+  REQUIRE(*atLimitTask.task.ttl == 15);
+
+  mcp::util::TaskCreateOptions aboveLimit;
+  aboveLimit.ttl = 16;
+  const mcp::util::TaskRecordResult aboveLimitTask = constrainedStore.createTask(std::move(aboveLimit));
+  REQUIRE(aboveLimitTask.error == mcp::util::TaskStoreError::kLimitExceeded);
+  REQUIRE(aboveLimitTask.errorMessage.has_value());
 }
