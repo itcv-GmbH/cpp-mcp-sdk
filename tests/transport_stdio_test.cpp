@@ -1,10 +1,14 @@
+#include <cstddef>
+#include <cstdint>
 #include <future>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include <catch2/catch_test_macros.hpp>
+#include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/transport/stdio.hpp>
@@ -152,4 +156,226 @@ TEST_CASE("Stdio run keeps stdout MCP-only and logs diagnostics to stderr", "[tr
   REQUIRE(sawOutput);
   REQUIRE(stderrCapture.str().find("stdio transport parse failed") != std::string::npos);
   REQUIRE(stderrCapture.str().find("unterminated EOF frame") != std::string::npos);
+}
+
+TEST_CASE("Stdio transport rejects embedded LF framing violations", "[transport][stdio]")
+{
+  mcp::jsonrpc::Router router;
+  registerPingHandler(router);
+
+  std::ostringstream stdoutCapture;
+  std::ostringstream stderrCapture;
+  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = false};
+
+  // Test embedded LF in the middle of a JSON object
+  const std::string withEmbeddedLf = std::string(R"({"jsonrpc":"2.0","id":1,"method":"pi")") + '\n' + R"(ng"})";
+  const bool acceptedEmbeddedLf = mcp::transport::StdioTransport::routeIncomingLine(router, withEmbeddedLf, stdoutCapture, &stderrCapture, options);
+  REQUIRE_FALSE(acceptedEmbeddedLf);
+  REQUIRE(stdoutCapture.str().empty());
+  REQUIRE(stderrCapture.str().find("framing") != std::string::npos);
+}
+
+TEST_CASE("Stdio transport emits JSON-RPC parse errors when emitParseErrors is true", "[transport][stdio]")
+{
+  mcp::jsonrpc::Router router;
+  registerPingHandler(router);
+
+  std::ostringstream stdoutCapture;
+  std::ostringstream stderrCapture;
+  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = true};
+
+  SECTION("Parse error for invalid JSON")
+  {
+    const std::string invalidJson = R"({"jsonrpc":"2.0","id":1,"method":)";
+    const bool accepted = mcp::transport::StdioTransport::routeIncomingLine(router, invalidJson, stdoutCapture, &stderrCapture, options);
+    REQUIRE_FALSE(accepted);
+
+    // stdout should contain a JSON-RPC error response
+    REQUIRE_FALSE(stdoutCapture.str().empty());
+    const auto message = mcp::jsonrpc::parseMessage(stdoutCapture.str());
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(message));
+    const auto &errorResponse = std::get<mcp::jsonrpc::ErrorResponse>(message);
+    REQUIRE(errorResponse.hasUnknownId);
+    REQUIRE(errorResponse.error.code == static_cast<std::int64_t>(mcp::JsonRpcErrorCode::kParseError));
+  }
+
+  SECTION("Parse error for non-object JSON")
+  {
+    stdoutCapture.str("");
+    stderrCapture.str("");
+
+    const std::string nonObjectJson = R"("just a string")";
+    const bool accepted = mcp::transport::StdioTransport::routeIncomingLine(router, nonObjectJson, stdoutCapture, &stderrCapture, options);
+    REQUIRE_FALSE(accepted);
+
+    REQUIRE_FALSE(stdoutCapture.str().empty());
+    const auto message = mcp::jsonrpc::parseMessage(stdoutCapture.str());
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(message));
+  }
+
+  SECTION("Parse error for missing jsonrpc field")
+  {
+    stdoutCapture.str("");
+    stderrCapture.str("");
+
+    const std::string missingVersion = R"({"id":1,"method":"ping"})";
+    const bool accepted = mcp::transport::StdioTransport::routeIncomingLine(router, missingVersion, stdoutCapture, &stderrCapture, options);
+    REQUIRE_FALSE(accepted);
+
+    REQUIRE_FALSE(stdoutCapture.str().empty());
+    const auto message = mcp::jsonrpc::parseMessage(stdoutCapture.str());
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(message));
+  }
+}
+
+TEST_CASE("Stdio transport handles max message size limit via direct framing", "[transport][stdio]")
+{
+  mcp::jsonrpc::Router router;
+  registerPingHandler(router);
+
+  std::ostringstream stdoutCapture;
+  std::ostringstream stderrCapture;
+
+  // Set a very small max message size to trigger the limit
+  mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = true};
+  constexpr std::size_t kSmallMaxMessageSize = 50U;
+  options.limits.maxMessageSizeBytes = kSmallMaxMessageSize;
+
+  const std::string oversizedMessage = R"({"jsonrpc":"2.0","id":1,"method":"ping","params":{"extra":"data"}})";
+  REQUIRE(oversizedMessage.size() > options.limits.maxMessageSizeBytes);
+
+  const bool accepted = mcp::transport::StdioTransport::routeIncomingLine(router, oversizedMessage, stdoutCapture, &stderrCapture, options);
+  REQUIRE_FALSE(accepted);
+
+  // stderr should have the size limit message
+  REQUIRE(stderrCapture.str().find("max message size") != std::string::npos);
+
+  // stdout should contain a parse error response (since emitParseErrors=true)
+  REQUIRE_FALSE(stdoutCapture.str().empty());
+  const auto message = mcp::jsonrpc::parseMessage(stdoutCapture.str());
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(message));
+  const auto &errorResponse = std::get<mcp::jsonrpc::ErrorResponse>(message);
+  REQUIRE(errorResponse.hasUnknownId);
+  REQUIRE(errorResponse.error.code == static_cast<std::int64_t>(mcp::JsonRpcErrorCode::kParseError));
+}
+
+TEST_CASE("Stdio transport handles max message size without emitting parse errors", "[transport][stdio]")
+{
+  mcp::jsonrpc::Router router;
+  registerPingHandler(router);
+
+  std::ostringstream stdoutCapture;
+  std::ostringstream stderrCapture;
+
+  // Set a very small max message size but disable parse error emission
+  mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = false};
+  constexpr std::size_t kSmallMaxMessageSize = 50U;
+  options.limits.maxMessageSizeBytes = kSmallMaxMessageSize;
+
+  const std::string oversizedMessage = R"({"jsonrpc":"2.0","id":1,"method":"ping","params":{"extra":"data"}})";
+  REQUIRE(oversizedMessage.size() > options.limits.maxMessageSizeBytes);
+
+  const bool accepted = mcp::transport::StdioTransport::routeIncomingLine(router, oversizedMessage, stdoutCapture, &stderrCapture, options);
+  REQUIRE_FALSE(accepted);
+
+  // stderr should still have the error message
+  REQUIRE(stderrCapture.str().find("max message size") != std::string::npos);
+
+  // stdout should be empty (no parse error response emitted)
+  REQUIRE(stdoutCapture.str().empty());
+}
+
+TEST_CASE("Stdio transport handles empty lines and whitespace-only lines", "[transport][stdio]")
+{
+  mcp::jsonrpc::Router router;
+  registerPingHandler(router);
+
+  std::ostringstream stdoutCapture;
+  std::ostringstream stderrCapture;
+  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = false};
+
+  SECTION("Empty line is rejected")
+  {
+    const std::string emptyLine;
+    const bool accepted = mcp::transport::StdioTransport::routeIncomingLine(router, emptyLine, stdoutCapture, &stderrCapture, options);
+    REQUIRE_FALSE(accepted);
+    // Empty line fails to parse, should log to stderr
+    REQUIRE(stderrCapture.str().find("parse") != std::string::npos);
+  }
+
+  SECTION("Whitespace-only line is rejected")
+  {
+    stdoutCapture.str("");
+    stderrCapture.str("");
+
+    const std::string whitespaceOnly = "   \t   ";
+    const bool accepted = mcp::transport::StdioTransport::routeIncomingLine(router, whitespaceOnly, stdoutCapture, &stderrCapture, options);
+    REQUIRE_FALSE(accepted);
+    REQUIRE(stderrCapture.str().find("parse") != std::string::npos);
+  }
+
+  SECTION("Valid message after empty line works correctly")
+  {
+    stdoutCapture.str("");
+    stderrCapture.str("");
+
+    // First, an empty line should be rejected
+    const std::string emptyLine;
+    const bool emptyAccepted = mcp::transport::StdioTransport::routeIncomingLine(router, emptyLine, stdoutCapture, &stderrCapture, options);
+    REQUIRE_FALSE(emptyAccepted);
+
+    // Clear streams for the next check
+    stdoutCapture.str("");
+    stderrCapture.str("");
+
+    // Then a valid message should work
+    const std::string validMessage = R"({"jsonrpc":"2.0","id":1,"method":"ping"})";
+    const bool validAccepted = mcp::transport::StdioTransport::routeIncomingLine(router, validMessage, stdoutCapture, &stderrCapture, options);
+    REQUIRE(validAccepted);
+    REQUIRE_FALSE(stdoutCapture.str().empty());
+
+    // Verify the response is valid JSON-RPC
+    const auto message = mcp::jsonrpc::parseMessage(stdoutCapture.str());
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(message));
+  }
+}
+
+TEST_CASE("Stdio transport parse error emission keeps stdout MCP-only", "[transport][stdio]")
+{
+  mcp::jsonrpc::Router router;
+  registerPingHandler(router);
+
+  std::ostringstream stdoutCapture;
+  std::ostringstream stderrCapture;
+  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = true};
+
+  // Send an invalid message that will trigger a parse error response
+  const std::string invalidJson = "not valid json";
+  const bool accepted = mcp::transport::StdioTransport::routeIncomingLine(router, invalidJson, stdoutCapture, &stderrCapture, options);
+  REQUIRE_FALSE(accepted);
+
+  // stderr should have diagnostic info
+  REQUIRE(stderrCapture.str().find("parse failed") != std::string::npos);
+
+  // stdout should ONLY contain valid JSON-RPC (the error response)
+  REQUIRE_FALSE(stdoutCapture.str().empty());
+
+  // Verify stdout contains exactly one valid JSON-RPC message per line
+  std::istringstream stdoutStream(stdoutCapture.str());
+  std::string line;
+  int lineCount = 0;
+  while (std::getline(stdoutStream, line))
+  {
+    if (line.empty())
+    {
+      continue;
+    }
+    ++lineCount;
+    // Each non-empty line must be valid JSON-RPC
+    REQUIRE_NOTHROW(mcp::jsonrpc::parseMessage(line));
+    // And it should be an error response
+    const auto message = mcp::jsonrpc::parseMessage(line);
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(message));
+  }
+  REQUIRE(lineCount == 1);
 }
