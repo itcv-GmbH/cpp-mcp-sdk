@@ -16,7 +16,9 @@
 #include <vector>
 
 #include <mcp/auth/oauth_client.hpp>
+#include <mcp/detail/ascii.hpp>
 #include <mcp/detail/base64url.hpp>
+#include <mcp/detail/url.hpp>
 #include <mcp/security/crypto_random.hpp>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
@@ -52,85 +54,45 @@ struct ParsedUrl
   bool hasQuery = false;
 };
 
-auto trimAsciiWhitespace(std::string_view value) -> std::string_view
+auto extractExplicitPortText(std::string_view rawUrl, bool ipv6Literal) -> std::string
 {
-  std::size_t begin = 0;
-  while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0)
+  const std::size_t schemeSeparator = rawUrl.find("://");
+  if (schemeSeparator == std::string_view::npos)
   {
-    ++begin;
+    return {};
   }
 
-  std::size_t end = value.size();
-  while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0)
+  const std::size_t authorityBegin = schemeSeparator + 3;
+  std::size_t authorityEnd = rawUrl.find_first_of("/?#", authorityBegin);
+  if (authorityEnd == std::string_view::npos)
   {
-    --end;
+    authorityEnd = rawUrl.size();
   }
 
-  return value.substr(begin, end - begin);
-}
-
-auto toLowerAscii(std::string_view value) -> std::string
-{
-  std::string normalized;
-  normalized.reserve(value.size());
-  for (const char character : value)
+  const std::string_view authority = rawUrl.substr(authorityBegin, authorityEnd - authorityBegin);
+  if (authority.empty())
   {
-    normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+    return {};
   }
 
-  return normalized;
-}
-
-auto containsAsciiWhitespaceOrControl(std::string_view value) -> bool
-{
-  return std::any_of(value.begin(),
-                     value.end(),
-                     [](char character) -> bool
-                     {
-                       const auto byte = static_cast<unsigned char>(character);
-                       return std::isspace(byte) != 0 || std::iscntrl(byte) != 0;
-                     });
-}
-
-auto isValidUrlScheme(std::string_view value) -> bool
-{
-  if (value.empty() || std::isalpha(static_cast<unsigned char>(value.front())) == 0)
+  if (ipv6Literal)
   {
-    return false;
-  }
-
-  return std::all_of(value.begin(),
-                     value.end(),
-                     [](char character) -> bool
-                     {
-                       const auto byte = static_cast<unsigned char>(character);
-                       return std::isalnum(byte) != 0 || character == '+' || character == '-' || character == '.';
-                     });
-}
-
-auto parsePort(std::string_view portText, std::string_view fieldName) -> std::string
-{
-  if (portText.empty())
-  {
-    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port must not be empty");
-  }
-
-  std::uint32_t portValue = 0;
-  for (const char character : portText)
-  {
-    if (std::isdigit(static_cast<unsigned char>(character)) == 0)
+    const std::size_t closingBracket = authority.find(']');
+    if (closingBracket == std::string_view::npos || closingBracket + 1 >= authority.size() || authority[closingBracket + 1] != ':')
     {
-      throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port must contain decimal digits only");
+      return {};
     }
 
-    portValue = (portValue * 10U) + static_cast<std::uint32_t>(character - '0');
-    if (portValue > 65535U)
-    {
-      throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port must be <= 65535");
-    }
+    return std::string(authority.substr(closingBracket + 2));
   }
 
-  return std::string(portText);
+  const std::size_t separator = authority.rfind(':');
+  if (separator == std::string_view::npos)
+  {
+    return {};
+  }
+
+  return std::string(authority.substr(separator + 1));
 }
 
 auto defaultPortForScheme(std::string_view scheme) -> std::string
@@ -150,13 +112,13 @@ auto defaultPortForScheme(std::string_view scheme) -> std::string
 
 auto parseAbsoluteUrl(std::string_view rawUrl, std::string_view fieldName) -> ParsedUrl
 {
-  const std::string_view trimmed = trimAsciiWhitespace(rawUrl);
+  const std::string_view trimmed = mcp::detail::trimAsciiWhitespace(rawUrl);
   if (trimmed.empty())
   {
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " must not be empty");
   }
 
-  if (containsAsciiWhitespaceOrControl(trimmed))
+  if (mcp::detail::containsAsciiWhitespaceOrControl(trimmed))
   {
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " must not include whitespace or control characters");
   }
@@ -166,87 +128,33 @@ auto parseAbsoluteUrl(std::string_view rawUrl, std::string_view fieldName) -> Pa
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " must not include URL fragments");
   }
 
-  const std::size_t schemeSeparator = trimmed.find("://");
-  if (schemeSeparator == std::string_view::npos || schemeSeparator == 0)
+  const auto parsedAbsolute = mcp::detail::parseAbsoluteUrl(trimmed);
+  if (!parsedAbsolute.has_value())
   {
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " must be an absolute URL");
   }
 
-  const std::string_view schemeText = trimmed.substr(0, schemeSeparator);
-  if (!isValidUrlScheme(schemeText))
-  {
-    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " contains an invalid URL scheme");
-  }
-
   ParsedUrl parsed;
-  parsed.scheme = toLowerAscii(schemeText);
-  parsed.port = defaultPortForScheme(parsed.scheme);
+  parsed.scheme = parsedAbsolute->scheme;
+  parsed.host = parsedAbsolute->host;
+  parsed.ipv6Literal = parsedAbsolute->ipv6Literal;
+  parsed.hasExplicitPort = parsedAbsolute->hasExplicitPort;
+  parsed.path = parsedAbsolute->path.empty() ? "/" : parsedAbsolute->path;
+  parsed.query = parsedAbsolute->query;
+  parsed.hasQuery = parsedAbsolute->hasQuery;
 
-  const std::size_t authorityBegin = schemeSeparator + 3;
-  if (authorityBegin >= trimmed.size())
+  if (parsed.hasExplicitPort)
   {
-    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " authority must not be empty");
-  }
-
-  std::size_t authorityEnd = trimmed.find_first_of("/?", authorityBegin);
-  if (authorityEnd == std::string_view::npos)
-  {
-    authorityEnd = trimmed.size();
-  }
-
-  const std::string_view authority = trimmed.substr(authorityBegin, authorityEnd - authorityBegin);
-  if (authority.empty() || authority.find('@') != std::string_view::npos)
-  {
-    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " authority is invalid");
-  }
-
-  if (authority.front() == '[')
-  {
-    const std::size_t ipv6End = authority.find(']');
-    if (ipv6End == std::string_view::npos || ipv6End <= 1)
+    parsed.port = std::to_string(parsedAbsolute->port);
+    const std::string explicitPort = extractExplicitPortText(trimmed, parsed.ipv6Literal);
+    if (!explicitPort.empty())
     {
-      throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " host is invalid");
-    }
-
-    parsed.ipv6Literal = true;
-    parsed.host = toLowerAscii(authority.substr(1, ipv6End - 1));
-
-    const std::string_view remainder = authority.substr(ipv6End + 1);
-    if (!remainder.empty())
-    {
-      if (remainder.front() != ':')
-      {
-        throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port separator is invalid");
-      }
-
-      parsed.hasExplicitPort = true;
-      parsed.port = parsePort(remainder.substr(1), fieldName);
+      parsed.port = explicitPort;
     }
   }
   else
   {
-    const std::size_t firstColon = authority.find(':');
-    const std::size_t lastColon = authority.rfind(':');
-    if (firstColon != std::string_view::npos && firstColon != lastColon)
-    {
-      throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " host authority is invalid");
-    }
-
-    if (firstColon == std::string_view::npos)
-    {
-      parsed.host = toLowerAscii(authority);
-    }
-    else
-    {
-      parsed.host = toLowerAscii(authority.substr(0, firstColon));
-      parsed.hasExplicitPort = true;
-      parsed.port = parsePort(authority.substr(firstColon + 1), fieldName);
-    }
-  }
-
-  if (parsed.host.empty())
-  {
-    throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " host must not be empty");
+    parsed.port = defaultPortForScheme(parsed.scheme);
   }
 
   if (parsed.port.empty())
@@ -254,58 +162,8 @@ auto parseAbsoluteUrl(std::string_view rawUrl, std::string_view fieldName) -> Pa
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " port is not valid for this scheme");
   }
 
-  parsed.path = "/";
-  const std::size_t querySeparator = trimmed.find('?', authorityEnd);
-  if (authorityEnd < trimmed.size())
-  {
-    if (trimmed[authorityEnd] == '?')
-    {
-      parsed.path = "/";
-    }
-    else
-    {
-      if (querySeparator == std::string_view::npos)
-      {
-        parsed.path = std::string(trimmed.substr(authorityEnd));
-      }
-      else
-      {
-        parsed.path = std::string(trimmed.substr(authorityEnd, querySeparator - authorityEnd));
-      }
-    }
-  }
-
-  if (parsed.path.empty())
-  {
-    parsed.path = "/";
-  }
-
-  if (querySeparator != std::string_view::npos)
-  {
-    parsed.query = std::string(trimmed.substr(querySeparator + 1));
-    parsed.hasQuery = true;
-  }
-
   parsed.serialized = std::string(trimmed);
   return parsed;
-}
-
-auto equalsIgnoreCase(std::string_view left, std::string_view right) -> bool
-{
-  if (left.size() != right.size())
-  {
-    return false;
-  }
-
-  for (std::size_t index = 0; index < left.size(); ++index)
-  {
-    if (std::tolower(static_cast<unsigned char>(left[index])) != std::tolower(static_cast<unsigned char>(right[index])))
-    {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 auto originForUrl(const ParsedUrl &url) -> std::string
@@ -354,7 +212,7 @@ auto isRedirectStatusCode(std::uint16_t statusCode) -> bool
 
 auto resolveRedirectUrl(const ParsedUrl &currentUrl, std::string_view locationHeader) -> std::string
 {
-  const std::string_view trimmedLocation = trimAsciiWhitespace(locationHeader);
+  const std::string_view trimmedLocation = mcp::detail::trimAsciiWhitespace(locationHeader);
   if (trimmedLocation.empty())
   {
     throw OAuthClientError(OAuthClientErrorCode::kNetworkFailure, "Redirect response is missing a non-empty Location header");
@@ -394,7 +252,7 @@ auto headerValue(const std::vector<OAuthHttpHeader> &headers, std::string_view n
 {
   for (const OAuthHttpHeader &header : headers)
   {
-    if (equalsIgnoreCase(trimAsciiWhitespace(header.name), name))
+    if (mcp::detail::equalsIgnoreCaseAscii(mcp::detail::trimAsciiWhitespace(header.name), name))
     {
       return header.value;
     }
@@ -405,7 +263,7 @@ auto headerValue(const std::vector<OAuthHttpHeader> &headers, std::string_view n
 
 auto methodAllowsBodyOnRedirectRewrite(std::string_view method) -> bool
 {
-  const std::string normalized = toLowerAscii(trimAsciiWhitespace(method));
+  const std::string normalized = mcp::detail::toLowerAscii(mcp::detail::trimAsciiWhitespace(method));
   return normalized == "post" || normalized == "put" || normalized == "patch" || normalized == "delete";
 }
 
@@ -475,7 +333,7 @@ auto isReservedAuthorizationQueryParameter(std::string_view parameterName) -> bo
     "state",
   };
 
-  return reservedParameters.find(toLowerAscii(parameterName)) != reservedParameters.end();
+  return reservedParameters.find(mcp::detail::toLowerAscii(parameterName)) != reservedParameters.end();
 }
 
 auto isReservedTokenBodyParameter(std::string_view parameterName) -> bool
@@ -489,7 +347,7 @@ auto isReservedTokenBodyParameter(std::string_view parameterName) -> bool
     "resource",
   };
 
-  return reservedParameters.find(toLowerAscii(parameterName)) != reservedParameters.end();
+  return reservedParameters.find(mcp::detail::toLowerAscii(parameterName)) != reservedParameters.end();
 }
 
 auto isSensitiveTokenParameter(std::string_view parameterName) -> bool
@@ -501,7 +359,7 @@ auto isSensitiveTokenParameter(std::string_view parameterName) -> bool
     "token",
   };
 
-  return blockedParameters.find(toLowerAscii(parameterName)) != blockedParameters.end();
+  return blockedParameters.find(mcp::detail::toLowerAscii(parameterName)) != blockedParameters.end();
 }
 
 auto joinScopes(const OAuthScopeSet &scopes) -> std::optional<std::string>
@@ -509,7 +367,7 @@ auto joinScopes(const OAuthScopeSet &scopes) -> std::optional<std::string>
   std::string joined;
   for (const std::string &scope : scopes.values)
   {
-    const std::string_view trimmedScope = trimAsciiWhitespace(scope);
+    const std::string_view trimmedScope = mcp::detail::trimAsciiWhitespace(scope);
     if (trimmedScope.empty())
     {
       continue;
@@ -571,7 +429,7 @@ auto sanitizeScopeSet(const OAuthScopeSet &scopes) -> OAuthScopeSet
   OAuthScopeSet sanitized;
   for (const std::string &scope : scopes.values)
   {
-    const std::string_view trimmedScope = trimAsciiWhitespace(scope);
+    const std::string_view trimmedScope = mcp::detail::trimAsciiWhitespace(scope);
     if (trimmedScope.empty())
     {
       continue;
@@ -624,7 +482,7 @@ auto canonicalScopeSetKey(const OAuthScopeSet &scopes) -> std::string
 
 auto normalizeResourceKey(std::string_view value) -> std::string
 {
-  const std::string_view trimmed = trimAsciiWhitespace(value);
+  const std::string_view trimmed = mcp::detail::trimAsciiWhitespace(value);
   if (trimmed.empty())
   {
     return {};
@@ -646,7 +504,7 @@ auto collectHeaderValues(const std::vector<OAuthHttpHeader> &headers, std::strin
   std::vector<std::string> values;
   for (const OAuthHttpHeader &header : headers)
   {
-    if (equalsIgnoreCase(trimAsciiWhitespace(header.name), name))
+    if (mcp::detail::equalsIgnoreCaseAscii(mcp::detail::trimAsciiWhitespace(header.name), name))
     {
       values.push_back(header.value);
     }
@@ -658,10 +516,11 @@ auto collectHeaderValues(const std::vector<OAuthHttpHeader> &headers, std::strin
 auto withBearerAuthorization(const OAuthProtectedResourceRequest &request, const std::optional<OAuthAccessToken> &token) -> OAuthProtectedResourceRequest
 {
   OAuthProtectedResourceRequest authorized = request;
-  authorized.headers.erase(std::remove_if(authorized.headers.begin(),
-                                          authorized.headers.end(),
-                                          [](const OAuthHttpHeader &header) -> bool { return equalsIgnoreCase(trimAsciiWhitespace(header.name), "Authorization"); }),
-                           authorized.headers.end());
+  authorized.headers.erase(
+    std::remove_if(authorized.headers.begin(),
+                   authorized.headers.end(),
+                   [](const OAuthHttpHeader &header) -> bool { return mcp::detail::equalsIgnoreCaseAscii(mcp::detail::trimAsciiWhitespace(header.name), "Authorization"); }),
+    authorized.headers.end());
 
   if (token.has_value() && !token->value.empty())
   {
@@ -674,14 +533,14 @@ auto withBearerAuthorization(const OAuthProtectedResourceRequest &request, const
 auto toTokenRequest(const OAuthTokenHttpRequest &request) -> OAuthTokenHttpRequest
 {
   OAuthTokenHttpRequest normalized = request;
-  const std::string_view normalizedMethod = trimAsciiWhitespace(normalized.method);
+  const std::string_view normalizedMethod = mcp::detail::trimAsciiWhitespace(normalized.method);
   normalized.method = normalizedMethod.empty() ? "POST" : std::string(normalizedMethod);
   return normalized;
 }
 
 auto requireNonEmptyTokenValue(std::string_view value, std::string_view fieldName) -> std::string
 {
-  const std::string_view trimmed = trimAsciiWhitespace(value);
+  const std::string_view trimmed = mcp::detail::trimAsciiWhitespace(value);
   if (trimmed.empty())
   {
     throw OAuthClientError(OAuthClientErrorCode::kInvalidInput, std::string(fieldName) + " must not be empty");
@@ -747,7 +606,7 @@ auto validateAuthorizationServerPkceS256Support(const AuthorizationServerMetadat
 
   const bool supportsS256 = std::any_of(metadata.codeChallengeMethodsSupported.begin(),
                                         metadata.codeChallengeMethodsSupported.end(),
-                                        [](const std::string &method) -> bool { return toLowerAscii(method) == toLowerAscii(kPkceMethodS256); });
+                                        [](const std::string &method) -> bool { return mcp::detail::toLowerAscii(method) == mcp::detail::toLowerAscii(kPkceMethodS256); });
 
   if (!supportsS256)
   {
@@ -995,10 +854,11 @@ auto executeTokenRequestWithPolicy(const OAuthTokenRequestExecutionRequest &requ
 
     if (!sameOrigin)
     {
-      currentRequest.headers.erase(std::remove_if(currentRequest.headers.begin(),
-                                                  currentRequest.headers.end(),
-                                                  [](const OAuthHttpHeader &header) -> bool { return equalsIgnoreCase(trimAsciiWhitespace(header.name), "Authorization"); }),
-                                   currentRequest.headers.end());
+      currentRequest.headers.erase(
+        std::remove_if(currentRequest.headers.begin(),
+                       currentRequest.headers.end(),
+                       [](const OAuthHttpHeader &header) -> bool { return mcp::detail::equalsIgnoreCaseAscii(mcp::detail::trimAsciiWhitespace(header.name), "Authorization"); }),
+        currentRequest.headers.end());
     }
 
     if ((response.statusCode == kHttpStatusMovedPermanently || response.statusCode == kHttpStatusFound || response.statusCode == kHttpStatusSeeOther)
@@ -1055,7 +915,7 @@ auto executeProtectedResourceRequestWithStepUp(const OAuthStepUpExecutionRequest
     std::optional<BearerWwwAuthenticateChallenge> insufficientScopeChallenge;
     for (const BearerWwwAuthenticateChallenge &challenge : challenges)
     {
-      if (challenge.error.has_value() && equalsIgnoreCase(trimAsciiWhitespace(*challenge.error), "insufficient_scope"))
+      if (challenge.error.has_value() && mcp::detail::equalsIgnoreCaseAscii(mcp::detail::trimAsciiWhitespace(*challenge.error), "insufficient_scope"))
       {
         insufficientScopeChallenge = challenge;
         break;

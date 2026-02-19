@@ -1,4 +1,3 @@
-#include <cctype>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -13,6 +12,7 @@
 #include <utility>
 
 #include <mcp/auth/loopback_receiver.hpp>
+#include <mcp/detail/ascii.hpp>
 #include <mcp/transport/http.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
@@ -28,26 +28,9 @@ constexpr std::uint16_t kHttpStatusBadRequest = 400;
 constexpr std::uint16_t kHttpStatusNotFound = 404;
 constexpr std::uint16_t kHttpStatusMethodNotAllowed = 405;
 
-auto trimAsciiWhitespace(std::string_view value) -> std::string_view
-{
-  std::size_t begin = 0;
-  while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0)
-  {
-    ++begin;
-  }
-
-  std::size_t end = value.size();
-  while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0)
-  {
-    --end;
-  }
-
-  return value.substr(begin, end - begin);
-}
-
 auto normalizeCallbackPath(std::string_view path) -> std::string
 {
-  const std::string_view trimmed = trimAsciiWhitespace(path);
+  const std::string_view trimmed = mcp::detail::trimAsciiWhitespace(path);
   if (trimmed.empty())
   {
     throw LoopbackReceiverError(LoopbackReceiverErrorCode::kInvalidInput, "Loopback callbackPath must not be empty");
@@ -316,7 +299,7 @@ public:
         throw LoopbackReceiverError(LoopbackReceiverErrorCode::kInvalidInput, "waitForAuthorizationCode can only be called once per receiver start");
       }
 
-      const std::string_view trimmedState = trimAsciiWhitespace(expectedState);
+      const std::string_view trimmedState = mcp::detail::trimAsciiWhitespace(expectedState);
       if (trimmedState.empty())
       {
         throw LoopbackReceiverError(LoopbackReceiverErrorCode::kInvalidInput, "expectedState must not be empty");
@@ -400,7 +383,7 @@ public:
       return htmlResponse(kHttpStatusBadRequest, "<html><body><h1>Invalid callback query encoding</h1></body></html>");
     }
 
-    if (!code.has_value() || !state.has_value() || trimAsciiWhitespace(*code).empty())
+    if (!code.has_value() || !state.has_value() || mcp::detail::trimAsciiWhitespace(*code).empty())
     {
       signalFailure(LoopbackReceiverErrorCode::kProtocolViolation, "OAuth callback did not include required code/state parameters");
       return htmlResponse(kHttpStatusBadRequest, "<html><body><h1>Missing code/state callback parameters</h1></body></html>");

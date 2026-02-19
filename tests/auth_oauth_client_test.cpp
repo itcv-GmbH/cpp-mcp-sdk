@@ -159,6 +159,27 @@ TEST_CASE("OAuth client enforces redirect URI policy and includes resource indic
       REQUIRE(error.code() == mcp::auth::OAuthClientErrorCode::kSecurityPolicyViolation);
     }
   }
+
+  SECTION("redirect URIs reject ASCII control characters")
+  {
+    mcp::auth::OAuthAuthorizationUrlRequest request;
+    request.authorizationServerMetadata = makeAuthorizationServerMetadata();
+    request.clientId = "my-client";
+    request.redirectUri = "http://localhost:9123/call\nback";
+    request.state = "state-123";
+    request.codeChallenge = "challenge";
+    request.resource = "https://mcp.example.com/mcp";
+
+    try
+    {
+      static_cast<void>(mcp::auth::buildAuthorizationUrl(request));
+      FAIL("Expected redirect URI validation failure for ASCII control characters");
+    }
+    catch (const mcp::auth::OAuthClientError &error)
+    {
+      REQUIRE(error.code() == mcp::auth::OAuthClientErrorCode::kInvalidInput);
+    }
+  }
 }
 
 TEST_CASE("OAuth token request execution enforces redirect hardening", "[auth][oauth][security]")

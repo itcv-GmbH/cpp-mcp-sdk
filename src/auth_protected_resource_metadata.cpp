@@ -13,6 +13,8 @@
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <mcp/auth/protected_resource_metadata.hpp>
+#include <mcp/detail/ascii.hpp>
+#include <mcp/detail/url.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/transport/http.hpp>
 
@@ -51,62 +53,14 @@ struct ParsedUrl
   bool ipv6Literal = false;
 };
 
-auto trimAsciiWhitespace(std::string_view value) -> std::string_view
-{
-  std::size_t begin = 0;
-  while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0)
-  {
-    ++begin;
-  }
-
-  std::size_t end = value.size();
-  while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0)
-  {
-    --end;
-  }
-
-  return value.substr(begin, end - begin);
-}
-
-auto toLowerAscii(std::string_view value) -> std::string
-{
-  std::string normalized;
-  normalized.reserve(value.size());
-
-  for (const char character : value)
-  {
-    normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
-  }
-
-  return normalized;
-}
-
-auto equalsIgnoreCase(std::string_view left, std::string_view right) -> bool
-{
-  if (left.size() != right.size())
-  {
-    return false;
-  }
-
-  for (std::size_t index = 0; index < left.size(); ++index)
-  {
-    if (std::tolower(static_cast<unsigned char>(left[index])) != std::tolower(static_cast<unsigned char>(right[index])))
-    {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 auto startsWithIgnoreCase(std::string_view value, std::string_view prefix) -> bool
 {
-  return value.size() >= prefix.size() && equalsIgnoreCase(value.substr(0, prefix.size()), prefix);
+  return value.size() >= prefix.size() && mcp::detail::equalsIgnoreCaseAscii(value.substr(0, prefix.size()), prefix);
 }
 
 auto endsWithIgnoreCase(std::string_view value, std::string_view suffix) -> bool
 {
-  return value.size() >= suffix.size() && equalsIgnoreCase(value.substr(value.size() - suffix.size()), suffix);
+  return value.size() >= suffix.size() && mcp::detail::equalsIgnoreCaseAscii(value.substr(value.size() - suffix.size()), suffix);
 }
 
 auto isTokenCharacter(char character) -> bool
@@ -116,40 +70,45 @@ auto isTokenCharacter(char character) -> bool
     || character == '+' || character == '-' || character == '.' || character == '^' || character == '_' || character == '`' || character == '|' || character == '~';
 }
 
-auto containsAsciiWhitespaceOrControl(std::string_view value) -> bool
+auto extractExplicitPortText(std::string_view rawUrl, bool ipv6Literal) -> std::string
 {
-  return std::any_of(value.begin(),
-                     value.end(),
-                     [](char character) -> bool
-                     {
-                       const auto byte = static_cast<unsigned char>(character);
-                       return std::isspace(byte) != 0 || std::iscntrl(byte) != 0;
-                     });
-}
-
-auto parsePort(std::string_view portText) -> std::string
-{
-  if (portText.empty())
+  const std::size_t schemeSeparator = rawUrl.find("://");
+  if (schemeSeparator == std::string_view::npos)
   {
-    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL port must not be empty");
+    return {};
   }
 
-  std::uint32_t portValue = 0;
-  for (const char character : portText)
+  const std::size_t authorityBegin = schemeSeparator + 3;
+  std::size_t authorityEnd = rawUrl.find_first_of("/?#", authorityBegin);
+  if (authorityEnd == std::string_view::npos)
   {
-    if (std::isdigit(static_cast<unsigned char>(character)) == 0)
-    {
-      throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL port must contain decimal digits only");
-    }
-
-    portValue = (portValue * 10U) + static_cast<std::uint32_t>(character - '0');
-    if (portValue > 65535U)
-    {
-      throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL port must be <= 65535");
-    }
+    authorityEnd = rawUrl.size();
   }
 
-  return std::string(portText);
+  const std::string_view authority = rawUrl.substr(authorityBegin, authorityEnd - authorityBegin);
+  if (authority.empty())
+  {
+    return {};
+  }
+
+  if (ipv6Literal)
+  {
+    const std::size_t closingBracket = authority.find(']');
+    if (closingBracket == std::string_view::npos || closingBracket + 1 >= authority.size() || authority[closingBracket + 1] != ':')
+    {
+      return {};
+    }
+
+    return std::string(authority.substr(closingBracket + 2));
+  }
+
+  const std::size_t separator = authority.rfind(':');
+  if (separator == std::string_view::npos)
+  {
+    return {};
+  }
+
+  return std::string(authority.substr(separator + 1));
 }
 
 auto defaultPortForScheme(std::string_view scheme) -> std::string
@@ -169,106 +128,48 @@ auto defaultPortForScheme(std::string_view scheme) -> std::string
 
 auto parseAbsoluteUrl(std::string_view rawUrl, bool allowQuery) -> ParsedUrl
 {
-  const std::string_view trimmed = trimAsciiWhitespace(rawUrl);
+  const std::string_view trimmed = mcp::detail::trimAsciiWhitespace(rawUrl);
   if (trimmed.empty())
   {
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL must not be empty");
   }
 
-  if (containsAsciiWhitespaceOrControl(trimmed))
+  if (mcp::detail::containsAsciiWhitespaceOrControl(trimmed))
   {
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL must not include whitespace or control characters");
   }
 
-  const std::size_t schemeSeparator = trimmed.find("://");
-  if (schemeSeparator == std::string_view::npos || schemeSeparator == 0)
+  if (trimmed.find('#') != std::string_view::npos)
+  {
+    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL fragments are not allowed");
+  }
+
+  const auto parsedAbsolute = mcp::detail::parseAbsoluteUrl(trimmed);
+  if (!parsedAbsolute.has_value())
   {
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL must be absolute and include a scheme");
   }
 
-  const std::string_view schemeView = trimmed.substr(0, schemeSeparator);
-  if (std::isalpha(static_cast<unsigned char>(schemeView.front())) == 0)
-  {
-    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL scheme must start with an ASCII letter");
-  }
-
-  const bool validScheme =
-    std::all_of(schemeView.begin(),
-                schemeView.end(),
-                [](char character) -> bool { return std::isalnum(static_cast<unsigned char>(character)) != 0 || character == '+' || character == '-' || character == '.'; });
-  if (!validScheme)
-  {
-    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL scheme contains invalid characters");
-  }
-
   ParsedUrl parsed;
-  parsed.scheme = toLowerAscii(schemeView);
-  parsed.port = defaultPortForScheme(parsed.scheme);
+  parsed.scheme = parsedAbsolute->scheme;
+  parsed.host = parsedAbsolute->host;
+  parsed.ipv6Literal = parsedAbsolute->ipv6Literal;
+  parsed.hasExplicitPort = parsedAbsolute->hasExplicitPort;
+  parsed.path = parsedAbsolute->path.empty() ? "/" : parsedAbsolute->path;
+  parsed.query = parsedAbsolute->query;
 
-  const std::size_t authorityBegin = schemeSeparator + 3;
-  if (authorityBegin >= trimmed.size())
+  if (parsed.hasExplicitPort)
   {
-    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL authority must not be empty");
-  }
-
-  std::size_t authorityEnd = trimmed.find_first_of("/?#", authorityBegin);
-  if (authorityEnd == std::string_view::npos)
-  {
-    authorityEnd = trimmed.size();
-  }
-
-  const std::string_view authority = trimmed.substr(authorityBegin, authorityEnd - authorityBegin);
-  if (authority.empty() || authority.find('@') != std::string_view::npos)
-  {
-    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL authority is invalid");
-  }
-
-  if (authority.front() == '[')
-  {
-    const std::size_t ipv6End = authority.find(']');
-    if (ipv6End == std::string_view::npos || ipv6End <= 1)
+    parsed.port = std::to_string(parsedAbsolute->port);
+    const std::string explicitPort = extractExplicitPortText(trimmed, parsed.ipv6Literal);
+    if (!explicitPort.empty())
     {
-      throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL contains an invalid IPv6 host");
-    }
-
-    parsed.ipv6Literal = true;
-    parsed.host = toLowerAscii(authority.substr(1, ipv6End - 1));
-
-    const std::string_view remainder = authority.substr(ipv6End + 1);
-    if (!remainder.empty())
-    {
-      if (remainder.front() != ':')
-      {
-        throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL contains an invalid IPv6 authority suffix");
-      }
-
-      parsed.hasExplicitPort = true;
-      parsed.port = parsePort(remainder.substr(1));
+      parsed.port = explicitPort;
     }
   }
   else
   {
-    const std::size_t firstColon = authority.find(':');
-    const std::size_t lastColon = authority.rfind(':');
-    if (firstColon == std::string_view::npos)
-    {
-      parsed.host = toLowerAscii(authority);
-    }
-    else if (firstColon == lastColon)
-    {
-      parsed.host = toLowerAscii(authority.substr(0, firstColon));
-      parsed.hasExplicitPort = true;
-      parsed.port = parsePort(authority.substr(firstColon + 1));
-    }
-    else
-    {
-      throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL contains an invalid host authority");
-    }
-  }
-
-  if (parsed.host.empty())
-  {
-    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL host must not be empty");
+    parsed.port = defaultPortForScheme(parsed.scheme);
   }
 
   if (parsed.port.empty())
@@ -276,53 +177,9 @@ auto parseAbsoluteUrl(std::string_view rawUrl, bool allowQuery) -> ParsedUrl
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL port is not valid for this scheme");
   }
 
-  if (authorityEnd == trimmed.size())
+  if (!allowQuery && parsedAbsolute->hasQuery)
   {
-    parsed.path = "/";
-    return parsed;
-  }
-
-  if (trimmed[authorityEnd] == '#')
-  {
-    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL fragments are not allowed");
-  }
-
-  std::size_t querySeparator = trimmed.find('?', authorityEnd);
-  const std::size_t fragmentSeparator = trimmed.find('#', authorityEnd);
-  if (fragmentSeparator != std::string_view::npos)
-  {
-    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL fragments are not allowed");
-  }
-
-  if (trimmed[authorityEnd] == '?')
-  {
-    parsed.path = "/";
-    querySeparator = authorityEnd;
-  }
-  else if (trimmed[authorityEnd] == '/')
-  {
-    if (querySeparator == std::string_view::npos)
-    {
-      parsed.path = std::string(trimmed.substr(authorityEnd));
-    }
-    else
-    {
-      parsed.path = std::string(trimmed.substr(authorityEnd, querySeparator - authorityEnd));
-    }
-  }
-  else
-  {
-    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL path must begin with '/' when present");
-  }
-
-  if (querySeparator != std::string_view::npos)
-  {
-    if (!allowQuery)
-    {
-      throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL query components are not allowed");
-    }
-
-    parsed.query = std::string(trimmed.substr(querySeparator + 1));
+    throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "URL query components are not allowed");
   }
 
   return parsed;
@@ -501,7 +358,7 @@ auto parseQuotedValue(std::string_view value) -> std::optional<std::string>
 
     if (character == '"')
     {
-      const std::string_view remainder = trimAsciiWhitespace(value.substr(index + 1));
+      const std::string_view remainder = mcp::detail::trimAsciiWhitespace(value.substr(index + 1));
       if (!remainder.empty())
       {
         return std::nullopt;
@@ -518,7 +375,7 @@ auto parseQuotedValue(std::string_view value) -> std::optional<std::string>
 
 auto parseBearerParameter(std::string_view parameterValue, BearerWwwAuthenticateChallenge &challenge) -> void
 {
-  const std::string_view trimmedParameter = trimAsciiWhitespace(parameterValue);
+  const std::string_view trimmedParameter = mcp::detail::trimAsciiWhitespace(parameterValue);
   if (trimmedParameter.empty())
   {
     return;
@@ -530,14 +387,14 @@ auto parseBearerParameter(std::string_view parameterValue, BearerWwwAuthenticate
     return;
   }
 
-  const std::string_view nameView = trimAsciiWhitespace(trimmedParameter.substr(0, separator));
-  const std::string_view encodedValue = trimAsciiWhitespace(trimmedParameter.substr(separator + 1));
+  const std::string_view nameView = mcp::detail::trimAsciiWhitespace(trimmedParameter.substr(0, separator));
+  const std::string_view encodedValue = mcp::detail::trimAsciiWhitespace(trimmedParameter.substr(separator + 1));
   if (nameView.empty() || encodedValue.empty())
   {
     return;
   }
 
-  const std::string normalizedName = toLowerAscii(nameView);
+  const std::string normalizedName = mcp::detail::toLowerAscii(nameView);
   std::string value;
   if (encodedValue.front() == '"')
   {
@@ -609,7 +466,7 @@ auto sanitizeScopeSet(const OAuthScopeSet &scopes) -> OAuthScopeSet
   OAuthScopeSet sanitized;
   for (const std::string &scope : scopes.values)
   {
-    const std::string_view trimmedScope = trimAsciiWhitespace(scope);
+    const std::string_view trimmedScope = mcp::detail::trimAsciiWhitespace(scope);
     if (trimmedScope.empty())
     {
       continue;
@@ -652,7 +509,7 @@ auto headerValue(const std::vector<DiscoveryHeader> &headers, std::string_view n
 {
   for (const DiscoveryHeader &header : headers)
   {
-    if (equalsIgnoreCase(trimAsciiWhitespace(header.name), name))
+    if (mcp::detail::equalsIgnoreCaseAscii(mcp::detail::trimAsciiWhitespace(header.name), name))
     {
       return header.value;
     }
@@ -663,7 +520,7 @@ auto headerValue(const std::vector<DiscoveryHeader> &headers, std::string_view n
 
 auto resolveRedirectUrl(const ParsedUrl &currentUrl, std::string_view locationHeader) -> std::string
 {
-  const std::string_view trimmedLocation = trimAsciiWhitespace(locationHeader);
+  const std::string_view trimmedLocation = mcp::detail::trimAsciiWhitespace(locationHeader);
   if (trimmedLocation.empty())
   {
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kNetworkFailure, "Redirect response is missing a non-empty Location header");
@@ -858,7 +715,7 @@ auto validateHostAddressability(const ParsedUrl &url, const DiscoveryDnsResolver
 
 auto defaultHttpFetcher(const DiscoveryHttpRequest &request) -> DiscoveryHttpResponse
 {
-  if (!equalsIgnoreCase(trimAsciiWhitespace(request.method), "GET"))
+  if (!mcp::detail::equalsIgnoreCaseAscii(mcp::detail::trimAsciiWhitespace(request.method), "GET"))
   {
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "Discovery HTTP fetcher only supports GET requests");
   }
@@ -964,7 +821,7 @@ auto firstResourceMetadataChallenge(const std::vector<BearerWwwAuthenticateChall
 {
   for (const auto &challenge : bearerChallenges)
   {
-    if (challenge.resourceMetadata.has_value() && !trimAsciiWhitespace(*challenge.resourceMetadata).empty())
+    if (challenge.resourceMetadata.has_value() && !mcp::detail::trimAsciiWhitespace(*challenge.resourceMetadata).empty())
     {
       return challenge;
     }
@@ -1032,7 +889,7 @@ auto parseStringArray(const jsonrpc::JsonValue &value, std::string_view fieldNam
     }
 
     const std::string itemValue = item.as<std::string>();
-    const std::string_view trimmedItem = trimAsciiWhitespace(itemValue);
+    const std::string_view trimmedItem = mcp::detail::trimAsciiWhitespace(itemValue);
     if (trimmedItem.empty())
     {
       continue;
@@ -1061,7 +918,7 @@ auto parseOptionalString(const jsonrpc::JsonValue &value, std::string_view field
   }
 
   const std::string fieldText = fieldValue.as<std::string>();
-  const std::string_view trimmed = trimAsciiWhitespace(fieldText);
+  const std::string_view trimmed = mcp::detail::trimAsciiWhitespace(fieldText);
   if (trimmed.empty())
   {
     return std::nullopt;
@@ -1114,7 +971,7 @@ auto parseBearerWwwAuthenticateChallenges(const std::vector<std::string> &header
 
     for (const std::string &part : parts)
     {
-      const std::string_view trimmedPart = trimAsciiWhitespace(part);
+      const std::string_view trimmedPart = mcp::detail::trimAsciiWhitespace(part);
       if (trimmedPart.empty())
       {
         continue;
@@ -1126,11 +983,11 @@ auto parseBearerWwwAuthenticateChallenges(const std::vector<std::string> &header
         continue;
       }
 
-      const std::string_view trimmedRemainder = trimAsciiWhitespace(tokenRemainder);
+      const std::string_view trimmedRemainder = mcp::detail::trimAsciiWhitespace(tokenRemainder);
       const bool schemeSegment = !trimmedRemainder.empty() && trimmedRemainder.front() != '=';
       if (schemeSegment)
       {
-        if (!equalsIgnoreCase(token, "Bearer"))
+        if (!mcp::detail::equalsIgnoreCaseAscii(token, "Bearer"))
         {
           activeBearerChallengeIndex.reset();
           continue;
@@ -1161,7 +1018,7 @@ auto parseProtectedResourceMetadata(std::string_view jsonDocument) -> ProtectedR
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kMetadataValidation, "Protected resource metadata.resource must be a string");
   }
 
-  const std::string resource = std::string(trimAsciiWhitespace(parsedMetadata["resource"].as<std::string>()));
+  const std::string resource = std::string(mcp::detail::trimAsciiWhitespace(parsedMetadata["resource"].as<std::string>()));
   if (resource.empty())
   {
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kMetadataValidation, "Protected resource metadata.resource must not be empty");
@@ -1210,7 +1067,7 @@ auto parseAuthorizationServerMetadata(std::string_view jsonDocument) -> Authoriz
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kMetadataValidation, "Authorization server metadata.issuer must be a string");
   }
 
-  const std::string issuerValue = std::string(trimAsciiWhitespace(parsedMetadata["issuer"].as<std::string>()));
+  const std::string issuerValue = std::string(mcp::detail::trimAsciiWhitespace(parsedMetadata["issuer"].as<std::string>()));
   if (issuerValue.empty())
   {
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kMetadataValidation, "Authorization server metadata.issuer must not be empty");
@@ -1277,7 +1134,7 @@ auto selectScopesForAuthorization(const std::vector<BearerWwwAuthenticateChallen
 
 auto discoverAuthorizationMetadata(const AuthorizationDiscoveryRequest &request) -> AuthorizationDiscoveryResult
 {
-  if (trimAsciiWhitespace(request.mcpEndpointUrl).empty())
+  if (mcp::detail::trimAsciiWhitespace(request.mcpEndpointUrl).empty())
   {
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "Authorization discovery requires a non-empty MCP endpoint URL");
   }
@@ -1303,7 +1160,7 @@ auto discoverAuthorizationMetadata(const AuthorizationDiscoveryRequest &request)
 
   if (const auto challenge = firstResourceMetadataChallenge(result.bearerChallenges); challenge.has_value())
   {
-    const std::string_view challengeUrl = trimAsciiWhitespace(*challenge->resourceMetadata);
+    const std::string_view challengeUrl = mcp::detail::trimAsciiWhitespace(*challenge->resourceMetadata);
     if (challengeUrl.empty())
     {
       throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "WWW-Authenticate resource_metadata must not be empty");

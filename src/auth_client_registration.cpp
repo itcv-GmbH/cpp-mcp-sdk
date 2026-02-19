@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -14,6 +13,8 @@
 #include <vector>
 
 #include <mcp/auth/client_registration.hpp>
+#include <mcp/detail/ascii.hpp>
+#include <mcp/detail/url.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/transport/http.hpp>
 
@@ -32,59 +33,18 @@ constexpr std::uint16_t kHttpStatusCreated = 201;
 struct ParsedUrl
 {
   std::string scheme;
-  std::string authority;
   std::string path;
 };
 
-static auto trimAsciiWhitespace(std::string_view value) -> std::string_view
-{
-  std::size_t begin = 0;
-  while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0)
-  {
-    ++begin;
-  }
-
-  std::size_t end = value.size();
-  while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0)
-  {
-    --end;
-  }
-
-  return value.substr(begin, end - begin);
-}
-
-static auto toLowerAscii(std::string_view value) -> std::string
-{
-  std::string normalized;
-  normalized.reserve(value.size());
-  for (const char character : value)
-  {
-    normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
-  }
-
-  return normalized;
-}
-
-static auto containsAsciiWhitespaceOrControl(std::string_view value) -> bool
-{
-  return std::any_of(value.begin(),
-                     value.end(),
-                     [](char character) -> bool
-                     {
-                       const auto byte = static_cast<unsigned char>(character);
-                       return std::isspace(byte) != 0 || std::iscntrl(byte) != 0;
-                     });
-}
-
 static auto validateAbsoluteUrl(std::string_view rawUrl, std::string_view fieldName, ClientRegistrationErrorCode errorCode) -> ParsedUrl
 {
-  const std::string_view trimmedUrl = trimAsciiWhitespace(rawUrl);
+  const std::string_view trimmedUrl = mcp::detail::trimAsciiWhitespace(rawUrl);
   if (trimmedUrl.empty())
   {
     throw ClientRegistrationError(errorCode, std::string(fieldName) + " must not be empty");
   }
 
-  if (containsAsciiWhitespaceOrControl(trimmedUrl))
+  if (mcp::detail::containsAsciiWhitespaceOrControl(trimmedUrl))
   {
     throw ClientRegistrationError(errorCode, std::string(fieldName) + " must not contain whitespace or control characters");
   }
@@ -94,71 +54,15 @@ static auto validateAbsoluteUrl(std::string_view rawUrl, std::string_view fieldN
     throw ClientRegistrationError(errorCode, std::string(fieldName) + " must not contain URL fragments");
   }
 
-  const std::size_t schemeSeparator = trimmedUrl.find("://");
-  if (schemeSeparator == std::string_view::npos || schemeSeparator == 0)
+  const auto parsedAbsolute = mcp::detail::parseAbsoluteUrl(trimmedUrl);
+  if (!parsedAbsolute.has_value())
   {
     throw ClientRegistrationError(errorCode, std::string(fieldName) + " must be an absolute URL");
   }
 
-  const std::string_view schemeText = trimmedUrl.substr(0, schemeSeparator);
-  if (std::isalpha(static_cast<unsigned char>(schemeText.front())) == 0)
-  {
-    throw ClientRegistrationError(errorCode, std::string(fieldName) + " scheme must begin with an ASCII letter");
-  }
-
-  const bool validScheme = std::all_of(schemeText.begin(),
-                                       schemeText.end(),
-                                       [](char character) -> bool
-                                       {
-                                         const auto byte = static_cast<unsigned char>(character);
-                                         return std::isalnum(byte) != 0 || character == '+' || character == '-' || character == '.';
-                                       });
-  if (!validScheme)
-  {
-    throw ClientRegistrationError(errorCode, std::string(fieldName) + " scheme contains invalid characters");
-  }
-
-  const std::size_t authorityBegin = schemeSeparator + 3;
-  if (authorityBegin >= trimmedUrl.size())
-  {
-    throw ClientRegistrationError(errorCode, std::string(fieldName) + " must include a host");
-  }
-
-  std::size_t authorityEnd = trimmedUrl.find_first_of("/?", authorityBegin);
-  if (authorityEnd == std::string_view::npos)
-  {
-    authorityEnd = trimmedUrl.size();
-  }
-
-  const std::string_view authority = trimmedUrl.substr(authorityBegin, authorityEnd - authorityBegin);
-  if (authority.empty() || authority.find('@') != std::string_view::npos)
-  {
-    throw ClientRegistrationError(errorCode, std::string(fieldName) + " authority is invalid");
-  }
-
   ParsedUrl parsed;
-  parsed.scheme = toLowerAscii(schemeText);
-  parsed.authority = std::string(authority);
-  parsed.path = "/";
-
-  if (authorityEnd < trimmedUrl.size())
-  {
-    const char delimiter = trimmedUrl[authorityEnd];
-    if (delimiter == '/')
-    {
-      std::size_t pathEnd = trimmedUrl.find('?', authorityEnd);
-      if (pathEnd == std::string_view::npos)
-      {
-        pathEnd = trimmedUrl.size();
-      }
-
-      parsed.path = std::string(trimmedUrl.substr(authorityEnd, pathEnd - authorityEnd));
-    }
-    else if (delimiter != '?')
-    {
-      throw ClientRegistrationError(errorCode, std::string(fieldName) + " path is invalid");
-    }
-  }
+  parsed.scheme = parsedAbsolute->scheme;
+  parsed.path = parsedAbsolute->path.empty() ? "/" : parsedAbsolute->path;
 
   return parsed;
 }
@@ -169,13 +73,13 @@ static auto sanitizeStringList(const std::vector<std::string> &values, std::stri
   std::vector<std::string> sanitized;
   for (const std::string &value : values)
   {
-    const std::string_view trimmed = trimAsciiWhitespace(value);
+    const std::string_view trimmed = mcp::detail::trimAsciiWhitespace(value);
     if (trimmed.empty())
     {
       continue;
     }
 
-    if (containsAsciiWhitespaceOrControl(trimmed))
+    if (mcp::detail::containsAsciiWhitespaceOrControl(trimmed))
     {
       throw ClientRegistrationError(errorCode, std::string(fieldName) + " contains invalid whitespace or control characters");
     }
@@ -196,13 +100,13 @@ static auto sanitizeStringList(const std::vector<std::string> &values, std::stri
 
 static auto requireTrimmedValue(std::string_view value, std::string_view fieldName, ClientRegistrationErrorCode errorCode) -> std::string
 {
-  const std::string_view trimmed = trimAsciiWhitespace(value);
+  const std::string_view trimmed = mcp::detail::trimAsciiWhitespace(value);
   if (trimmed.empty())
   {
     throw ClientRegistrationError(errorCode, std::string(fieldName) + " must not be empty");
   }
 
-  if (containsAsciiWhitespaceOrControl(trimmed))
+  if (mcp::detail::containsAsciiWhitespaceOrControl(trimmed))
   {
     throw ClientRegistrationError(errorCode, std::string(fieldName) + " contains invalid whitespace or control characters");
   }
@@ -229,7 +133,7 @@ static auto toTokenEndpointAuthMethod(ClientAuthenticationMethod method) -> std:
 
 static auto parseTokenEndpointAuthMethod(std::string_view methodText, ClientRegistrationErrorCode errorCode) -> ClientAuthenticationMethod
 {
-  const std::string normalized = toLowerAscii(trimAsciiWhitespace(methodText));
+  const std::string normalized = mcp::detail::toLowerAscii(mcp::detail::trimAsciiWhitespace(methodText));
   if (normalized.empty() || normalized == "none")
   {
     return ClientAuthenticationMethod::kNone;
@@ -327,7 +231,7 @@ static auto parseOptionalStringField(const jsonrpc::JsonValue &object, std::stri
   }
 
   const std::string fieldText = fieldValue.as<std::string>();
-  const std::string_view trimmed = trimAsciiWhitespace(fieldText);
+  const std::string_view trimmed = mcp::detail::trimAsciiWhitespace(fieldText);
   if (trimmed.empty())
   {
     return std::nullopt;
@@ -338,7 +242,7 @@ static auto parseOptionalStringField(const jsonrpc::JsonValue &object, std::stri
 
 static auto parseRequestMethod(std::string_view method) -> ServerRequestMethod
 {
-  const std::string normalized = toLowerAscii(trimAsciiWhitespace(method));
+  const std::string normalized = mcp::detail::toLowerAscii(mcp::detail::trimAsciiWhitespace(method));
   if (normalized == "post")
   {
     return ServerRequestMethod::kPost;
@@ -400,7 +304,8 @@ static auto resolvePreRegistered(const PreRegisteredClientConfiguration &configu
   result.client.authenticationMethod = configuration.authenticationMethod;
   result.client.clientSecret = configuration.clientSecret;
 
-  if (methodRequiresClientSecret(result.client.authenticationMethod) && (!result.client.clientSecret.has_value() || trimAsciiWhitespace(*result.client.clientSecret).empty()))
+  if (methodRequiresClientSecret(result.client.authenticationMethod)
+      && (!result.client.clientSecret.has_value() || mcp::detail::trimAsciiWhitespace(*result.client.clientSecret).empty()))
   {
     throw ClientRegistrationError(ClientRegistrationErrorCode::kInvalidInput, "Pre-registered client authentication method requires a non-empty client_secret");
   }
@@ -412,7 +317,7 @@ static auto resolveClientIdMetadataDocument(const ClientIdMetadataDocumentConfig
 {
   validateClientIdMetadataDocumentClientIdUrl(configuration.clientId);
 
-  if (trimAsciiWhitespace(configuration.clientName).empty())
+  if (mcp::detail::trimAsciiWhitespace(configuration.clientName).empty())
   {
     throw ClientRegistrationError(ClientRegistrationErrorCode::kInvalidInput, "Client ID metadata document configuration requires client_name");
   }
@@ -425,7 +330,7 @@ static auto resolveClientIdMetadataDocument(const ClientIdMetadataDocumentConfig
 
   ClientRegistrationResult result;
   result.strategy = ClientRegistrationStrategy::kClientIdMetadataDocument;
-  result.client.clientId = std::string(trimAsciiWhitespace(configuration.clientId));
+  result.client.clientId = std::string(mcp::detail::trimAsciiWhitespace(configuration.clientId));
   result.client.redirectUris = sanitizeStringList(configuration.redirectUris,
                                                   "Client ID metadata document redirect_uris",
                                                   ClientRegistrationErrorCode::kInvalidInput,
@@ -440,7 +345,7 @@ static auto buildDynamicClientRegistrationPayload(const DynamicClientRegistratio
 
   if (configuration.clientName.has_value())
   {
-    const std::string_view trimmedClientName = trimAsciiWhitespace(*configuration.clientName);
+    const std::string_view trimmedClientName = mcp::detail::trimAsciiWhitespace(*configuration.clientName);
     if (trimmedClientName.empty())
     {
       throw ClientRegistrationError(ClientRegistrationErrorCode::kInvalidInput, "Dynamic registration client_name must not be empty when provided");
@@ -533,7 +438,7 @@ static auto parseDynamicClientRegistrationResponse(const ClientRegistrationHttpR
     identity.clientSecret = *clientSecret;
   }
 
-  if (methodRequiresClientSecret(identity.authenticationMethod) && (!identity.clientSecret.has_value() || trimAsciiWhitespace(*identity.clientSecret).empty()))
+  if (methodRequiresClientSecret(identity.authenticationMethod) && (!identity.clientSecret.has_value() || mcp::detail::trimAsciiWhitespace(*identity.clientSecret).empty()))
   {
     throw ClientRegistrationError(ClientRegistrationErrorCode::kMetadataValidation,
                                   "Dynamic client registration response selected a client_secret authentication method without returning client_secret");
@@ -545,7 +450,7 @@ static auto parseDynamicClientRegistrationResponse(const ClientRegistrationHttpR
 static auto resolveDynamic(const ResolveClientRegistrationRequest &request) -> ClientRegistrationResult
 {
   const auto registrationEndpoint = request.authorizationServerMetadata.registrationEndpoint;
-  if (!registrationEndpoint.has_value() || trimAsciiWhitespace(*registrationEndpoint).empty())
+  if (!registrationEndpoint.has_value() || mcp::detail::trimAsciiWhitespace(*registrationEndpoint).empty())
   {
     throw ClientRegistrationError(ClientRegistrationErrorCode::kHostInteractionRequired, "Authorization server does not advertise registration_endpoint for dynamic registration");
   }
@@ -580,7 +485,7 @@ static auto resolveDynamic(const ResolveClientRegistrationRequest &request) -> C
 
   ClientRegistrationHttpRequest httpRequest;
   httpRequest.method = "POST";
-  httpRequest.url = std::string(trimAsciiWhitespace(*registrationEndpoint));
+  httpRequest.url = std::string(mcp::detail::trimAsciiWhitespace(*registrationEndpoint));
   httpRequest.headers.push_back(ClientRegistrationHeader {"Content-Type", "application/json"});
   httpRequest.headers.push_back(ClientRegistrationHeader {"Accept", "application/json"});
   httpRequest.body = buildDynamicClientRegistrationPayload(request.strategyConfiguration.dynamic);
@@ -657,7 +562,7 @@ auto buildClientIdMetadataDocumentPayload(const ClientIdMetadataDocumentConfigur
   }
 
   jsonrpc::JsonValue payload = jsonrpc::JsonValue::object();
-  payload["client_id"] = std::string(trimAsciiWhitespace(configuration.clientId));
+  payload["client_id"] = std::string(mcp::detail::trimAsciiWhitespace(configuration.clientId));
   payload["client_name"] = clientName;
 
   payload["redirect_uris"] = jsonrpc::JsonValue::array();
@@ -676,7 +581,7 @@ auto buildClientIdMetadataDocumentPayload(const ClientIdMetadataDocumentConfigur
 
   if (configuration.clientUri.has_value())
   {
-    const std::string_view trimmedClientUri = trimAsciiWhitespace(*configuration.clientUri);
+    const std::string_view trimmedClientUri = mcp::detail::trimAsciiWhitespace(*configuration.clientUri);
     if (!trimmedClientUri.empty())
     {
       payload["client_uri"] = std::string(trimmedClientUri);
@@ -685,7 +590,7 @@ auto buildClientIdMetadataDocumentPayload(const ClientIdMetadataDocumentConfigur
 
   if (configuration.logoUri.has_value())
   {
-    const std::string_view trimmedLogoUri = trimAsciiWhitespace(*configuration.logoUri);
+    const std::string_view trimmedLogoUri = mcp::detail::trimAsciiWhitespace(*configuration.logoUri);
     if (!trimmedLogoUri.empty())
     {
       payload["logo_uri"] = std::string(trimmedLogoUri);
@@ -721,7 +626,7 @@ auto validateClientIdMetadataDocumentPayload(std::string_view metadataDocumentJs
   }
 
   const std::string documentClientName = parsedPayload["client_name"].as<std::string>();
-  if (trimAsciiWhitespace(documentClientName).empty())
+  if (mcp::detail::trimAsciiWhitespace(documentClientName).empty())
   {
     throw ClientRegistrationError(ClientRegistrationErrorCode::kMetadataValidation, "Client ID metadata document.client_name must be a non-empty string");
   }

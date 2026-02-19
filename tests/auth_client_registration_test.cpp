@@ -169,6 +169,36 @@ TEST_CASE("Client registration errors when no strategy is feasible", "[auth][reg
   }
 }
 
+TEST_CASE("Dynamic registration rejects endpoint URLs with ASCII control characters", "[auth][registration]")
+{
+  mcp::auth::ResolveClientRegistrationRequest request;
+  request.authorizationServerMetadata.issuer = "https://auth.example.com";
+  request.authorizationServerMetadata.registrationEndpoint = "https://auth.example.com/reg\tister";
+  request.authorizationServerMetadata.clientIdMetadataDocumentSupported = false;
+  request.strategyConfiguration.dynamic.enabled = true;
+  request.strategyConfiguration.dynamic.clientName = "Test Client";
+  request.strategyConfiguration.dynamic.redirectUris = {"http://127.0.0.1:8721/callback"};
+
+  bool executorCalled = false;
+  request.httpExecutor = [&executorCalled](const mcp::auth::ClientRegistrationHttpRequest &) -> mcp::auth::ClientRegistrationHttpResponse
+  {
+    executorCalled = true;
+    return makeDynamicRegistrationSuccessResponse("client-should-not-be-created", {"http://127.0.0.1:8721/callback"}, "none");
+  };
+
+  try
+  {
+    static_cast<void>(mcp::auth::resolveClientRegistration(request));
+    FAIL("Expected metadata validation failure for control characters in registration_endpoint");
+  }
+  catch (const mcp::auth::ClientRegistrationError &error)
+  {
+    REQUIRE(error.code() == mcp::auth::ClientRegistrationErrorCode::kMetadataValidation);
+  }
+
+  REQUIRE_FALSE(executorCalled);
+}
+
 TEST_CASE("Dynamic registration fails on non-201 responses with actionable errors", "[auth][registration]")
 {
   mcp::auth::ResolveClientRegistrationRequest request;

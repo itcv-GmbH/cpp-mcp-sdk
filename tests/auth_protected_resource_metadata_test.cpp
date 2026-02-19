@@ -309,6 +309,37 @@ TEST_CASE("Discovery rejects non-HTTPS WWW-Authenticate resource_metadata URLs",
   REQUIRE_FALSE(fetchCalled);
 }
 
+TEST_CASE("Discovery rejects WWW-Authenticate resource_metadata URLs with ASCII control characters", "[auth][discovery][security]")
+{
+  bool fetchCalled = false;
+
+  mcp::auth::AuthorizationDiscoveryRequest request;
+  request.mcpEndpointUrl = "https://mcp.example.com/mcp";
+  request.wwwAuthenticateHeaderValues = {
+    "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/\tmcp\", scope=\"mcp:read\"",
+  };
+  request.httpFetcher = [&fetchCalled](const mcp::auth::DiscoveryHttpRequest &) -> mcp::auth::DiscoveryHttpResponse
+  {
+    fetchCalled = true;
+    throw std::runtime_error("HTTP fetch should not be attempted when URL validation fails");
+  };
+  request.dnsResolver = makeDnsResolver({
+    {"mcp.example.com", {"93.184.216.34"}},
+  });
+
+  try
+  {
+    static_cast<void>(mcp::auth::discoverAuthorizationMetadata(request));
+    FAIL("Expected discovery to reject resource_metadata URLs with control characters");
+  }
+  catch (const mcp::auth::AuthorizationDiscoveryError &error)
+  {
+    REQUIRE(error.code() == mcp::auth::AuthorizationDiscoveryErrorCode::kInvalidInput);
+  }
+
+  REQUIRE_FALSE(fetchCalled);
+}
+
 TEST_CASE("Discovery blocks redirects that change origin", "[auth][discovery][security]")
 {
   CannedDiscoveryTransport transport;
