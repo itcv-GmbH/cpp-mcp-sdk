@@ -1,29 +1,23 @@
-# Review Report: task-015 (/ Tools (tools/list, tools/call, list_changed))
+# Review Report: task-015 (/ Expand Unit Tests: Streamable HTTP Server)
 
 ## Status
-**PASS**
+**FAIL**
 *(Note: Use PASS only if the code is perfect, secure, matches the plan, and tests pass.)*
 
 ## Compliance Check
-- [x] Implementation matches `task-[id].md` instructions.
-- [x] Definition of Done met.
+- [ ] Implementation matches `task-[id].md` instructions.
+- [ ] Definition of Done met.
 - [x] No unauthorized architectural changes.
 
 ## Verification Output
-*   **Command Run:** `cmake --build build`
-*   **Result:** Pass. Commit `d05d0b73c667393d896e790381bab6e191c652f6` builds successfully; no compile/link failures.
-
-*   **Command Run:** `ctest --test-dir build`
-*   **Result:** Pass. `13/13` tests passed.
-
-*   **Command Run:** `ctest --test-dir build -R mcp_sdk_server_test -V`
-*   **Result:** Pass. Server suite passed with `81 assertions` across `11 test cases`, including tools pagination, unknown-tool protocol errors, input/output schema validation paths, and `notifications/tools/list_changed` behavior.
+*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_transport_http_server_test --output-on-failure`
+*   **Result:** Pass. `mcp_sdk_transport_http_server_test` completed successfully (`1/1` tests passed).
 
 ## Issues Found (If FAIL)
-*   **Critical:** None.
-*   **Major:** None.
+*   **Critical:** The new Content-Type rejection test uses body `{}` (`tests/transport_http_server_test.cpp`), which is already an invalid JSON-RPC payload. This can return HTTP 400 even when Content-Type validation is absent, so the test does not prove the required `missing/invalid Content-Type -> 400` behavior.
+*   **Major:** Step 3 in `task-015.md` asks for resume tests covering bad `Last-Event-ID` formats, but no test asserts malformed `Last-Event-ID` is rejected with HTTP 400 (the server has an explicit `Invalid Last-Event-ID` branch that remains unverified).
 *   **Minor:** None.
 
 ## Required Actions
-1. None.
-2. No follow-up fixes required for task-015.
+1. Update the Content-Type test to use a valid single JSON-RPC POST body (request/notification/response) and assert HTTP 400 specifically for missing and invalid `Content-Type` values.
+2. Add a GET resume test with malformed `Last-Event-ID` (e.g., non-parseable value) and assert the expected HTTP 400 rejection/status path.
