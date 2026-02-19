@@ -1,4 +1,4 @@
-# Review Report: task-014 (/ Server Core + Capability Enforcement)
+# Review Report: task-014 (/ Expand Unit Tests: Streamable HTTP Client)
 
 ## Status
 **PASS**
@@ -10,14 +10,8 @@
 - [x] No unauthorized architectural changes.
 
 ## Verification Output
-*   **Command Run:** `ctest --test-dir build`
-*   **Result:** Pass. Existing build test suite completed successfully.
-
-*   **Command Run:** `cmake --build build && ctest --test-dir build`
-*   **Result:** Pass. Project rebuilt with task changes and all tests passed (`13/13`), including `mcp_sdk_server_test`.
-
-*   **Command Run:** `ctest --test-dir build -R mcp_sdk_server_test -V`
-*   **Result:** Pass. Server-focused suite passed with `26 assertions` across `4` test cases covering initialize result, capability gating, and pre-init lifecycle restrictions.
+*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_transport_http_client_test --output-on-failure`
+*   **Result:** Pass. `mcp_sdk_transport_http_client_test` completed successfully (`1/1` passed, `0` failed).
 
 ## Issues Found (If FAIL)
 *   **Critical:** None.
