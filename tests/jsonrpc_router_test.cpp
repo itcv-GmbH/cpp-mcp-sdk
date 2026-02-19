@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +27,9 @@ static constexpr std::int64_t kInitializeRequestId = 808;
 static constexpr std::int64_t kInboundProgressRequestId = 5150;
 static constexpr std::int64_t kTaskTimeoutRequestId = 6160;
 static constexpr std::int64_t kDirectionScopedRequestId = 7171;
+static constexpr std::int64_t kOutboundDirectionRequestId = 8181;
+static constexpr std::int64_t kProgressRequestIdA = 9101;
+static constexpr std::int64_t kProgressRequestIdB = 9102;
 
 static constexpr double kProgressQuarter = 0.25;
 static constexpr double kProgressLate = 0.8;
@@ -36,7 +40,6 @@ static constexpr std::int64_t kWaitPollMillis = 5;
 static constexpr std::int64_t kRequestTimeoutMillis = 30;
 static constexpr std::int64_t kInitializeTimeoutMillis = 20;
 static constexpr std::int64_t kResponseWaitMillis = 500;
-static constexpr std::int64_t kInitializePostTimeoutWaitMillis = 30;
 
 static auto hasIdValue(const mcp::jsonrpc::RequestId &id, std::int64_t expectedValue) -> bool
 {
@@ -258,6 +261,14 @@ TEST_CASE("Router ignores unknown response ids and rejects responses to notifica
 
   const mcp::jsonrpc::RequestContext context;
 
+  mcp::jsonrpc::Request request;
+  request.id = kOutboundRequestIdA;
+  request.method = "tools/call";
+  request.params = mcp::jsonrpc::JsonValue::object();
+  std::future<mcp::jsonrpc::Response> responseFuture = router.sendRequest(context, request);
+
+  REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
+
   mcp::jsonrpc::Notification notification;
   notification.method = "notifications/ping";
   notification.params = mcp::jsonrpc::JsonValue::object();
@@ -267,6 +278,22 @@ TEST_CASE("Router ignores unknown response ids and rejects responses to notifica
   unknownResponse.id = kUnknownResponseId;
   unknownResponse.result = mcp::jsonrpc::JsonValue::object();
   REQUIRE_FALSE(router.dispatchResponse(context, mcp::jsonrpc::Response {unknownResponse}));
+
+  REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
+
+  mcp::jsonrpc::ErrorResponse responseWithoutId;
+  responseWithoutId.error = mcp::jsonrpc::makeInternalError(std::nullopt, "spurious response");
+  REQUIRE_FALSE(router.dispatchResponse(context, mcp::jsonrpc::Response {responseWithoutId}));
+  REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
+
+  mcp::jsonrpc::SuccessResponse expectedResponse;
+  expectedResponse.id = kOutboundRequestIdA;
+  expectedResponse.result = mcp::jsonrpc::JsonValue::object();
+  REQUIRE(router.dispatchResponse(context, mcp::jsonrpc::Response {expectedResponse}));
+
+  REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
+  const mcp::jsonrpc::Response finalResponse = responseFuture.get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(finalResponse));
 }
 
 TEST_CASE("Router does not emit cancellation notification when initialize times out", "[jsonrpc][router]")
@@ -274,8 +301,23 @@ TEST_CASE("Router does not emit cancellation notification when initialize times 
   mcp::jsonrpc::Router router;
   std::mutex outboundMessagesMutex;
   std::vector<mcp::jsonrpc::Message> outboundMessages;
-  router.setOutboundMessageSender([&outboundMessages, &outboundMessagesMutex](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
-                                  { recordMessage(outboundMessages, outboundMessagesMutex, std::move(message)); });
+  std::promise<void> cancelPromise;
+  std::future<void> cancelFuture = cancelPromise.get_future();
+  std::atomic_bool cancelObserved {false};
+  router.setOutboundMessageSender(
+    [&outboundMessages, &outboundMessagesMutex, &cancelPromise, &cancelObserved](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+    {
+      if (std::holds_alternative<mcp::jsonrpc::Notification>(message))
+      {
+        const auto &notification = std::get<mcp::jsonrpc::Notification>(message);
+        if (notification.method == "notifications/cancelled" && !cancelObserved.exchange(true))
+        {
+          cancelPromise.set_value();
+        }
+      }
+
+      recordMessage(outboundMessages, outboundMessagesMutex, std::move(message));
+    });
 
   const mcp::jsonrpc::RequestContext context;
 
@@ -290,11 +332,44 @@ TEST_CASE("Router does not emit cancellation notification when initialize times 
   const std::future<mcp::jsonrpc::Response> responseFuture = router.sendRequest(context, initializeRequest, options);
   REQUIRE(responseFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(kInitializePostTimeoutWaitMillis));
+  REQUIRE(cancelFuture.wait_for(std::chrono::milliseconds(kInitializeTimeoutMillis * 3)) == std::future_status::timeout);
   REQUIRE(messageCount(outboundMessages, outboundMessagesMutex) == 1);
 
   const std::vector<mcp::jsonrpc::Message> snapshot = copyMessages(outboundMessages, outboundMessagesMutex);
   REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(snapshot[0]));
+}
+
+TEST_CASE("Router ignores cancellation notifications for outbound requests", "[jsonrpc][router]")
+{
+  mcp::jsonrpc::Router router;
+  router.setOutboundMessageSender([](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Message &) -> void {});
+
+  mcp::jsonrpc::RequestContext context;
+  context.sessionId = "sender-a";
+
+  mcp::jsonrpc::Request outboundRequest;
+  outboundRequest.id = kOutboundDirectionRequestId;
+  outboundRequest.method = "resources/read";
+  outboundRequest.params = mcp::jsonrpc::JsonValue::object();
+
+  std::future<mcp::jsonrpc::Response> outboundFuture = router.sendRequest(context, outboundRequest);
+  REQUIRE(outboundFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
+
+  mcp::jsonrpc::Notification cancellation;
+  cancellation.method = "notifications/cancelled";
+  cancellation.params = mcp::jsonrpc::JsonValue::object();
+  (*cancellation.params)["requestId"] = kOutboundDirectionRequestId;
+  router.dispatchNotification(context, cancellation);
+
+  REQUIRE(outboundFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
+
+  mcp::jsonrpc::SuccessResponse response;
+  response.id = kOutboundDirectionRequestId;
+  response.result = mcp::jsonrpc::JsonValue::object();
+  REQUIRE(router.dispatchResponse(context, mcp::jsonrpc::Response {response}));
+
+  REQUIRE(outboundFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(outboundFuture.get()));
 }
 
 TEST_CASE("Router forwards active progress notifications and stops after completion", "[jsonrpc][router]")
@@ -347,6 +422,107 @@ TEST_CASE("Router forwards active progress notifications and stops after complet
 
   const mcp::jsonrpc::Response finalResponse = responseFuture.get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(finalResponse));
+}
+
+TEST_CASE("Router routes progress notifications by token without leaks", "[jsonrpc][router]")
+{
+  mcp::jsonrpc::Router router;
+  router.setOutboundMessageSender([](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Message &) -> void {});
+
+  std::vector<mcp::jsonrpc::ProgressUpdate> updatesA;
+  std::vector<mcp::jsonrpc::ProgressUpdate> updatesB;
+
+  const mcp::jsonrpc::RequestContext context;
+
+  mcp::jsonrpc::Request requestA;
+  requestA.id = kProgressRequestIdA;
+  requestA.method = "tools/call";
+  requestA.params = mcp::jsonrpc::JsonValue::object();
+  (*requestA.params)["_meta"] = mcp::jsonrpc::JsonValue::object();
+  (*requestA.params)["_meta"]["progressToken"] = "123";
+
+  mcp::jsonrpc::Request requestB;
+  requestB.id = kProgressRequestIdB;
+  requestB.method = "resources/read";
+  requestB.params = mcp::jsonrpc::JsonValue::object();
+  (*requestB.params)["_meta"] = mcp::jsonrpc::JsonValue::object();
+  (*requestB.params)["_meta"]["progressToken"] = "tok-b";
+
+  mcp::jsonrpc::OutboundRequestOptions optionsA;
+  optionsA.onProgress = [&updatesA](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::ProgressUpdate &update) -> void { updatesA.push_back(update); };
+
+  mcp::jsonrpc::OutboundRequestOptions optionsB;
+  optionsB.onProgress = [&updatesB](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::ProgressUpdate &update) -> void { updatesB.push_back(update); };
+
+  std::future<mcp::jsonrpc::Response> futureA = router.sendRequest(context, requestA, optionsA);
+  std::future<mcp::jsonrpc::Response> futureB = router.sendRequest(context, requestB, optionsB);
+
+  mcp::jsonrpc::Notification tokenAProgress;
+  tokenAProgress.method = "notifications/progress";
+  tokenAProgress.params = mcp::jsonrpc::JsonValue::object();
+  (*tokenAProgress.params)["progressToken"] = "123";
+  (*tokenAProgress.params)["progress"] = kProgressQuarter;
+  router.dispatchNotification(context, tokenAProgress);
+
+  REQUIRE(updatesA.size() == 1);
+  REQUIRE(updatesB.empty());
+
+  mcp::jsonrpc::Notification tokenBProgress = tokenAProgress;
+  (*tokenBProgress.params)["progressToken"] = "tok-b";
+  (*tokenBProgress.params)["progress"] = kProgressHalf;
+  router.dispatchNotification(context, tokenBProgress);
+
+  REQUIRE(updatesA.size() == 1);
+  REQUIRE(updatesB.size() == 1);
+
+  mcp::jsonrpc::Notification wrongTypeTokenProgress = tokenAProgress;
+  (*wrongTypeTokenProgress.params)["progressToken"] = 123;
+  (*wrongTypeTokenProgress.params)["progress"] = kProgressLate;
+  router.dispatchNotification(context, wrongTypeTokenProgress);
+
+  REQUIRE(updatesA.size() == 1);
+  REQUIRE(updatesB.size() == 1);
+
+  mcp::jsonrpc::Notification unknownTokenProgress = tokenAProgress;
+  (*unknownTokenProgress.params)["progressToken"] = "tok-unknown";
+  router.dispatchNotification(context, unknownTokenProgress);
+
+  REQUIRE(updatesA.size() == 1);
+  REQUIRE(updatesB.size() == 1);
+
+  mcp::jsonrpc::SuccessResponse responseA;
+  responseA.id = kProgressRequestIdA;
+  responseA.result = mcp::jsonrpc::JsonValue::object();
+  REQUIRE(router.dispatchResponse(context, mcp::jsonrpc::Response {responseA}));
+
+  mcp::jsonrpc::Notification lateTokenAProgress = tokenAProgress;
+  (*lateTokenAProgress.params)["progress"] = 0.9;
+  router.dispatchNotification(context, lateTokenAProgress);
+
+  REQUIRE(updatesA.size() == 1);
+  REQUIRE(updatesB.size() == 1);
+
+  mcp::jsonrpc::Notification laterTokenBProgress = tokenBProgress;
+  (*laterTokenBProgress.params)["progress"] = kProgressLate;
+  router.dispatchNotification(context, laterTokenBProgress);
+
+  REQUIRE(updatesA.size() == 1);
+  REQUIRE(updatesB.size() == 2);
+
+  mcp::jsonrpc::SuccessResponse responseB;
+  responseB.id = kProgressRequestIdB;
+  responseB.result = mcp::jsonrpc::JsonValue::object();
+  REQUIRE(router.dispatchResponse(context, mcp::jsonrpc::Response {responseB}));
+
+  mcp::jsonrpc::Notification lateTokenBProgress = tokenBProgress;
+  (*lateTokenBProgress.params)["progress"] = 1.0;
+  router.dispatchNotification(context, lateTokenBProgress);
+
+  REQUIRE(updatesA.size() == 1);
+  REQUIRE(updatesB.size() == 2);
+
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(futureA.get()));
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(futureB.get()));
 }
 
 TEST_CASE("Router can emit progress notifications from an inbound request progress token", "[jsonrpc][router]")
