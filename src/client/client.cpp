@@ -2166,7 +2166,7 @@ auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestO
   }
 
   const jsonrpc::JsonValue lifecycleParams = request.params.has_value() ? *request.params : jsonrpc::JsonValue::object();
-  static_cast<void>(session_->sendRequest(request.method, lifecycleParams, options));
+  session_->enforceOutboundRequestLifecycle(request.method, lifecycleParams, options);
 
   {
     const std::scoped_lock lock(mutex_);

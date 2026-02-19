@@ -50,13 +50,12 @@ TEST_CASE("Client must send initialize as first request", "[lifecycle][client][e
 
   // Trying to send any request other than initialize should throw
   jsoncons::json params = jsoncons::json::object();
-  REQUIRE_THROWS_AS(session.sendRequest("ping", params), LifecycleError);
-  REQUIRE_THROWS_AS(session.sendRequest("tools/list", params), LifecycleError);
+  REQUIRE_THROWS_AS(session.enforceOutboundRequestLifecycle("ping", params), LifecycleError);
+  REQUIRE_THROWS_AS(session.enforceOutboundRequestLifecycle("tools/list", params), LifecycleError);
   REQUIRE(session.state() == SessionState::kCreated);
 
-  // Sending initialize should succeed (doesn't actually send, just validates)
-  // Note: sendRequest currently returns a placeholder future, so it won't throw for initialize
-  REQUIRE_NOTHROW(session.sendRequest("initialize", params));
+  // Sending initialize should succeed and advance lifecycle state.
+  REQUIRE_NOTHROW(session.enforceOutboundRequestLifecycle("initialize", params));
   REQUIRE(session.state() == SessionState::kInitializing);
 }
 
@@ -73,7 +72,7 @@ TEST_CASE("Client can only send ping while waiting for initialize response", "[l
   initParams["clientInfo"]["name"] = "test-client";
   initParams["clientInfo"]["version"] = "1.0.0";
 
-  REQUIRE_NOTHROW(session.sendRequest("initialize", initParams));
+  REQUIRE_NOTHROW(session.enforceOutboundRequestLifecycle("initialize", initParams));
   REQUIRE(session.state() == SessionState::kInitializing);
 
   // Now only ping should be allowed
@@ -82,9 +81,21 @@ TEST_CASE("Client can only send ping while waiting for initialize response", "[l
   REQUIRE_FALSE(session.canSendRequest("tools/list"));
 
   jsoncons::json params = jsoncons::json::object();
-  REQUIRE_NOTHROW(session.sendRequest("ping", params));
-  REQUIRE_THROWS_AS(session.sendRequest("initialize", params), LifecycleError);
-  REQUIRE_THROWS_AS(session.sendRequest("tools/list", params), LifecycleError);
+  REQUIRE_NOTHROW(session.enforceOutboundRequestLifecycle("ping", params));
+  REQUIRE_THROWS_AS(session.enforceOutboundRequestLifecycle("initialize", params), LifecycleError);
+  REQUIRE_THROWS_AS(session.enforceOutboundRequestLifecycle("tools/list", params), LifecycleError);
+}
+
+TEST_CASE("Lifecycle enforcement transitions client session during initialize", "[lifecycle][client][enforcement]")
+{
+  Session session;
+  session.setRole(SessionRole::kClient);
+
+  jsonrpc::JsonValue params = jsonrpc::JsonValue::object();
+  REQUIRE(session.state() == SessionState::kCreated);
+
+  REQUIRE_NOTHROW(session.enforceOutboundRequestLifecycle("initialize", params));
+  REQUIRE(session.state() == SessionState::kInitializing);
 }
 
 TEST_CASE("Client cannot send initialized notification before initialization completes", "[lifecycle][client][enforcement]")
@@ -94,7 +105,7 @@ TEST_CASE("Client cannot send initialized notification before initialization com
 
   // Should not be able to send initialized notification before initialize completes.
   jsoncons::json initParams = jsoncons::json::object();
-  REQUIRE_NOTHROW(session.sendRequest("initialize", initParams));
+  REQUIRE_NOTHROW(session.enforceOutboundRequestLifecycle("initialize", initParams));
   REQUIRE(session.state() == SessionState::kInitializing);
 
   REQUIRE_THROWS_AS(session.sendNotification("notifications/initialized"), LifecycleError);
@@ -245,8 +256,8 @@ TEST_CASE("Server pre-init restrictions allow only lifecycle-safe traffic", "[li
     REQUIRE_FALSE(session.canSendRequest("tools/list"));
 
     jsoncons::json params = jsoncons::json::object();
-    REQUIRE_NOTHROW(session.sendRequest("ping", params));
-    REQUIRE_THROWS_AS(session.sendRequest("tools/list", params), LifecycleError);
+    REQUIRE_NOTHROW(session.enforceOutboundRequestLifecycle("ping", params));
+    REQUIRE_THROWS_AS(session.enforceOutboundRequestLifecycle("tools/list", params), LifecycleError);
 
     REQUIRE_FALSE(session.canSendNotification("notifications/message"));
     REQUIRE_THROWS_AS(session.sendNotification("notifications/message"), LifecycleError);
@@ -316,7 +327,7 @@ TEST_CASE("Client automatically transitions to operating after initialize respon
   session.setRole(SessionRole::kClient);
 
   jsoncons::json initParams = jsoncons::json::object();
-  REQUIRE_NOTHROW(session.sendRequest("initialize", initParams));
+  REQUIRE_NOTHROW(session.enforceOutboundRequestLifecycle("initialize", initParams));
   REQUIRE(session.state() == SessionState::kInitializing);
 
   jsonrpc::SuccessResponse initResponse;
@@ -332,7 +343,7 @@ TEST_CASE("Client automatically transitions to operating after initialize respon
   REQUIRE(session.state() == SessionState::kOperating);
 
   jsoncons::json params = jsoncons::json::object();
-  REQUIRE_NOTHROW(session.sendRequest("tools/list", params));
+  REQUIRE_NOTHROW(session.enforceOutboundRequestLifecycle("tools/list", params));
 
   REQUIRE_THROWS_AS(session.sendNotification("notifications/initialized"), LifecycleError);
 }
@@ -368,7 +379,7 @@ TEST_CASE("Client negotiation failure reports actionable version error", "[lifec
   session.setRole(SessionRole::kClient);
 
   jsoncons::json initParams = jsoncons::json::object();
-  REQUIRE_NOTHROW(session.sendRequest("initialize", initParams));
+  REQUIRE_NOTHROW(session.enforceOutboundRequestLifecycle("initialize", initParams));
 
   jsonrpc::SuccessResponse initResponse;
   initResponse.id = std::int64_t {1};
@@ -428,7 +439,7 @@ TEST_CASE("Capability negotiation preserves experimental capabilities", "[lifecy
   Session clientSession;
   clientSession.setRole(SessionRole::kClient);
   jsoncons::json initParams = jsoncons::json::object();
-  REQUIRE_NOTHROW(clientSession.sendRequest("initialize", initParams));
+  REQUIRE_NOTHROW(clientSession.enforceOutboundRequestLifecycle("initialize", initParams));
 
   jsonrpc::SuccessResponse initializeResponse;
   initializeResponse.id = std::int64_t {2};

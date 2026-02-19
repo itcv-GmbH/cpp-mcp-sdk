@@ -325,7 +325,7 @@ auto Session::registerNotificationHandler(std::string method, jsonrpc::Notificat
   router_.registerNotificationHandler(std::move(method), std::move(handler));
 }
 
-auto Session::sendRequest(const std::string &method, jsonrpc::JsonValue params, RequestOptions options) -> std::future<jsonrpc::Response>
+auto Session::enforceOutboundRequestLifecycle(std::string_view method, jsonrpc::JsonValue params, RequestOptions options) -> void
 {
   static_cast<void>(options);
 
@@ -368,9 +368,13 @@ auto Session::sendRequest(const std::string &method, jsonrpc::JsonValue params, 
       throw LifecycleError("Server cannot send feature requests before receiving 'notifications/initialized'");
     }
   }
+}
 
-  // TODO: Actually send the request through transport
-  // For now, return a future that will be set when response arrives
+auto Session::sendRequest(const std::string &method, jsonrpc::JsonValue params, RequestOptions options) -> std::future<jsonrpc::Response>
+{
+  enforceOutboundRequestLifecycle(method, std::move(params), options);
+
+  // Compatibility wrapper: Session no longer performs transport I/O for requests.
   std::promise<jsonrpc::Response> promise;
   promise.set_value(jsonrpc::ErrorResponse {});  // Placeholder
   return promise.get_future();
@@ -452,7 +456,7 @@ auto Session::stop() -> void
     return;
   }
   state_ = SessionState::kStopping;
-  // TODO: Cancel pending requests, close transport
+  // Transport and request-dispatch shutdown are owned by Client/Server and Router.
   state_ = SessionState::kStopped;
 }
 

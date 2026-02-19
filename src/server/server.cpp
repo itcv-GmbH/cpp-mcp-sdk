@@ -830,6 +830,8 @@ auto Server::handleResponse(const jsonrpc::RequestContext &context, const jsonrp
 
 auto Server::sendRequest(const jsonrpc::RequestContext &context, jsonrpc::Request request, jsonrpc::OutboundRequestOptions options) -> std::future<jsonrpc::Response>
 {
+  const jsonrpc::JsonValue lifecycleParams = request.params.has_value() ? *request.params : jsonrpc::JsonValue::object();
+  session_->enforceOutboundRequestLifecycle(request.method, lifecycleParams, RequestOptions {.timeout = options.timeout, .cancelOnTimeout = options.cancelOnTimeout});
   return router_.sendRequest(context, std::move(request), std::move(options));
 }
 

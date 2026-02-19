@@ -301,6 +301,8 @@ public:
   auto registerNotificationHandler(std::string method, jsonrpc::NotificationHandler handler) -> void;
 
   // Message sending
+  auto enforceOutboundRequestLifecycle(std::string_view method, jsonrpc::JsonValue params, RequestOptions options = {}) -> void;
+  // Compatibility wrapper: enforces lifecycle and returns a placeholder response future.
   auto sendRequest(const std::string &method, jsonrpc::JsonValue params, RequestOptions options = {}) -> std::future<jsonrpc::Response>;
   auto sendRequestAsync(const std::string &method, jsonrpc::JsonValue params, const ResponseCallback &callback, RequestOptions options = {}) -> void;
   auto sendNotification(std::string method, std::optional<jsonrpc::JsonValue> params = std::nullopt) -> void;
