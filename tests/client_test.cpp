@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -602,6 +603,92 @@ TEST_CASE("Client destructor stops async callback execution without explicit sto
 
   REQUIRE(callbackStartedFuture.wait_for(std::chrono::milliseconds {150}) == std::future_status::timeout);
   REQUIRE_FALSE(callbackStarted.load());
+}
+
+TEST_CASE("Client callback-thread stop plus immediate destruction quiesces async sendRequestAsync workers", "[client][core][async][teardown]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  constexpr std::size_t requestCount = 16;
+  auto clientSlot = std::make_shared<std::shared_ptr<mcp::Client>>(client);
+  std::mutex clientSlotMutex;
+
+  std::atomic<std::size_t> callbackCount = 0;
+  std::atomic<bool> callbackStopCompleted = false;
+  std::atomic<bool> callbackStopRaisedException = false;
+  std::promise<void> firstCallbackPromise;
+  auto firstCallbackFuture = firstCallbackPromise.get_future();
+
+  for (std::size_t requestIndex = 0; requestIndex < requestCount; ++requestIndex)
+  {
+    const std::string method = requestIndex == 0 ? "initialize" : "ping";
+
+    client->sendRequestAsync(
+      method,
+      mcp::jsonrpc::JsonValue::object(),
+      [clientSlot, &clientSlotMutex, &callbackCount, &callbackStopCompleted, &callbackStopRaisedException, &firstCallbackPromise](const mcp::jsonrpc::Response &response) -> void
+      {
+        static_cast<void>(response);
+        const std::size_t callbackIndex = callbackCount.fetch_add(1);
+        if (callbackIndex != 0)
+        {
+          return;
+        }
+
+        std::shared_ptr<mcp::Client> callbackClient;
+        {
+          const std::scoped_lock lock(clientSlotMutex);
+          callbackClient = std::move(*clientSlot);
+        }
+
+        if (callbackClient)
+        {
+          try
+          {
+            callbackClient->stop();
+            callbackStopCompleted.store(true);
+          }
+          catch (const std::exception &)
+          {
+            callbackStopRaisedException.store(true);
+          }
+
+          callbackClient.reset();
+        }
+
+        firstCallbackPromise.set_value();
+      });
+  }
+
+  REQUIRE(transport->waitForMessageCount(requestCount, std::chrono::milliseconds {1000}));
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == requestCount);
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(outboundMessages.front()));
+  const auto &firstRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(firstRequest.method == "initialize");
+
+  mcp::Client *rawClient = client.get();
+  REQUIRE(rawClient != nullptr);
+  client.reset();
+
+  REQUIRE(rawClient->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(firstRequest.id)));
+  REQUIRE(firstCallbackFuture.wait_for(std::chrono::milliseconds {1000}) == std::future_status::ready);
+
+  REQUIRE(callbackStopCompleted.load());
+  REQUIRE_FALSE(callbackStopRaisedException.load());
+  std::this_thread::sleep_for(std::chrono::milliseconds {150});
+  REQUIRE(callbackCount.load() == 1);
+
+  const auto transportStopDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds {1000};
+  while (transport->isRunning() && std::chrono::steady_clock::now() < transportStopDeadline)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds {10});
+  }
+
+  REQUIRE_FALSE(transport->isRunning());
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

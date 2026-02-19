@@ -189,6 +189,7 @@ private:
   auto dispatchOutboundMessage(jsonrpc::Message message) -> void;
   auto isPendingInitializeResponse(const jsonrpc::Response &response) const -> bool;
   auto postManagedTask(std::function<void()> task) -> bool;
+  auto postCallbackTask(std::function<void()> task) -> bool;
 
   mutable std::mutex mutex_;
   std::shared_ptr<Session> session_;
@@ -204,6 +205,8 @@ private:
   std::shared_ptr<util::TaskReceiver> taskReceiver_;
   std::unique_ptr<boost::asio::thread_pool> asyncWorkPool_;
   std::atomic<bool> asyncWorkEnabled_ {true};
+  std::unique_ptr<boost::asio::thread_pool> callbackDispatchPool_;
+  std::atomic<bool> callbackDispatchEnabled_ {true};
   std::optional<jsonrpc::RequestId> pendingInitializeRequestId_;
   std::int64_t nextRequestId_ = 1;
 };

@@ -66,7 +66,19 @@ static constexpr std::string_view kElicitationCompleteNotificationMethod = "noti
 static constexpr std::uint32_t kDecimalBase = 10U;
 static constexpr std::uint32_t kMaxValidPort = 65535U;
 static constexpr std::size_t kClientAsyncWorkerCount = 4U;
+static constexpr std::size_t kClientCallbackWorkerCount = 1U;
 static constexpr auto kAsyncCallbackPollInterval = std::chrono::milliseconds {10};
+
+static auto clientDeletionPool() -> boost::asio::thread_pool &
+{
+  static boost::asio::thread_pool pool {1};
+  return pool;
+}
+
+static auto deferClientDeletion(Client *client) -> void
+{
+  boost::asio::post(clientDeletionPool(), [client]() -> void { delete client; });
+}
 
 static auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>
 {
@@ -1162,13 +1174,37 @@ private:
 
 auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 {
-  return std::make_shared<Client>(std::make_shared<Session>(std::move(options)));
+  return std::shared_ptr<Client>(new Client(std::make_shared<Session>(std::move(options))),
+                                 [](Client *client) -> void
+                                 {
+                                   if (!client)
+                                   {
+                                     return;
+                                   }
+
+                                   const bool calledFromManagedWorker = [&]() -> bool
+                                   {
+                                     const std::scoped_lock lock(client->mutex_);
+                                     const bool calledFromAsyncWorker = client->asyncWorkPool_ && client->asyncWorkPool_->get_executor().running_in_this_thread();
+                                     const bool calledFromCallbackWorker = client->callbackDispatchPool_ && client->callbackDispatchPool_->get_executor().running_in_this_thread();
+                                     return calledFromAsyncWorker || calledFromCallbackWorker;
+                                   }();
+
+                                   if (calledFromManagedWorker)
+                                   {
+                                     deferClientDeletion(client);
+                                     return;
+                                   }
+
+                                   delete client;
+                                 });
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex initialization required by MCP protocol
 Client::Client(std::shared_ptr<Session> session)
   : session_(std::move(session))
   , asyncWorkPool_(std::make_unique<boost::asio::thread_pool>(kClientAsyncWorkerCount))
+  , callbackDispatchPool_(std::make_unique<boost::asio::thread_pool>(kClientCallbackWorkerCount))
 {
   if (!session_)
   {
@@ -2170,26 +2206,46 @@ auto Client::start() -> void
 auto Client::stop() -> void
 {
   std::unique_ptr<boost::asio::thread_pool> asyncWorkPool;
+  std::unique_ptr<boost::asio::thread_pool> callbackDispatchPool;
   std::shared_ptr<transport::Transport> transport;
+  bool calledFromCallbackWorker = false;
   {
     const std::scoped_lock lock(mutex_);
+    if (asyncWorkPool_ && asyncWorkPool_->get_executor().running_in_this_thread())
+    {
+      throw std::logic_error("Client::stop() cannot be called from an internal async worker thread");
+    }
+
+    calledFromCallbackWorker = callbackDispatchPool_ && callbackDispatchPool_->get_executor().running_in_this_thread();
+
     asyncWorkEnabled_.store(false);
+    callbackDispatchEnabled_.store(false);
     asyncWorkPool = std::move(asyncWorkPool_);
+    callbackDispatchPool = std::move(callbackDispatchPool_);
     transport = transport_;
   }
 
   if (asyncWorkPool)
   {
-    const bool calledFromAsyncWorker = asyncWorkPool->get_executor().running_in_this_thread();
     asyncWorkPool->stop();
+    asyncWorkPool->join();
+  }
 
-    if (calledFromAsyncWorker)
+  if (callbackDispatchPool)
+  {
+    callbackDispatchPool->stop();
+
+    if (calledFromCallbackWorker)
     {
-      std::thread([ownedAsyncPool = std::move(asyncWorkPool)]() mutable -> void { ownedAsyncPool->join(); }).detach();
+      const std::scoped_lock lock(mutex_);
+      if (!callbackDispatchPool_)
+      {
+        callbackDispatchPool_ = std::move(callbackDispatchPool);
+      }
     }
     else
     {
-      asyncWorkPool->join();
+      callbackDispatchPool->join();
     }
   }
 
@@ -2289,14 +2345,29 @@ auto Client::sendRequestAsync(std::string method, jsonrpc::JsonValue params, con
           return;
         }
 
+        jsonrpc::Response response;
         try
         {
-          callback(responseFuturePtr->get());
+          response = responseFuturePtr->get();
         }
         catch (const std::exception &error)
         {
           static_cast<void>(error);
+          return;
         }
+
+        static_cast<void>(postCallbackTask(
+          [callback, response = std::move(response)]() mutable -> void
+          {
+            try
+            {
+              callback(response);
+            }
+            catch (const std::exception &error)
+            {
+              static_cast<void>(error);
+            }
+          }));
 
         return;
       }
@@ -2540,6 +2611,18 @@ auto Client::postManagedTask(std::function<void()> task) -> bool
 
   boost::asio::post(*asyncWorkPool_, std::move(task));
 
+  return true;
+}
+
+auto Client::postCallbackTask(std::function<void()> task) -> bool
+{
+  const std::scoped_lock lock(mutex_);
+  if (!callbackDispatchEnabled_.load() || !callbackDispatchPool_)
+  {
+    return false;
+  }
+
+  boost::asio::post(*callbackDispatchPool_, std::move(task));
   return true;
 }
 
