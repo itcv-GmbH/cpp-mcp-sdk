@@ -181,6 +181,8 @@ TEST_CASE("Server negotiates version when client proposes unsupported version", 
 
 TEST_CASE("Server returns actionable error when it supports no protocol versions", "[lifecycle][server][negotiation]")
 {
+  const std::string requestedVersion = "server has no supported protocol versions";
+
   SessionOptions options;
   options.supportedProtocolVersions.clear();
 
@@ -191,7 +193,7 @@ TEST_CASE("Server returns actionable error when it supports no protocol versions
   request.id = std::int64_t {1};
   request.method = "initialize";
   request.params = jsoncons::json::object();
-  (*request.params)["protocolVersion"] = "2025-11-25";
+  (*request.params)["protocolVersion"] = requestedVersion;
   (*request.params)["capabilities"] = jsoncons::json::object();
   (*request.params)["clientInfo"] = jsoncons::json::object();
   (*request.params)["clientInfo"]["name"] = "test-client";
@@ -203,11 +205,13 @@ TEST_CASE("Server returns actionable error when it supports no protocol versions
   const auto &errorResp = std::get<jsonrpc::ErrorResponse>(response);
   REQUIRE(errorResp.error.code == -32602);
   REQUIRE(errorResp.error.message.find("Protocol negotiation failed") != std::string::npos);
+  REQUIRE(errorResp.error.message.find(requestedVersion) != std::string::npos);
+  REQUIRE(errorResp.error.message.find("supported protocol versions") != std::string::npos);
   REQUIRE(errorResp.error.data.has_value());
   const auto &errorData = *errorResp.error.data;
   REQUIRE(errorData.contains("supported"));
   REQUIRE(errorData.contains("requested"));
-  REQUIRE(errorData["requested"].as<std::string>() == "2025-11-25");
+  REQUIRE(errorData["requested"].as<std::string>() == requestedVersion);
   REQUIRE(errorData["supported"].is_array());
   REQUIRE(errorData["supported"].empty());
 }
