@@ -8,12 +8,12 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <thread>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include <boost/asio/post.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <mcp/jsonrpc/messages.hpp>
@@ -29,6 +29,7 @@ namespace detail
 static constexpr const char *kDefaultSender = "__default_sender__";
 static constexpr std::size_t kIntegralRequestIdHashSeed = 0x9e3779b97f4a7c15ULL;
 static constexpr std::size_t kStringRequestIdHashSeed = 0x85ebca6bULL;
+static constexpr std::size_t kInboundCompletionWorkerCount = 4;
 
 static auto senderKey(const RequestContext &context) -> std::string
 {
@@ -127,16 +128,35 @@ auto Router::RequestIdEqual::operator()(const RequestId &left, const RequestId &
 }
 
 Router::Router(RouterOptions options)
-  : options_(options)
+  : inboundState_(std::make_shared<Router::InboundState>())
+  , options_(options)
   , timeoutPool_(std::make_unique<boost::asio::thread_pool>(1))
 {
+  inboundState_->completionPool = std::make_shared<boost::asio::thread_pool>(detail::kInboundCompletionWorkerCount);
 }
 
 Router::~Router() noexcept
 {
   try
   {
-    waitForInboundWorkers();
+    std::vector<std::pair<RequestId, std::shared_ptr<std::promise<Response>>>> pendingInboundPromises;
+
+    {
+      const std::scoped_lock lock(inboundState_->mutex);
+      inboundState_->shuttingDown = true;
+
+      for (auto &entry : inboundState_->inboundResponsePromisesBySender)
+      {
+        for (auto &promiseEntry : entry.second)
+        {
+          pendingInboundPromises.emplace_back(promiseEntry.first, std::move(promiseEntry.second));
+        }
+      }
+
+      inboundState_->inboundResponsePromisesBySender.clear();
+      inboundState_->inboundRequestsBySender.clear();
+      inboundState_->inboundRequestIdsByProgressTokenBySender.clear();
+    }
 
     std::vector<std::shared_ptr<InFlightRequestState>> inFlightRequests;
     {
@@ -150,8 +170,6 @@ Router::~Router() noexcept
       inFlightRequests_.clear();
       requestIdsByProgressToken_.clear();
       pendingTaskCancellationByRequestId_.clear();
-      inboundRequestsBySender_.clear();
-      inboundRequestIdsByProgressTokenBySender_.clear();
     }
 
     for (const auto &requestState : inFlightRequests)
@@ -162,6 +180,21 @@ Router::~Router() noexcept
       }
 
       detail::setPromiseValueNoThrow(requestState->promise, detail::makeInternalErrorResponse(requestState->request.id, "Router shutdown before response was received."));
+    }
+
+    for (auto &promiseEntry : pendingInboundPromises)
+    {
+      if (!promiseEntry.second)
+      {
+        continue;
+      }
+
+      detail::setPromiseValueNoThrow(*promiseEntry.second, detail::makeInternalErrorResponse(promiseEntry.first, "Router shutdown before request handler completed."));
+    }
+
+    {
+      const std::scoped_lock lock(inboundState_->mutex);
+      inboundState_->completionPool.reset();
     }
 
     timeoutPool_.reset();
@@ -204,6 +237,8 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
 {
   RequestHandler handler;
   const std::string sender = detail::senderKey(context);
+  auto responsePromise = std::make_shared<std::promise<Response>>();
+  std::future<Response> responseFuture = responsePromise->get_future();
 
   {
     const std::scoped_lock lock(mutex_);
@@ -224,9 +259,14 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
     handler = requestHandlerIt->second;
   }
 
-  const InboundRequestActivationResult inboundActivation = markInboundRequestActive(context, request);
+  const InboundRequestActivationResult inboundActivation = markInboundRequestActive(context, request, responsePromise);
   if (inboundActivation != InboundRequestActivationResult::kAccepted)
   {
+    if (inboundActivation == InboundRequestActivationResult::kShuttingDown)
+    {
+      return detail::makeReadyFuture(Response {makeErrorResponse(makeInternalError(std::nullopt, "Router is shutting down."), request.id)});
+    }
+
     if (inboundActivation == InboundRequestActivationResult::kDuplicateProgressToken)
     {
       return detail::makeReadyFuture(Response {makeErrorResponse(makeInvalidRequestError(std::nullopt, "Duplicate progress token for active inbound request."), request.id)});
@@ -236,45 +276,49 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
       Response {makeErrorResponse(makeInvalidRequestError(std::nullopt, "Exceeded configured max concurrent in-flight inbound requests."), request.id)});
   }
 
-  auto responsePromise = std::make_shared<std::promise<Response>>();
-  std::future<Response> responseFuture = responsePromise->get_future();
-
-  if (!markInboundWorkerStarted())
-  {
-    completeInboundRequest(context, request.id);
-    return detail::makeReadyFuture(Response {makeErrorResponse(makeInternalError(std::nullopt, "Router is shutting down."), request.id)});
-  }
-
   try
   {
     std::future<Response> handlerFuture = handler(context, request);
-    std::thread(
-      // NOLINTNEXTLINE(bugprone-exception-escape) - Catch-all handles handler exceptions; memory allocation in string is acceptable
-      [this, context, requestId = request.id, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable -> void
-      {
-        try
-        {
-          Response response = handlerFuture.get();
-          completeInboundRequest(context, requestId);
-          detail::setPromiseValueNoThrow(*responsePromise, std::move(response));
-        }
-        catch (...)
-        {
-          completeInboundRequest(context, requestId);
-          detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
-        }
+    std::shared_ptr<boost::asio::thread_pool> completionPool;
+    {
+      const std::scoped_lock lock(inboundState_->mutex);
+      completionPool = inboundState_->completionPool;
+    }
 
-        markInboundWorkerFinished();
-      })
-      .detach();
+    if (completionPool == nullptr)
+    {
+      completeInboundRequest(context, request.id);
+      detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Router is shutting down."), request.id)});
+      return responseFuture;
+    }
+
+    const std::shared_ptr<Router::InboundState> inboundState = inboundState_;
+
+    boost::asio::post(*completionPool,
+                      [poolKeepAlive = completionPool, inboundState, context, requestId = request.id, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable -> void
+                      {
+                        static_cast<void>(poolKeepAlive);
+                        try
+                        {
+                          Response response = handlerFuture.get();
+                          Router::completeInboundRequest(inboundState, context, requestId);
+                          detail::setPromiseValueNoThrow(*responsePromise, std::move(response));
+                        }
+                        catch (...)
+                        {
+                          Router::completeInboundRequest(inboundState, context, requestId);
+                          detail::setPromiseValueNoThrow(*responsePromise,
+                                                         Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
+                        }
+                      });
 
     return responseFuture;
   }
   catch (...)
   {
-    markInboundWorkerFinished();
     completeInboundRequest(context, request.id);
-    return detail::makeReadyFuture(Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), request.id)});
+    detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), request.id)});
+    return responseFuture;
   }
 }
 
@@ -284,43 +328,45 @@ auto Router::dispatchNotification(const RequestContext &context, const Notificat
   const std::optional<util::cancellation::CancelledNotification> cancelledNotification = util::cancellation::parseCancelledNotification(notification);
 
   ProgressCallback progressCallback;
-  NotificationHandler methodHandler;
+  if (progressUpdate.has_value())
   {
     const std::scoped_lock lock(mutex_);
 
-    if (progressUpdate.has_value())
+    const auto requestIdByTokenIt = requestIdsByProgressToken_.find(progressUpdate->progressToken);
+    if (requestIdByTokenIt != requestIdsByProgressToken_.end())
     {
-      const auto requestIdByTokenIt = requestIdsByProgressToken_.find(progressUpdate->progressToken);
-      if (requestIdByTokenIt != requestIdsByProgressToken_.end())
+      const auto inFlightRequestIt = inFlightRequests_.find(requestIdByTokenIt->second);
+      if (inFlightRequestIt != inFlightRequests_.end())
       {
-        const auto inFlightRequestIt = inFlightRequests_.find(requestIdByTokenIt->second);
-        if (inFlightRequestIt != inFlightRequests_.end())
+        const std::shared_ptr<InFlightRequestState> requestState = inFlightRequestIt->second;
+        const bool monotonic = !requestState->lastObservedProgress.has_value() || progressUpdate->progress > *requestState->lastObservedProgress;
+        if (monotonic)
         {
-          const std::shared_ptr<InFlightRequestState> requestState = inFlightRequestIt->second;
-          const bool monotonic = !requestState->lastObservedProgress.has_value() || progressUpdate->progress > *requestState->lastObservedProgress;
-          if (monotonic)
-          {
-            requestState->lastObservedProgress = progressUpdate->progress;
-            progressCallback = requestState->progressCallback;
-          }
+          requestState->lastObservedProgress = progressUpdate->progress;
+          progressCallback = requestState->progressCallback;
         }
       }
     }
+  }
 
-    if (cancelledNotification.has_value())
+  if (cancelledNotification.has_value())
+  {
+    const std::scoped_lock lock(inboundState_->mutex);
+    const std::string sender = detail::senderKey(context);
+    const auto senderRequestsIt = inboundState_->inboundRequestsBySender.find(sender);
+    if (senderRequestsIt != inboundState_->inboundRequestsBySender.end())
     {
-      const std::string sender = detail::senderKey(context);
-      const auto senderRequestsIt = inboundRequestsBySender_.find(sender);
-      if (senderRequestsIt != inboundRequestsBySender_.end())
+      const auto inboundRequestIt = senderRequestsIt->second.find(cancelledNotification->requestId);
+      if (inboundRequestIt != senderRequestsIt->second.end() && inboundRequestIt->second.method != "initialize" && !inboundRequestIt->second.taskAugmented)
       {
-        const auto inboundRequestIt = senderRequestsIt->second.find(cancelledNotification->requestId);
-        if (inboundRequestIt != senderRequestsIt->second.end() && inboundRequestIt->second.method != "initialize" && !inboundRequestIt->second.taskAugmented)
-        {
-          inboundRequestIt->second.cancelled = true;
-        }
+        inboundRequestIt->second.cancelled = true;
       }
     }
+  }
 
+  NotificationHandler methodHandler;
+  {
+    const std::scoped_lock lock(mutex_);
     const auto notificationHandlerIt = notificationHandlers_.find(notification.method);
     if (notificationHandlerIt != notificationHandlers_.end())
     {
@@ -570,10 +616,10 @@ auto Router::emitProgress(const RequestContext &context, const Request &request,
 auto Router::emitProgress(const RequestContext &context, const RequestId &progressToken, double progress, std::optional<double> total, std::optional<std::string> message) -> bool
 {
   {
-    const std::scoped_lock lock(mutex_);
+    const std::scoped_lock lock(inboundState_->mutex);
     const std::string sender = detail::senderKey(context);
-    const auto senderProgressIt = inboundRequestIdsByProgressTokenBySender_.find(sender);
-    if (senderProgressIt == inboundRequestIdsByProgressTokenBySender_.end())
+    const auto senderProgressIt = inboundState_->inboundRequestIdsByProgressTokenBySender.find(sender);
+    if (senderProgressIt == inboundState_->inboundRequestIdsByProgressTokenBySender.end())
     {
       return false;
     }
@@ -584,8 +630,8 @@ auto Router::emitProgress(const RequestContext &context, const RequestId &progre
       return false;
     }
 
-    const auto senderRequestsIt = inboundRequestsBySender_.find(sender);
-    if (senderRequestsIt == inboundRequestsBySender_.end())
+    const auto senderRequestsIt = inboundState_->inboundRequestsBySender.find(sender);
+    if (senderRequestsIt == inboundState_->inboundRequestsBySender.end())
     {
       return false;
     }
@@ -613,13 +659,19 @@ auto Router::emitProgress(const RequestContext &context, const RequestId &progre
   return dispatchOutboundMessage(context, Message {std::move(progressNotification)});
 }
 
-auto Router::markInboundRequestActive(const RequestContext &context, const Request &request) -> InboundRequestActivationResult
+auto Router::markInboundRequestActive(const RequestContext &context, const Request &request, const std::shared_ptr<std::promise<Response>> &responsePromise)
+  -> InboundRequestActivationResult
 {
-  const std::scoped_lock lock(mutex_);
+  const std::scoped_lock lock(inboundState_->mutex);
+  if (inboundState_->shuttingDown || inboundState_->completionPool == nullptr)
+  {
+    return InboundRequestActivationResult::kShuttingDown;
+  }
+
   const std::string sender = detail::senderKey(context);
 
   std::size_t activeInboundRequests = 0;
-  for (const auto &entry : inboundRequestsBySender_)
+  for (const auto &entry : inboundState_->inboundRequestsBySender)
   {
     activeInboundRequests += entry.second.size();
   }
@@ -634,12 +686,12 @@ auto Router::markInboundRequestActive(const RequestContext &context, const Reque
   requestState.taskAugmented = util::cancellation::isTaskAugmentedRequest(request);
   requestState.progressToken = util::progress::extractProgressToken(request);
 
-  auto &senderRequests = inboundRequestsBySender_[sender];
+  auto &senderRequests = inboundState_->inboundRequestsBySender[sender];
   senderRequests[request.id] = requestState;
 
   if (requestState.progressToken.has_value())
   {
-    auto &requestIdsByToken = inboundRequestIdsByProgressTokenBySender_[sender];
+    auto &requestIdsByToken = inboundState_->inboundRequestIdsByProgressTokenBySender[sender];
     if (requestIdsByToken.find(*requestState.progressToken) != requestIdsByToken.end())
     {
       senderRequests.erase(request.id);
@@ -649,50 +701,33 @@ auto Router::markInboundRequestActive(const RequestContext &context, const Reque
     requestIdsByToken[*requestState.progressToken] = request.id;
   }
 
+  inboundState_->inboundResponsePromisesBySender[sender][request.id] = responsePromise;
+
   return InboundRequestActivationResult::kAccepted;
-}
-
-auto Router::markInboundWorkerStarted() -> bool
-{
-  const std::scoped_lock lock(mutex_);
-  if (shuttingDown_)
-  {
-    return false;
-  }
-
-  ++activeInboundWorkers_;
-  return true;
-}
-
-auto Router::markInboundWorkerFinished() -> void
-{
-  const std::scoped_lock lock(mutex_);
-  if (activeInboundWorkers_ == 0)
-  {
-    return;
-  }
-
-  --activeInboundWorkers_;
-  if (activeInboundWorkers_ == 0)
-  {
-    inboundWorkersDone_.notify_all();
-  }
-}
-
-auto Router::waitForInboundWorkers() -> void
-{
-  std::unique_lock<std::mutex> lock(mutex_);
-  shuttingDown_ = true;
-  inboundWorkersDone_.wait(lock, [this]() -> bool { return activeInboundWorkers_ == 0; });
 }
 
 auto Router::completeInboundRequest(const RequestContext &context, const RequestId &requestId) -> void
 {
-  const std::scoped_lock lock(mutex_);
+  completeInboundRequest(inboundState_, context, requestId);
+}
+
+auto Router::completeInboundRequest(const std::shared_ptr<InboundState> &inboundState, const RequestContext &context, const RequestId &requestId) -> void
+{
+  const std::scoped_lock lock(inboundState->mutex);
   const std::string sender = detail::senderKey(context);
 
-  const auto senderRequestsIt = inboundRequestsBySender_.find(sender);
-  if (senderRequestsIt == inboundRequestsBySender_.end())
+  const auto senderPromisesIt = inboundState->inboundResponsePromisesBySender.find(sender);
+  if (senderPromisesIt != inboundState->inboundResponsePromisesBySender.end())
+  {
+    senderPromisesIt->second.erase(requestId);
+    if (senderPromisesIt->second.empty())
+    {
+      inboundState->inboundResponsePromisesBySender.erase(senderPromisesIt);
+    }
+  }
+
+  const auto senderRequestsIt = inboundState->inboundRequestsBySender.find(sender);
+  if (senderRequestsIt == inboundState->inboundRequestsBySender.end())
   {
     return;
   }
@@ -705,13 +740,13 @@ auto Router::completeInboundRequest(const RequestContext &context, const Request
 
   if (requestIt->second.progressToken.has_value())
   {
-    const auto senderTokensIt = inboundRequestIdsByProgressTokenBySender_.find(sender);
-    if (senderTokensIt != inboundRequestIdsByProgressTokenBySender_.end())
+    const auto senderTokensIt = inboundState->inboundRequestIdsByProgressTokenBySender.find(sender);
+    if (senderTokensIt != inboundState->inboundRequestIdsByProgressTokenBySender.end())
     {
       senderTokensIt->second.erase(*requestIt->second.progressToken);
       if (senderTokensIt->second.empty())
       {
-        inboundRequestIdsByProgressTokenBySender_.erase(senderTokensIt);
+        inboundState->inboundRequestIdsByProgressTokenBySender.erase(senderTokensIt);
       }
     }
   }
@@ -719,7 +754,7 @@ auto Router::completeInboundRequest(const RequestContext &context, const Request
   senderRequestsIt->second.erase(requestIt);
   if (senderRequestsIt->second.empty())
   {
-    inboundRequestsBySender_.erase(senderRequestsIt);
+    inboundState->inboundRequestsBySender.erase(senderRequestsIt);
   }
 }
 

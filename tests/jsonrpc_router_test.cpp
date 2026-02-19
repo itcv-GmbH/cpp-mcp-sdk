@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -38,6 +39,7 @@ static constexpr double kProgressHalf = 0.5;
 static constexpr std::int64_t kRequestTimeoutMillis = 30;
 static constexpr std::int64_t kInitializeTimeoutMillis = 20;
 static constexpr std::int64_t kResponseWaitMillis = 500;
+static constexpr std::int64_t kDestroyWaitMillis = 150;
 
 static auto hasIdValue(const mcp::jsonrpc::RequestId &id, std::int64_t expectedValue) -> bool
 {
@@ -581,6 +583,64 @@ TEST_CASE("Router can emit progress notifications from an inbound request progre
   {
     REQUIRE(progressNotification.params->at("progressToken").as<std::string>() == "progress-5150");
     REQUIRE(progressNotification.params->at("progress").as<double>() == Catch::Approx(kProgressHalf));
+  }
+}
+
+TEST_CASE("Router destruction completes promptly and resolves blocked inbound requests", "[jsonrpc][router]")
+{
+  auto router = std::make_unique<mcp::jsonrpc::Router>();
+
+  auto blockedResponsePromise = std::make_shared<std::promise<mcp::jsonrpc::Response>>();
+  std::promise<void> handlerStartedPromise;
+  std::future<void> handlerStartedFuture = handlerStartedPromise.get_future();
+  std::atomic_bool handlerStarted {false};
+
+  router->registerRequestHandler(
+    "tools/call",
+    [blockedResponsePromise, &handlerStartedPromise, &handlerStarted](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &) -> std::future<mcp::jsonrpc::Response>
+    {
+      if (!handlerStarted.exchange(true))
+      {
+        handlerStartedPromise.set_value();
+      }
+
+      return blockedResponsePromise->get_future();
+    });
+
+  const mcp::jsonrpc::RequestContext context;
+  mcp::jsonrpc::Request request;
+  request.id = std::int64_t {9090};
+  request.method = "tools/call";
+  request.params = mcp::jsonrpc::JsonValue::object();
+
+  std::future<mcp::jsonrpc::Response> responseFuture = router->dispatchRequest(context, request);
+  REQUIRE(handlerStartedFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
+
+  std::future<void> destroyFuture = std::async(std::launch::async, [router = std::move(router)]() mutable -> void { router.reset(); });
+
+  REQUIRE(destroyFuture.wait_for(std::chrono::milliseconds(kDestroyWaitMillis)) == std::future_status::ready);
+  destroyFuture.get();
+
+  const std::future_status responseStatus = responseFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis));
+
+  mcp::jsonrpc::SuccessResponse handlerResponse;
+  handlerResponse.id = request.id;
+  handlerResponse.result = mcp::jsonrpc::JsonValue::object();
+  blockedResponsePromise->set_value(mcp::jsonrpc::Response {handlerResponse});
+
+  REQUIRE(responseStatus == std::future_status::ready);
+
+  if (responseStatus == std::future_status::ready)
+  {
+    const mcp::jsonrpc::Response completionResponse = responseFuture.get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(completionResponse));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(completionResponse);
+    REQUIRE(error.id.has_value());
+    if (error.id.has_value())
+    {
+      REQUIRE(hasIdValue(*error.id, 9090));
+    }
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInternalError));
   }
 }
 

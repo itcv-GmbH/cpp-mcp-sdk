@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
 #include <functional>
 #include <future>
@@ -130,19 +129,32 @@ private:
   enum class InboundRequestActivationResult : std::uint8_t
   {
     kAccepted,
+    kShuttingDown,
     kDuplicateProgressToken,
     kLimitExceeded,
+  };
+
+  using InboundResponsePromiseMap = std::unordered_map<RequestId, std::shared_ptr<std::promise<Response>>, RequestIdHash, RequestIdEqual>;
+  using InboundResponsePromiseBySenderMap = std::unordered_map<std::string, InboundResponsePromiseMap>;
+
+  struct InboundState
+  {
+    std::mutex mutex;
+    bool shuttingDown = false;
+    std::unordered_map<std::string, InboundRequestMap> inboundRequestsBySender;
+    std::unordered_map<std::string, RequestIdByProgressTokenMap> inboundRequestIdsByProgressTokenBySender;
+    InboundResponsePromiseBySenderMap inboundResponsePromisesBySender;
+    std::shared_ptr<boost::asio::thread_pool> completionPool;
   };
 
   auto addInFlightRequest(const std::shared_ptr<InFlightRequestState> &inFlightRequest) -> std::optional<Response>;
   auto popInFlightRequest(const RequestId &requestId, MarkIgnoredResponseId markIgnoredResponseId) -> std::shared_ptr<InFlightRequestState>;
   auto armRequestTimeout(const std::shared_ptr<InFlightRequestState> &inFlightRequest, std::chrono::milliseconds timeout) -> void;
   auto handleRequestTimeout(const RequestId &requestId) -> void;
-  auto markInboundWorkerStarted() -> bool;
-  auto markInboundWorkerFinished() -> void;
-  auto waitForInboundWorkers() -> void;
+  static auto completeInboundRequest(const std::shared_ptr<InboundState> &inboundState, const RequestContext &context, const RequestId &requestId) -> void;
 
-  auto markInboundRequestActive(const RequestContext &context, const Request &request) -> InboundRequestActivationResult;
+  auto markInboundRequestActive(const RequestContext &context, const Request &request, const std::shared_ptr<std::promise<Response>> &responsePromise)
+    -> InboundRequestActivationResult;
   auto completeInboundRequest(const RequestContext &context, const RequestId &requestId) -> void;
 
   auto dispatchOutboundMessage(const RequestContext &context, Message message) const -> bool;
@@ -158,12 +170,7 @@ private:
   RequestIdSet ignoredResponseIds_;
   PendingTaskCancellationMap pendingTaskCancellationByRequestId_;
   RequestIdByProgressTokenMap requestIdsByProgressToken_;
-  std::unordered_map<std::string, InboundRequestMap> inboundRequestsBySender_;
-  std::unordered_map<std::string, RequestIdByProgressTokenMap> inboundRequestIdsByProgressTokenBySender_;
-
-  std::condition_variable inboundWorkersDone_;
-  std::size_t activeInboundWorkers_ = 0;
-  bool shuttingDown_ = false;
+  std::shared_ptr<InboundState> inboundState_;
 
   RouterOptions options_;
 
