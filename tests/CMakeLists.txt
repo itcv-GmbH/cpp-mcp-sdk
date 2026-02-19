@@ -305,6 +305,87 @@ target_compile_definitions(mcp_sdk_test_transport_http_tls
 
 add_test(NAME mcp_sdk_transport_http_tls_test COMMAND mcp_sdk_test_transport_http_tls)
 
+# New unit test executables (scaffolded for future tasks)
+add_executable(mcp_sdk_test_util_cancellation util_cancellation_test.cpp)
+
+target_link_libraries(mcp_sdk_test_util_cancellation
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_util_cancellation_test COMMAND mcp_sdk_test_util_cancellation)
+
+add_executable(mcp_sdk_test_util_progress util_progress_test.cpp)
+
+target_link_libraries(mcp_sdk_test_util_progress
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_util_progress_test COMMAND mcp_sdk_test_util_progress)
+
+add_executable(mcp_sdk_test_schema_pinned_schema schema_pinned_schema_test.cpp)
+
+target_link_libraries(mcp_sdk_test_schema_pinned_schema
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_schema_pinned_schema_test COMMAND mcp_sdk_test_schema_pinned_schema)
+
+add_executable(mcp_sdk_test_sdk_version sdk_version_test.cpp)
+
+target_link_libraries(mcp_sdk_test_sdk_version
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_sdk_version_test COMMAND mcp_sdk_test_sdk_version)
+
+add_executable(mcp_sdk_test_security_crypto_random security_crypto_random_test.cpp)
+
+target_link_libraries(mcp_sdk_test_security_crypto_random
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_security_crypto_random_test COMMAND mcp_sdk_test_security_crypto_random)
+
+add_executable(mcp_sdk_test_security_limits security_limits_test.cpp)
+
+target_link_libraries(mcp_sdk_test_security_limits
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_security_limits_test COMMAND mcp_sdk_test_security_limits)
+
+add_executable(mcp_sdk_test_transport_http_runtime transport_http_runtime_test.cpp)
+
+target_link_libraries(mcp_sdk_test_transport_http_runtime
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_transport_http_runtime_test COMMAND mcp_sdk_test_transport_http_runtime)
+
+add_executable(mcp_sdk_test_auth_oauth_client_disabled auth_oauth_client_disabled_test.cpp)
+
+target_link_libraries(mcp_sdk_test_auth_oauth_client_disabled
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_auth_oauth_client_disabled_test COMMAND mcp_sdk_test_auth_oauth_client_disabled)
+
 if(MCP_SDK_INTEGRATION_TESTS)
     add_subdirectory(integration)
 endif()
