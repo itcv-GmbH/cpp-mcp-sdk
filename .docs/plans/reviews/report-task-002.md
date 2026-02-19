@@ -1,4 +1,4 @@
-# Review Report: task-002 (/ Unit Tests: Cancellation Helpers)
+# Review Report: task-002 (/ Add Internal Base64url Helpers + Tests)
 
 ## Status
 **PASS**
@@ -10,14 +10,8 @@
 - [x] No unauthorized architectural changes.
 
 ## Verification Output
-*   **Command Run:** `cmake --build build/vcpkg-unix-release --target mcp_sdk_test_util_cancellation`
-*   **Result:** Pass (`ninja: no work to do.`; target already built successfully).
-
-*   **Command Run:** `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_util_cancellation_test --output-on-failure`
-*   **Result:** Pass (1/1 test passed: `mcp_sdk_util_cancellation_test`).
-
-*   **Command Run:** `git diff --name-only 4155c05c245000ccc7c6b1f64f7cb46fc6dbe842^ 4155c05c245000ccc7c6b1f64f7cb46fc6dbe842`
-*   **Result:** Pass (only `tests/util_cancellation_test.cpp` changed; no production code modifications).
+*   **Command Run:** `cmake --preset vcpkg-unix-release && cmake --build build/vcpkg-unix-release && ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_detail_base64url_test --output-on-failure`
+*   **Result:** Pass (configure succeeded, build up-to-date, and `mcp_sdk_detail_base64url_test` passed 1/1).
 
 ## Issues Found (If FAIL)
 *   **Critical:** None.
