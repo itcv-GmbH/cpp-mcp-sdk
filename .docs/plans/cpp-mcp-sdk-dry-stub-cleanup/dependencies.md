@@ -16,8 +16,8 @@
 
 ## Phase 3: Stub / API Cleanup (Blocked by Phase 2)
 - [x] `task-011`: Session Lifecycle API De-Slop (Depends on: `task-010`)
-- [ ] `task-012`: Remove or Hard-Disable HttpTransport Stub (Depends on: `task-011`)
-- [ ] `task-013`: Clarify StdioTransport Instance API (Depends on: `task-011`)
+- [x] `task-012`: Remove or Hard-Disable HttpTransport Stub (Depends on: `task-011`)
+- [x] `task-013`: Clarify StdioTransport Instance API (Depends on: `task-011`)
 
 ## Phase 4: Concurrency Hardening (Blocked by Phase 2)
 - [ ] `task-014`: Fix StreamableHttpServer Handler Locking (Depends on: `task-007`)
