@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -529,6 +530,46 @@ TEST_CASE("Client sendRequestAsync is non-blocking and invokes callback asynchro
     const std::scoped_lock lock(callbackMutex);
     REQUIRE(callbackThreadId != callerThreadId);
   }
+}
+
+TEST_CASE("Client stop prevents pending async callbacks and teardown does not hang", "[client][core][async][teardown]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  std::atomic<bool> callbackStarted = false;
+  std::promise<void> callbackStartedPromise;
+  auto callbackStartedFuture = callbackStartedPromise.get_future();
+
+  client->sendRequestAsync("initialize",
+                           mcp::jsonrpc::JsonValue::object(),
+                           [&callbackStarted, &callbackStartedPromise](const mcp::jsonrpc::Response &response) -> void
+                           {
+                             static_cast<void>(response);
+                             if (!callbackStarted.exchange(true))
+                             {
+                               callbackStartedPromise.set_value();
+                             }
+                           });
+
+  REQUIRE(transport->waitForMessageCount(1, std::chrono::milliseconds {500}));
+  const auto outboundMessages = transport->messages();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(outboundMessages.front()));
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+
+  std::future<void> stopFuture = std::async(std::launch::async, [&client]() -> void { client->stop(); });
+  REQUIRE(stopFuture.wait_for(std::chrono::milliseconds {500}) == std::future_status::ready);
+  stopFuture.get();
+
+  REQUIRE_THROWS_AS(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)), mcp::LifecycleError);
+  REQUIRE(callbackStartedFuture.wait_for(std::chrono::milliseconds {150}) == std::future_status::timeout);
+  REQUIRE_FALSE(callbackStarted.load());
+
+  std::future<void> destroyFuture = std::async(std::launch::async, [client = std::move(client)]() mutable -> void { client.reset(); });
+  REQUIRE(destroyFuture.wait_for(std::chrono::milliseconds {500}) == std::future_status::ready);
+  destroyFuture.get();
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

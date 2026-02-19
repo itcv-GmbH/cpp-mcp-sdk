@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <future>
@@ -13,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/asio/thread_pool.hpp>
 #include <mcp/client/elicitation.hpp>
 #include <mcp/client/roots.hpp>
 #include <mcp/client/sampling.hpp>
@@ -185,6 +187,7 @@ private:
   auto applyInitializeDefaults(jsonrpc::Request &request) const -> void;
   auto dispatchOutboundMessage(jsonrpc::Message message) -> void;
   auto isPendingInitializeResponse(const jsonrpc::Response &response) const -> bool;
+  auto postManagedTask(std::function<void()> task) -> bool;
 
   mutable std::mutex mutex_;
   std::shared_ptr<Session> session_;
@@ -198,6 +201,8 @@ private:
   std::optional<UrlElicitationCompletionHandler> urlElicitationCompletionHandler_;
   std::unordered_set<std::string> pendingUrlElicitationIds_;
   std::shared_ptr<util::TaskReceiver> taskReceiver_;
+  std::shared_ptr<boost::asio::thread_pool> asyncWorkPool_;
+  std::shared_ptr<std::atomic<bool>> asyncWorkEnabled_;
   std::optional<jsonrpc::RequestId> pendingInitializeRequestId_;
   std::int64_t nextRequestId_ = 1;
 };

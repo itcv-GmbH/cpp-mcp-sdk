@@ -19,6 +19,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <mcp/client/client.hpp>
 #include <mcp/client/elicitation.hpp>
 #include <mcp/client/roots.hpp>
@@ -63,6 +65,8 @@ static constexpr std::string_view kElicitationCompleteNotificationMethod = "noti
 
 static constexpr std::uint32_t kDecimalBase = 10U;
 static constexpr std::uint32_t kMaxValidPort = 65535U;
+static constexpr std::size_t kClientAsyncWorkerCount = 4U;
+static constexpr auto kAsyncCallbackPollInterval = std::chrono::milliseconds {10};
 
 static auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>
 {
@@ -1164,6 +1168,8 @@ auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex initialization required by MCP protocol
 Client::Client(std::shared_ptr<Session> session)
   : session_(std::move(session))
+  , asyncWorkPool_(std::make_shared<boost::asio::thread_pool>(kClientAsyncWorkerCount))
+  , asyncWorkEnabled_(std::make_shared<std::atomic<bool>>(true))
 {
   if (!session_)
   {
@@ -1332,38 +1338,42 @@ Client::Client(std::shared_ptr<Session> session)
         const jsonrpc::JsonValue taskParams = effectiveParams;
         const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
 
-        std::thread(
+        std::function<void()> taskWorker =
           // NOLINTNEXTLINE(bugprone-exception-escape) - Exception handling is intentional
           [taskReceiver, taskId, taskHandler, taskContext, taskParams]() mutable -> void
+        {
+          jsonrpc::Response taskResponse;
+          try
           {
-            jsonrpc::Response taskResponse;
-            try
+            std::optional<jsonrpc::JsonValue> result = taskHandler(SamplingCreateMessageContext {taskContext}, taskParams);
+            if (!result.has_value())
             {
-              std::optional<jsonrpc::JsonValue> result = taskHandler(SamplingCreateMessageContext {taskContext}, taskParams);
-              if (!result.has_value())
-              {
-                JsonRpcError rejectionError;
-                rejectionError.code = -1;
-                rejectionError.message = "User rejected sampling request";
-                taskResponse = jsonrpc::makeErrorResponse(std::move(rejectionError), std::int64_t {0});
-              }
-              else
-              {
-                ensureValidResultSchema(*result, "CreateMessageResult", kSamplingCreateMessageMethod);
-                jsonrpc::SuccessResponse success;
-                success.id = std::int64_t {0};
-                success.result = std::move(*result);
-                taskResponse = std::move(success);
-              }
+              JsonRpcError rejectionError;
+              rejectionError.code = -1;
+              rejectionError.message = "User rejected sampling request";
+              taskResponse = jsonrpc::makeErrorResponse(std::move(rejectionError), std::int64_t {0});
             }
-            catch (const std::exception &error)
+            else
             {
-              taskResponse = jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string("sampling/createMessage failed: ") + error.what()), std::int64_t {0});
+              ensureValidResultSchema(*result, "CreateMessageResult", kSamplingCreateMessageMethod);
+              jsonrpc::SuccessResponse success;
+              success.id = std::int64_t {0};
+              success.result = std::move(*result);
+              taskResponse = std::move(success);
             }
+          }
+          catch (const std::exception &error)
+          {
+            taskResponse = jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string("sampling/createMessage failed: ") + error.what()), std::int64_t {0});
+          }
 
-            static_cast<void>(taskReceiver->completeTaskWithResponse(taskContext, taskId, taskResponse, util::TaskStatus::kCompleted));
-          })
-          .detach();
+          static_cast<void>(taskReceiver->completeTaskWithResponse(taskContext, taskId, taskResponse, util::TaskStatus::kCompleted));
+        };
+
+        if (!postManagedTask(taskWorker))
+        {
+          taskWorker();
+        }
 
         jsonrpc::SuccessResponse response;
         response.id = request.id;
@@ -1467,24 +1477,28 @@ Client::Client(std::shared_ptr<Session> session)
             weakClient.reset();
           }
 
-          std::thread(
+          std::function<void()> taskWorker =
             // NOLINTNEXTLINE(bugprone-exception-escape) - Exception handling is intentional
-            [weakClient, taskReceiver, taskContext, internalRequest = std::move(internalRequest), taskId]() mutable -> void
+            [weakClient, taskReceiver, taskContext, internalRequest, taskId]() mutable -> void
+          {
+            jsonrpc::Response taskResponse;
+            if (const std::shared_ptr<Client> client = weakClient.lock())
             {
-              jsonrpc::Response taskResponse;
-              if (const std::shared_ptr<Client> client = weakClient.lock())
-              {
-                taskResponse = client->handleRequest(taskContext, internalRequest).get();
-              }
-              else
-              {
-                taskResponse = jsonrpc::makeErrorResponse(
-                  jsonrpc::makeInternalError(std::nullopt, "Task worker could not continue because the client instance is no longer available"), std::int64_t {0});
-              }
+              taskResponse = client->handleRequest(taskContext, internalRequest).get();
+            }
+            else
+            {
+              taskResponse = jsonrpc::makeErrorResponse(
+                jsonrpc::makeInternalError(std::nullopt, "Task worker could not continue because the client instance is no longer available"), std::int64_t {0});
+            }
 
-              static_cast<void>(taskReceiver->completeTaskWithResponse(taskContext, taskId, taskResponse, util::TaskStatus::kCompleted));
-            })
-            .detach();
+            static_cast<void>(taskReceiver->completeTaskWithResponse(taskContext, taskId, taskResponse, util::TaskStatus::kCompleted));
+          };
+
+          if (!postManagedTask(taskWorker))
+          {
+            taskWorker();
+          }
 
           jsonrpc::SuccessResponse response;
           response.id = request.id;
@@ -2140,6 +2154,12 @@ auto Client::stop() -> void
   std::shared_ptr<transport::Transport> transport;
   {
     const std::scoped_lock lock(mutex_);
+    if (asyncWorkEnabled_)
+    {
+      asyncWorkEnabled_->store(false);
+    }
+
+    asyncWorkPool_.reset();
     transport = transport_;
   }
 
@@ -2221,7 +2241,48 @@ auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestO
 auto Client::sendRequestAsync(std::string method, jsonrpc::JsonValue params, const ResponseCallback &callback, RequestOptions options) -> void
 {
   auto responseFuture = sendRequest(std::move(method), std::move(params), options);
-  std::thread([callback, responseFuture = std::move(responseFuture)]() mutable -> void { callback(responseFuture.get()); }).detach();
+
+  std::shared_ptr<std::atomic<bool>> asyncWorkEnabled;
+  {
+    const std::scoped_lock lock(mutex_);
+    asyncWorkEnabled = asyncWorkEnabled_;
+  }
+
+  if (!asyncWorkEnabled || !asyncWorkEnabled->load())
+  {
+    return;
+  }
+
+  auto responseFuturePtr = std::make_shared<std::future<jsonrpc::Response>>(std::move(responseFuture));
+
+  static_cast<void>(postManagedTask(
+    [callback, responseFuturePtr, asyncWorkEnabled]() mutable -> void
+    {
+      while (asyncWorkEnabled->load())
+      {
+        const auto status = responseFuturePtr->wait_for(kAsyncCallbackPollInterval);
+        if (status != std::future_status::ready)
+        {
+          continue;
+        }
+
+        if (!asyncWorkEnabled->load())
+        {
+          return;
+        }
+
+        try
+        {
+          callback(responseFuturePtr->get());
+        }
+        catch (const std::exception &error)
+        {
+          static_cast<void>(error);
+        }
+
+        return;
+      }
+    }));
 }
 
 auto Client::sendNotification(std::string method, std::optional<jsonrpc::JsonValue> params) -> void
@@ -2449,6 +2510,32 @@ auto Client::isPendingInitializeResponse(const jsonrpc::Response &response) cons
 
   const std::scoped_lock lock(mutex_);
   return pendingInitializeRequestId_.has_value() && *pendingInitializeRequestId_ == *responseId;
+}
+
+auto Client::postManagedTask(std::function<void()> task) -> bool
+{
+  std::shared_ptr<boost::asio::thread_pool> asyncWorkPool;
+  std::shared_ptr<std::atomic<bool>> asyncWorkEnabled;
+  {
+    const std::scoped_lock lock(mutex_);
+    asyncWorkPool = asyncWorkPool_;
+    asyncWorkEnabled = asyncWorkEnabled_;
+  }
+
+  if (!asyncWorkPool || !asyncWorkEnabled || !asyncWorkEnabled->load())
+  {
+    return false;
+  }
+
+  boost::asio::thread_pool &pool = *asyncWorkPool;
+  boost::asio::post(pool,
+                    [poolKeepAlive = std::move(asyncWorkPool), task = std::move(task)]() mutable -> void
+                    {
+                      static_cast<void>(poolKeepAlive);
+                      task();
+                    });
+
+  return true;
 }
 
 }  // namespace mcp
