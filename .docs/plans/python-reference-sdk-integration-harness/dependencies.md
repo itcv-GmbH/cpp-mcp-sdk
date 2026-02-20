@@ -1,19 +1,19 @@
 # Dependency Graph
 
 ## Phase 1: Foundation (Must complete first)
-- [ ] `task-001`: Define Coverage Matrix And Gate
-- [ ] `task-002`: Create Python Raw JSON-RPC Harness
-- [ ] `task-003`: Add Integration Test Wiring For New Suites (Depends on: `task-001`, `task-002`)
+- [x] `task-001`: Define Coverage Matrix And Gate
+- [x] `task-002`: Create Python Raw JSON-RPC Harness
+- [x] `task-003`: Add Integration Test Wiring For New Suites (Depends on: `task-001`, `task-002`)
 
 ## Phase 2: C++ Fixtures (Blocked by Phase 1)
-- [ ] `task-004`: Implement C++ HTTP Utilities Fixture (Depends on: `task-002`)
-- [ ] `task-005`: Implement C++ HTTP Resources Advanced Fixture (Depends on: `task-002`)
-- [ ] `task-006`: Implement C++ HTTP Roots Fixture (Depends on: `task-002`)
-- [ ] `task-007`: Implement C++ HTTP Tasks Fixture (Depends on: `task-002`)
-- [ ] `task-008`: Implement C++ STDIO Utilities Fixture (Depends on: `task-002`)
-- [ ] `task-009`: Implement C++ STDIO Resources Advanced Fixture (Depends on: `task-002`)
-- [ ] `task-010`: Implement C++ STDIO Roots Fixture (Depends on: `task-002`)
-- [ ] `task-011`: Implement C++ STDIO Tasks Fixture (Depends on: `task-002`)
+- [x] `task-004`: Implement C++ HTTP Utilities Fixture (Depends on: `task-002`)
+- [x] `task-005`: Implement C++ HTTP Resources Advanced Fixture (Depends on: `task-002`)
+- [x] `task-006`: Implement C++ HTTP Roots Fixture (Depends on: `task-002`)
+- [x] `task-007`: Implement C++ HTTP Tasks Fixture (Depends on: `task-002`)
+- [x] `task-008`: Implement C++ STDIO Utilities Fixture (Depends on: `task-002`)
+- [x] `task-009`: Implement C++ STDIO Resources Advanced Fixture (Depends on: `task-002`)
+- [x] `task-010`: Implement C++ STDIO Roots Fixture (Depends on: `task-002`)
+- [x] `task-011`: Implement C++ STDIO Tasks Fixture (Depends on: `task-002`)
 
 ## Phase 3: Python Reference Client To C++ Server Tests (Blocked by Phase 2)
 - [ ] `task-012`: Add Python Client HTTP Coverage Tests (Depends on: `task-004`, `task-005`, `task-006`, `task-007`)
