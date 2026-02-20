@@ -80,26 +80,35 @@ auto StdioServerRunner::run() -> void
 namespace
 {
 
+namespace detail
+{
+
+// No-op helper for suppresssing exceptions in destructors
+inline auto suppressException() noexcept -> void {}  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
+
+}  // namespace detail
+
 /// RAII guard to ensure server stop is called on all exit paths
 class ServerStopGuard final
 {
 public:
   explicit ServerStopGuard(std::shared_ptr<Server> serverIn)
-    : server(std::move(serverIn))
+    : server_(std::move(serverIn))
   {
   }
 
   ~ServerStopGuard() noexcept
   {
-    if (server != nullptr)
+    if (server_ != nullptr)
     {
       try
       {
-        server->stop();
+        server_->stop();
       }
       catch (...)
       {
         // Suppress all exceptions from stop() - it must not throw from destructor
+        detail::suppressException();
       }
     }
   }
@@ -111,7 +120,7 @@ public:
   auto operator=(ServerStopGuard &&) -> ServerStopGuard & = delete;
 
 private:
-  std::shared_ptr<Server> server;
+  std::shared_ptr<Server> server_;
 };
 
 }  // namespace
@@ -128,7 +137,7 @@ auto StdioServerRunner::run(std::istream &input, std::ostream &output, std::ostr
   impl_->server->start();
 
   // RAII guard ensures server->stop() is called on all exit paths (including exceptions)
-  ServerStopGuard stopGuard(impl_->server);
+  const ServerStopGuard stopGuard(impl_->server);
 
   const auto &limits = impl_->options.transportOptions.limits;
   const auto maxMessageSize = limits.maxMessageSizeBytes;
@@ -136,13 +145,10 @@ auto StdioServerRunner::run(std::istream &input, std::ostream &output, std::ostr
   const jsonrpc::RequestContext context {};
 
   std::string line;
-  bool hadSuccessfulRead = false;
 
   // Input loop: read lines until EOF or stop requested
   while (!impl_->stopRequested.load() && std::getline(input, line))
   {
-    hadSuccessfulRead = true;
-
     // Ignore empty lines
     if (line.empty())
     {
@@ -182,7 +188,6 @@ auto StdioServerRunner::run(std::istream &input, std::ostream &output, std::ostr
   }
 
   // Guard destructor will call server->stop() on exit
-  (void)stopGuard;
 }
 
 auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, const jsonrpc::RequestContext &context, std::ostream &output, std::ostream &errorStream) const -> void
@@ -253,7 +258,7 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
 
 auto StdioServerRunner::startAsync() -> std::thread
 {
-  return std::thread {[this]() { run(); }};
+  return std::thread {[this]() -> void { run(); }};
 }
 
 auto StdioServerRunner::stop() -> void
