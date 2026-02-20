@@ -10,7 +10,7 @@
 
 ## Phase 3: STDIO Runner (Blocked by Phase 1)
 - [x] `task-003`: Implement STDIO Server Runner (Blocking + Async)
-- [ ] `task-004`: Add STDIO Runner Unit Tests (Depends on: `task-003`)
+- [x] `task-004`: Add STDIO Runner Unit Tests (Depends on: `task-003`)
 
 ## Phase 4: Streamable HTTP Runner (Blocked by Phase 2)
 - [ ] `task-005`: Implement Streamable HTTP Server Runner (Per-Session Factory + Runtime) (Depends on: `task-014`)
