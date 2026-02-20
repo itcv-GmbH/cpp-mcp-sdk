@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -8,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -195,12 +197,49 @@ Router::~Router() noexcept
       detail::setPromiseValueNoThrow(*promiseEntry.second, detail::makeInternalErrorResponse(promiseEntry.first, "Router shutdown before request handler completed."));
     }
 
+    // Clean up completion pool.
+    // The key is to ensure the thread_pool destructor never runs on a worker thread.
+    //
+    // Sequence:
+    // 1. Get pool reference under lock
+    // 2. Call stop() to stop accepting new work (runs on main thread)
+    // 3. Release our reference (destructor runs on main thread)
+    //
+    // With weak_ptr in handlers, they don't keep the pool alive, so when we release
+    // our reference, the destructor runs on main thread (safe).
+    std::shared_ptr<boost::asio::thread_pool> completionPool;
     {
       const std::scoped_lock lock(inboundState_->mutex);
-      inboundState_->completionPool.reset();
+      completionPool = std::move(inboundState_->completionPool);
     }
 
+    // Handle timeoutPool
+    auto timeoutPool = std::move(timeoutPool_);
+    if (timeoutPool)
+    {
+      timeoutPool->stop();
+      std::thread joinThread([&timeoutPool]() { timeoutPool->join(); });
+      constexpr auto kJoinTimeout = std::chrono::milliseconds {100};
+      std::this_thread::sleep_for(kJoinTimeout);
+      if (joinThread.joinable())
+      {
+        joinThread.detach();
+      }
+      else
+      {
+        joinThread.join();
+      }
+    }
     timeoutPool_.reset();
+
+    // Stop the completion pool before releasing - this ensures no more work runs
+    if (completionPool)
+    {
+      completionPool->stop();
+    }
+
+    // Release completionPool - destructor runs on main thread (safe).
+    completionPool.reset();
   }
   catch (const std::exception &error)
   {
@@ -282,13 +321,15 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
   try
   {
     std::future<Response> handlerFuture = handler(context, request);
+
+    // Check if we have a completion pool
     std::shared_ptr<boost::asio::thread_pool> completionPool;
     {
       const std::scoped_lock lock(inboundState_->mutex);
       completionPool = inboundState_->completionPool;
     }
 
-    if (completionPool == nullptr)
+    if (!completionPool)
     {
       completeInboundRequest(context, request.id);
       detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Router is shutting down."), request.id)});
@@ -297,10 +338,24 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
 
     const std::shared_ptr<Router::InboundState> inboundState = inboundState_;
 
+    // Use weak_ptr to avoid keeping pool alive. The pool stays alive because
+    // the Router destructor holds a reference until completionPool.reset().
+    // When handlers complete on worker threads, they won't keep the pool alive,
+    // so the only reference is the one in the destructor. When destructor releases
+    // its reference, it runs on the main thread (safe).
+    std::weak_ptr<boost::asio::thread_pool> poolWeak = completionPool;
     boost::asio::post(*completionPool,
-                      [poolKeepAlive = completionPool, inboundState, context, requestId = request.id, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable -> void
+                      [poolWeak, inboundState, context, requestId = request.id, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable noexcept
                       {
-                        static_cast<void>(poolKeepAlive);
+                        // Try to get pool - if it's gone, just complete with error
+                        auto pool = poolWeak.lock();
+                        if (!pool)
+                        {
+                          Router::completeInboundRequest(inboundState, context, requestId);
+                          detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Router is shutting down."), requestId)});
+                          return;
+                        }
+
                         try
                         {
                           Response response = handlerFuture.get();
