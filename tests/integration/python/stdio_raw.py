@@ -19,7 +19,6 @@ class StdioRawClient:
     ):
         self.process = process
         self.timeout = timeout
-        self._pending_requests: dict[str, Any] = {}
         self._notification_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self._response_queues: dict[str, queue.Queue[dict[str, Any]]] = {}
         self._lock = threading.Lock()
@@ -52,7 +51,8 @@ class StdioRawClient:
                 message = json.loads(line.strip())
                 self._handle_message(message)
             except json.JSONDecodeError:
-                continue  # Skip non-JSON lines
+                # Skip non-JSON lines (these might be log output)
+                continue
             except Exception:
                 continue
 

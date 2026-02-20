@@ -24,7 +24,6 @@ class StreamableHttpRawClient:
         self.timeout = timeout
         self.session_id: Optional[str] = None
         self.protocol_version = "2025-11-25"
-        self._pending_requests: dict[str, Any] = {}
         self._notification_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self._response_queues: dict[str, queue.Queue[dict[str, Any]]] = {}
         self._lock = threading.Lock()
@@ -98,7 +97,9 @@ class StreamableHttpRawClient:
     def _send_request(self, request: dict) -> dict:
         """Internal method to send request and handle response."""
         headers = self._make_headers()
-        request_id = request["id"]
+        request_id = request.get("id")
+        if request_id is None:
+            raise ValueError("Request missing 'id' field")
 
         response = self._http_client.post(
             self.endpoint,

@@ -60,6 +60,9 @@ def assert_success_response(response: dict[str, Any]) -> dict[str, Any]:
 
 def assert_capability_declared(capabilities: dict[str, Any], capability: str) -> None:
     """Assert that a capability is declared."""
+    assert isinstance(capabilities, dict), (
+        f"capabilities must be a dict, got {type(capabilities)}"
+    )
     assert capability in capabilities, (
         f"Capability '{capability}' not declared. Available: {list(capabilities.keys())}"
     )
