@@ -12,7 +12,6 @@ The runner must enforce the stdio constraints: only protocol messages to stdout 
 
 ## Output / Definition of Done
 * `tests/server_stdio_runner_test.cpp` added.
-* `tests/CMakeLists.txt` updated to build and register `mcp_sdk_server_stdio_runner_test`.
 * Tests cover:
   * valid initialize flow produces a JSON-RPC response line
   * malformed JSON yields parse error response with `id: null`
@@ -27,8 +26,8 @@ The runner must enforce the stdio constraints: only protocol messages to stdout 
    - an invalid JSON line
 4. Assert:
    - output contains only newline-delimited JSON objects (no extra text)
-   - parse error response uses JSON-RPC parse error code and `id` is absent/null
-   - stderr contains diagnostics (optional; controlled by options)
+   - parse error response uses JSON-RPC parse error code and serializes `"id": null`
+   - stderr contains diagnostics when `allowStderrLogs=true`
 
 ## Verification
-* `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_server_stdio_runner_test --output-on-failure`
+* After `task-010` wires the test into CMake: `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_server_stdio_runner_test --output-on-failure`

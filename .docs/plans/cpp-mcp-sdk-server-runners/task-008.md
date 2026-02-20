@@ -12,7 +12,7 @@ Examples are part of the SRS documentation deliverable. Migrating them to runner
 
 ## Output / Definition of Done
 * `examples/stdio_server/main.cpp` updated to use `StdioServerRunner`.
-* `examples/http_server_auth/main.cpp` updated to use `StreamableHttpServerRunner` while preserving OAuth/bearer auth demonstration.
+* `examples/http_server_auth/main.cpp` updated to use `StreamableHttpServerRunner` while preserving OAuth/bearer auth demonstration and enabling session IDs (`requireSessionId=true`).
 * Example behavior unchanged from user perspective.
 
 ## Step-by-Step Instructions
@@ -20,8 +20,9 @@ Examples are part of the SRS documentation deliverable. Migrating them to runner
    - keep tool/resource/prompt registrations
    - replace manual stdin loop with `StdioServerRunner`
 2. Refactor `examples/http_server_auth/main.cpp`:
-   - keep auth configuration in `StreamableHttpServerOptions`
-   - replace manual wiring of handlers/runtime with HTTP runner
+    - keep auth configuration in `StreamableHttpServerOptions`
+    - replace manual wiring of handlers/runtime with HTTP runner
+    - enable `StreamableHttpServerOptions.http.requireSessionId = true` so initialize returns `MCP-Session-Id` and subsequent requests require it
 3. Ensure all logging stays on stderr for stdio example.
 
 ## Verification

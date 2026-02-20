@@ -2,7 +2,9 @@
 # Task Name: Define ServerFactory Contract + Session Isolation Rules
 
 ## Context
-`mcp::Session` lifecycle state is per connection. Streamable HTTP explicitly supports session management (`MCP-Session-Id`). A runner that serves HTTP traffic must not route multiple sessions through a single `mcp::Server` instance, or initialization/lifecycle state will be shared incorrectly.
+`mcp::Session` lifecycle state is per connection. Streamable HTTP explicitly supports session management (`MCP-Session-Id`) and is intended to handle multiple client connections. A runner that serves HTTP traffic must not route multiple sessions through a single `mcp::Server` instance, or initialization/lifecycle state will be shared incorrectly.
+
+For the SDK runners, the multi-client-safe configuration is to require sessions (`StreamableHttpServerOptions.http.requireSessionId=true`) so the server issues `MCP-Session-Id` on initialize and the runner will key server instances by session.
 
 ## Inputs
 * `.docs/requirements/cpp-mcp-sdk.md` (Streamable HTTP session management)
@@ -14,22 +16,28 @@
 * `ServerFactory` contract defined in a public header (or within runner headers), for example:
   * `using ServerFactory = std::function<std::shared_ptr<mcp::Server>()>;`
 * Runner behavior rules documented:
-  * create a new `mcp::Server` per Streamable HTTP session ID
-  * bind outbound sender for each server to route messages via the transport + sessionId
-  * define cleanup behavior for expired sessions (e.g., remove server instance when HTTP session is deleted/expired)
-* Explicit documentation of single-server vs factory usage, including a helper for “single session only” if supported.
+   * STDIO runner uses exactly one server instance.
+   * Streamable HTTP runner creates a new server instance per `MCP-Session-Id` when `StreamableHttpServerOptions.http.requireSessionId=true`, and uses exactly one server instance when `StreamableHttpServerOptions.http.requireSessionId=false`.
+   * Combined runner creates one server instance for STDIO, and one server instance per HTTP session when `StreamableHttpServerOptions.http.requireSessionId=true`.
+* Cleanup rules documented:
+   * drop per-session servers on HTTP DELETE
+   * drop per-session servers when the transport returns HTTP 404 for that session (expired/terminated)
+* Runner lifecycle rules documented:
+  * runner must call `mcp::Server::start()` for every server instance it creates before handling any messages
+  * runner must call `mcp::Server::stop()` before dropping a server instance due to HTTP DELETE, HTTP 404 cleanup, runner stop, or runner destruction
 
 ## Step-by-Step Instructions
-1. Define `ServerFactory` and whether it is:
-   - session-agnostic (no params), or
-   - session-aware (accepts sessionId/protocolVersion/authContext).
-   Prefer session-aware only if required; otherwise keep it simple.
-2. Define how HTTP runner discovers session creation:
-   - typically on first accepted `initialize` request where `RequestContext.sessionId` is present.
-3. Define how runner handles messages that arrive for unknown sessionId:
-   - should not happen if `StreamableHttpServer` validation is authoritative; if it does, treat as internal error.
-4. Decide whether stdio runner uses a single `mcp::Server` instance created once via the factory.
-5. Document these rules in `include/mcp/server/streamable_http_runner.hpp` comments and in `docs/api_overview.md`.
+1. Define `ServerFactory`:
+   - define a simple, session-agnostic factory: `std::function<std::shared_ptr<mcp::Server>()>`.
+2. Define when a new HTTP session server is created:
+   - on first accepted `initialize` request for a newly issued `MCP-Session-Id`.
+3. Define session-keying:
+   - when `StreamableHttpServerOptions.http.requireSessionId=true`, use `RequestContext.sessionId` as the key and treat missing `sessionId` as an internal error
+   - when `StreamableHttpServerOptions.http.requireSessionId=false`, use a single fixed key for all requests and treat `RequestContext.sessionId` as `std::nullopt`
+4. Define cleanup triggers:
+   - on HTTP DELETE for a sessionId
+   - on HTTP 404 responses for a sessionId
+5. Document these rules in `include/mcp/server/streamable_http_runner.hpp` and in `docs/api_overview.md`.
 
 ## Verification
 * Review-only: ensure documented rules match the spec and current `Session` lifecycle assumptions.

@@ -4,21 +4,29 @@
 - [ ] `task-001`: Define Runner Public API + Docs Updates
 - [ ] `task-002`: Define ServerFactory Contract + Session Isolation Rules
 
-## Phase 2: STDIO Runner (Blocked by Phase 1)
-- [ ] `task-003`: Implement STDIO Server Runner (Blocking + Optional Async)
+## Phase 2: Streamable HTTP Session Foundation (Blocked by Phase 1)
+- [ ] `task-014`: Implement Server-Issued MCP-Session-Id on Initialize (Transport)
+- [ ] `task-015`: Add Transport Conformance Tests for Session Issuance + Multi-Session Routing (Depends on: `task-014`)
+
+## Phase 3: STDIO Runner (Blocked by Phase 1)
+- [ ] `task-003`: Implement STDIO Server Runner (Blocking + Async)
 - [ ] `task-004`: Add STDIO Runner Unit Tests (Depends on: `task-003`)
 
-## Phase 3: Streamable HTTP Runner (Blocked by Phase 1)
-- [ ] `task-005`: Implement Streamable HTTP Server Runner (Factory + Runtime)
+## Phase 4: Streamable HTTP Runner (Blocked by Phase 2)
+- [ ] `task-005`: Implement Streamable HTTP Server Runner (Per-Session Factory + Runtime) (Depends on: `task-014`)
 - [ ] `task-006`: Add HTTP Runner Unit Tests (Depends on: `task-005`)
 
-## Phase 4: Examples + Documentation (Blocked by Phases 2-3)
+## Phase 5: Examples + Documentation (Blocked by Phases 3-4)
 - [ ] `task-012`: Implement Combined Runner (Start STDIO, HTTP, or Both) (Depends on: `task-003`, `task-005`)
 - [ ] `task-013`: Add Combined Runner Unit Tests (Depends on: `task-012`)
 - [ ] `task-007`: Add Dual-Transport Example (STDIO + HTTP) (Depends on: `task-012`)
 - [ ] `task-008`: Migrate Existing Examples to Runners (Depends on: `task-007`)
 - [ ] `task-009`: Update Quickstarts + API Overview (Depends on: `task-008`)
 
-## Phase 5: Build Wiring + Full Verification (Blocked by all prior phases)
-- [ ] `task-010`: Wire New Sources/Tests into CMake (Depends on: `task-004`, `task-006`, `task-013`)
-- [ ] `task-011`: Full Conformance + Regression Run (Depends on: `task-010`)
+## Phase 6: Integration / Interop Coverage (Blocked by Phases 2 and 4)
+- [ ] `task-016`: Update Reference Interop Fixture to Use HTTP Runner (Depends on: `task-005`, `task-014`)
+- [ ] `task-017`: Add Reference Interop Tests for STDIO Runner (Depends on: `task-003`)
+
+## Phase 7: Build Wiring + Full Verification (Blocked by all prior phases)
+- [ ] `task-010`: Wire New Sources/Tests into CMake (Depends on: `task-004`, `task-006`, `task-013`, `task-015`)
+- [ ] `task-011`: Full Conformance + Regression Run (Depends on: `task-010`, `task-016`, `task-017`)

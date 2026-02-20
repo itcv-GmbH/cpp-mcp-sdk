@@ -15,13 +15,18 @@ Runners must not change protocol behavior. Final gate is a full build and full t
 
 ## Step-by-Step Instructions
 1. Configure and build:
-   - `cmake --preset vcpkg-unix-release -DMCP_SDK_BUILD_TESTS=ON -DMCP_SDK_BUILD_EXAMPLES=ON`
-   - `cmake --build build/vcpkg-unix-release`
+    - `cmake --preset vcpkg-unix-release -DMCP_SDK_BUILD_TESTS=ON -DMCP_SDK_BUILD_EXAMPLES=ON`
+    - `cmake --build build/vcpkg-unix-release`
 2. Run all tests:
-   - `ctest --test-dir build/vcpkg-unix-release --output-on-failure`
+    - `ctest --test-dir build/vcpkg-unix-release --output-on-failure`
 3. Run key conformance tests explicitly (sanity):
-   - `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_conformance_stdio_transport_test --output-on-failure`
-   - `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_conformance_streamable_http_transport_test --output-on-failure`
+    - `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_conformance_stdio_transport_test --output-on-failure`
+    - `ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_conformance_streamable_http_transport_test --output-on-failure`
+4. Run reference interoperability integration tests:
+    - `cmake --preset vcpkg-unix-release -DMCP_SDK_INTEGRATION_TESTS=ON`
+    - `cmake --build build/vcpkg-unix-release`
+    - `ctest --test-dir build/vcpkg-unix-release -R integration_reference --output-on-failure`
 
 ## Verification
 * `cmake --preset vcpkg-unix-release -DMCP_SDK_BUILD_TESTS=ON -DMCP_SDK_BUILD_EXAMPLES=ON && cmake --build build/vcpkg-unix-release && ctest --test-dir build/vcpkg-unix-release --output-on-failure`
+* `cmake --preset vcpkg-unix-release -DMCP_SDK_INTEGRATION_TESTS=ON && cmake --build build/vcpkg-unix-release && ctest --test-dir build/vcpkg-unix-release -R integration_reference --output-on-failure`

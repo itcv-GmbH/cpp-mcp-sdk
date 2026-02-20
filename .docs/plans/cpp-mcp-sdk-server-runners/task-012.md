@@ -2,7 +2,7 @@
 # Task Name: Implement Combined Runner (Start STDIO, HTTP, or Both)
 
 ## Context
-Some deployments require a single process to expose an MCP server over both stdio (desktop/local hosts that spawn a subprocess) and Streamable HTTP (remote clients, multi-connection). The SDK already supports both transports, but users must currently orchestrate two runners manually. This task adds an optional combined runner that composes `StdioServerRunner` and `StreamableHttpServerRunner` and can start either or both.
+Some deployments require a single process to expose an MCP server over both stdio (desktop/local hosts that spawn a subprocess) and Streamable HTTP (remote clients, multi-connection). The SDK already supports both transports, but users must currently orchestrate two runners manually. This task adds a combined runner that composes `StdioServerRunner` and `StreamableHttpServerRunner` and will support starting either or both.
 
 ## Inputs
 * `.docs/requirements/cpp-mcp-sdk.md` (Transport Support: stdio + Streamable HTTP; shutdown expectations)
@@ -19,14 +19,14 @@ Some deployments require a single process to expose an MCP server over both stdi
   * enabling STDIO runner and/or HTTP runner
   * starting HTTP in background (`startHttp()` or `start()`)
   * running STDIO in foreground (`runStdio()` or `run()`)
-  * stopping HTTP (`stop()`), with documented stdio stop semantics (stdio exits on EOF; best-effort async stop if input stream can be closed by the host)
+  * stopping HTTP (`stop()`), with documented stdio stop semantics (stdio exits on EOF; async stop requires host-controlled input stream closure)
 
 ## Step-by-Step Instructions
 1. Define a small options struct for the combined runner:
    - `bool enableStdio` and `bool enableHttp`
    - `mcp::transport::StdioServerOptions` (or runner-specific stdio options)
    - `mcp::transport::http::StreamableHttpServerOptions` for HTTP
-   - optional stream overrides for stdio input/output/error
+   - stream overrides for stdio input/output/error
 2. Implement the combined runner as a composition of the two dedicated runners:
    - construct `StdioServerRunner` and `StreamableHttpServerRunner` lazily based on enabled flags
    - ensure the same `ServerFactory` is used for both transports
@@ -36,7 +36,7 @@ Some deployments require a single process to expose an MCP server over both stdi
    - `stop()` stops HTTP runtime and unblocks any internal threads owned by the combined runner
 4. Document concurrency expectations:
    - calling `startHttp()` then `runStdio()` is the intended “serve both” pattern
-   - calling only one transport should be supported with the other disabled
+   - calling only one transport is required to be supported with the other disabled
 5. Ensure any background threads are joinable and are drained on destruction (no detached threads).
 
 ## Verification
