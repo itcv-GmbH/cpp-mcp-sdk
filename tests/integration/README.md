@@ -9,6 +9,47 @@ This directory contains end-to-end integration tests that exercise interoperabil
 
 The pinned versions are captured in `tests/integration/fixtures/reference_python_requirements.txt`.
 
+## Reference Python Server Capabilities
+
+The reference Python server fixture (`reference_python_server.py`) exposes the following capabilities:
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `python_echo` | Echo text provided by the caller |
+| `ping` | Ping the server to check connectivity |
+| `logging_setLevel` | Set logging level and emit notification |
+| `completion_complete` | Return completion suggestions |
+| `tasks_create` | Create a new background task |
+| `tasks_list` | List all background tasks |
+| `tasks_get` | Get a specific task by ID |
+| `tasks_cancel` | Cancel a running task |
+
+### Resources
+
+| Resource URI | Description |
+|--------------|-------------|
+| `resource://python-server/info` | Reference server metadata |
+| `resource://python-server/template/{item_id}` | Template resource with dynamic item_id |
+
+### Prompts
+
+| Prompt | Description |
+|--------|-------------|
+| `python_server_prompt` | Returns a prompt containing the supplied topic |
+
+### Notifications
+
+The server emits `notifications/message` notifications for:
+- Log level changes (`logging_setLevel`)
+- Task creation, cancellation, and status updates
+
+### Protocol Handlers
+
+- Sampling: Server can request the client to sample LLM responses
+- Elicitation: Server can request user approval through the client
+
 ## Coverage
 
 - Reference Python client -> C++ SDK server fixture (Streamable HTTP runner)
@@ -33,3 +74,12 @@ The pinned versions are captured in `tests/integration/fixtures/reference_python
 - `cmake -S . -B build/vcpkg-unix-release -DMCP_SDK_INTEGRATION_TESTS=ON`
 - `cmake --build build/vcpkg-unix-release`
 - `ctest --test-dir build/vcpkg-unix-release -R integration_reference --output-on-failure`
+
+## Manual Testing
+
+To test the reference Python server manually:
+
+```bash
+cd tests/integration
+python3 fixtures/reference_python_server.py --port 8765 --path /mcp
+```

@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import logging
 from typing import Any, Optional
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
@@ -66,6 +67,12 @@ def main() -> int:
     sampling_verification_task: asyncio.Task[None] | None = None
     elicitation_verification_task: asyncio.Task[None] | None = None
     outbound_verifications_completed = False
+
+    # Track current log level
+    current_log_level = logging.INFO
+
+    # Task storage for tasks/cancel support
+    tasks: dict[str, dict] = {}
 
     async def verify_sampling_round_trip(session: Any, related_request_id: str) -> None:
         sampling_result = await asyncio.wait_for(
@@ -170,6 +177,119 @@ def main() -> int:
 
         return f"python echo: {text}"
 
+    @server.tool(name="ping", description="Ping the server to check connectivity")
+    async def ping() -> str:
+        return "pong"
+
+    @server.tool(
+        name="logging_setLevel",
+        description="Set the logging level and emit a notification",
+    )
+    async def logging_setLevel(level: str, ctx: Context) -> str:
+        nonlocal current_log_level
+        session = ctx.session
+
+        level_map = {
+            "debug": logging.DEBUG,
+            "info": logging.INFO,
+            "warning": logging.WARNING,
+            "error": logging.ERROR,
+        }
+        current_log_level = level_map.get(level.lower(), logging.INFO)
+
+        # Emit notification
+        await session.send_notification(
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/message",
+                "params": {
+                    "level": level,
+                    "logger": "reference_python_server",
+                    "data": f"Log level set to {level}",
+                },
+            }
+        )
+        return f"Log level set to {level}"
+
+    @server.tool(
+        name="completion_complete",
+        description="Return completion suggestions for an argument",
+    )
+    async def completion_complete(ref: dict, argument: dict) -> dict:
+        # Return completion suggestions
+        return {
+            "completion": {
+                "values": ["option1", "option2", "option3"],
+                "hasMore": False,
+            }
+        }
+
+    @server.tool(
+        name="tasks_create",
+        description="Create a new background task",
+    )
+    async def tasks_create(tool: str, arguments: dict, ctx: Context) -> dict:
+        nonlocal tasks
+        session = ctx.session
+
+        task_id = f"task-{len(tasks) + 1}"
+        tasks[task_id] = {
+            "id": task_id,
+            "status": "working",
+            "tool": tool,
+            "arguments": arguments,
+        }
+
+        # Emit status notification
+        await session.send_notification(
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/message",
+                "params": {
+                    "level": "info",
+                    "logger": "reference_python_server",
+                    "data": f"Task {task_id} created with tool {tool}",
+                },
+            }
+        )
+
+        return {"taskId": task_id}
+
+    @server.tool(name="tasks_list", description="List all background tasks")
+    async def tasks_list() -> list:
+        nonlocal tasks
+        return list(tasks.values())
+
+    @server.tool(name="tasks_get", description="Get a specific task by ID")
+    async def tasks_get(taskId: str) -> dict:
+        nonlocal tasks
+        return tasks.get(taskId, {})
+
+    @server.tool(name="tasks_cancel", description="Cancel a running task")
+    async def tasks_cancel(taskId: str, ctx: Context) -> str:
+        nonlocal tasks
+        session = ctx.session
+
+        if taskId in tasks:
+            tasks[taskId]["status"] = "cancelled"
+
+            # Emit cancelled notification
+            await session.send_notification(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/message",
+                    "params": {
+                        "level": "info",
+                        "logger": "reference_python_server",
+                        "data": f"Task {taskId} cancelled",
+                    },
+                }
+            )
+
+            return "Task cancelled"
+
+        return "Task not found"
+
     @server.resource(
         "resource://python-server/info",
         name="python-server-info",
@@ -177,6 +297,14 @@ def main() -> int:
     )
     def server_info() -> str:
         return "python reference server resource"
+
+    @server.resource(
+        "resource://python-server/template/{item_id}",
+        name="python-server-template",
+        description="Template resource with dynamic item_id parameter",
+    )
+    def resource_template(item_id: str) -> str:
+        return f"Template resource for item {item_id}"
 
     @server.prompt(
         name="python_server_prompt",
