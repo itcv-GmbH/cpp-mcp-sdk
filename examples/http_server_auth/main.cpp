@@ -15,6 +15,7 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/server.hpp>
+#include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/server/tools.hpp>
 #include <mcp/transport/http.hpp>
 
@@ -170,6 +171,47 @@ auto parseOptions(const std::vector<std::string> &arguments) -> Options  // NOLI
   return options;
 }
 
+auto createServer() -> std::shared_ptr<mcp::Server>
+{
+  mcp::ToolsCapability toolsCapability;
+  toolsCapability.listChanged = true;
+
+  mcp::PromptsCapability promptsCapability;
+  promptsCapability.listChanged = true;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
+  configuration.serverInfo = mcp::Implementation("example-http-auth-server", "1.0.0");
+  configuration.instructions = "Send a bearer token to call tools.";
+
+  const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+
+  mcp::ToolDefinition whoAmITool;
+  whoAmITool.name = "who_am_i";
+  whoAmITool.description = "Return authorization context from bearer token";
+  whoAmITool.inputSchema = mcp::jsonrpc::JsonValue::object();
+  whoAmITool.inputSchema["type"] = "object";
+  whoAmITool.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
+
+  server->registerTool(std::move(whoAmITool),
+                       [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+
+                         mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
+                         content["type"] = "text";
+                         content["text"] = "authorized as auth context: " + context.requestContext.authContext.value_or("<none>");
+                         result.content.push_back(std::move(content));
+
+                         result.structuredContent = mcp::jsonrpc::JsonValue::object();
+                         (*result.structuredContent)["authContext"] = context.requestContext.authContext.value_or("");
+                         return result;
+                       });
+
+  return server;
+}
+
 }  // namespace
 
 auto main(int argc, char *argv[]) -> int
@@ -185,60 +227,28 @@ auto main(int argc, char *argv[]) -> int
 
     const Options options = parseOptions(arguments);
 
-    mcp::ToolsCapability toolsCapability;
-    toolsCapability.listChanged = true;
+    mcp::StreamableHttpServerRunnerOptions runnerOptions;
 
-    mcp::PromptsCapability promptsCapability;
-    promptsCapability.listChanged = true;
+    runnerOptions.transportOptions.http.endpoint.bindAddress = options.bindAddress;
+    runnerOptions.transportOptions.http.endpoint.bindLocalhostOnly = false;
+    runnerOptions.transportOptions.http.endpoint.port = options.port;
+    runnerOptions.transportOptions.http.endpoint.path = options.path;
 
-    mcp::ServerConfiguration configuration;
-    configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
-    configuration.serverInfo = mcp::Implementation("example-http-auth-server", "1.0.0");
-    configuration.instructions = "Send a bearer token to call tools.";
+    // Enable session ID requirement for multi-client safety
+    runnerOptions.transportOptions.http.requireSessionId = true;
 
-    const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
-
-    mcp::ToolDefinition whoAmITool;
-    whoAmITool.name = "who_am_i";
-    whoAmITool.description = "Return authorization context from bearer token";
-    whoAmITool.inputSchema = mcp::jsonrpc::JsonValue::object();
-    whoAmITool.inputSchema["type"] = "object";
-    whoAmITool.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
-
-    server->registerTool(std::move(whoAmITool),
-                         [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
-                         {
-                           mcp::CallToolResult result;
-                           result.content = mcp::jsonrpc::JsonValue::array();
-
-                           mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
-                           content["type"] = "text";
-                           content["text"] = "authorized as auth context: " + context.requestContext.authContext.value_or("<none>");
-                           result.content.push_back(std::move(content));
-
-                           result.structuredContent = mcp::jsonrpc::JsonValue::object();
-                           (*result.structuredContent)["authContext"] = context.requestContext.authContext.value_or("");
-                           return result;
-                         });
-
-    mcp::transport::http::StreamableHttpServerOptions streamableOptions;
-    streamableOptions.http.endpoint.bindAddress = options.bindAddress;
-    streamableOptions.http.endpoint.bindLocalhostOnly = false;
-    streamableOptions.http.endpoint.port = options.port;
-    streamableOptions.http.endpoint.path = options.path;
-
-    streamableOptions.http.authorization = mcp::auth::OAuthServerAuthorizationOptions {};
-    streamableOptions.http.authorization->tokenVerifier = std::make_shared<ExampleTokenVerifier>();
-    streamableOptions.http.authorization->protectedResourceMetadata.resource =
+    runnerOptions.transportOptions.http.authorization = mcp::auth::OAuthServerAuthorizationOptions {};
+    runnerOptions.transportOptions.http.authorization->tokenVerifier = std::make_shared<ExampleTokenVerifier>();
+    runnerOptions.transportOptions.http.authorization->protectedResourceMetadata.resource =
       (options.tlsCert.has_value() ? "https://" : "http://") + options.bindAddress + ":" + std::to_string(options.port) + options.path;
-    streamableOptions.http.authorization->protectedResourceMetadata.authorizationServers = {
+    runnerOptions.transportOptions.http.authorization->protectedResourceMetadata.authorizationServers = {
       "https://auth.example.test",
     };
-    streamableOptions.http.authorization->protectedResourceMetadata.scopesSupported.values = {
+    runnerOptions.transportOptions.http.authorization->protectedResourceMetadata.scopesSupported.values = {
       "mcp:read",
       "mcp:write",
     };
-    streamableOptions.http.authorization->defaultRequiredScopes.values = {
+    runnerOptions.transportOptions.http.authorization->defaultRequiredScopes.values = {
       "mcp:read",
     };
 
@@ -247,45 +257,14 @@ auto main(int argc, char *argv[]) -> int
       mcp_http::ServerTlsConfiguration tls;
       tls.certificateChainFile = *options.tlsCert;
       tls.privateKeyFile = *options.tlsKey;
-      streamableOptions.http.tls = std::move(tls);
+      runnerOptions.transportOptions.http.tls = std::move(tls);
     }
 
-    mcp_http::StreamableHttpServer streamableServer(streamableOptions);
-
-    streamableServer.setRequestHandler(
-      [&server](const mcp::jsonrpc::RequestContext &context, const mcp::jsonrpc::Request &request) -> mcp_http::StreamableRequestResult
-      {
-        mcp_http::StreamableRequestResult result;
-        result.response = server->handleRequest(context, request).get();
-        return result;
-      });
-
-    streamableServer.setNotificationHandler(
-      [&server](const mcp::jsonrpc::RequestContext &context, const mcp::jsonrpc::Notification &notification) -> bool
-      {
-        server->handleNotification(context, notification);
-        return true;
-      });
-
-    streamableServer.setResponseHandler([&server](const mcp::jsonrpc::RequestContext &context, const mcp::jsonrpc::Response &response) -> bool
-                                        { return server->handleResponse(context, response); });
-
-    server->setOutboundMessageSender(
-      [&streamableServer](const mcp::jsonrpc::RequestContext &context, const mcp::jsonrpc::Message &message) -> void
-      {
-        if (!streamableServer.enqueueServerMessage(message, context.sessionId))
-        {
-          std::cerr << "failed to enqueue server-initiated message for active stream" << '\n';
-        }
-      });
-
-    mcp::transport::HttpServerOptions runtimeOptions = streamableOptions.http;
-    mcp::transport::HttpServerRuntime runtime(std::move(runtimeOptions));
-    runtime.setRequestHandler([&streamableServer](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse { return streamableServer.handleRequest(request); });
-    runtime.start();
+    mcp::StreamableHttpServerRunner runner(createServer, runnerOptions);
+    runner.start();
 
     const std::string scheme = options.tlsCert.has_value() ? "https" : "http";
-    const std::string endpoint = scheme + "://" + options.bindAddress + ":" + std::to_string(runtime.localPort()) + options.path;
+    const std::string endpoint = scheme + "://" + options.bindAddress + ":" + std::to_string(runner.localPort()) + options.path;
 
     std::cout << "http_server_auth running at " << endpoint << '\n';
     std::cout << "Try bearer tokens: dev-token-read, dev-token-write" << '\n';
@@ -295,7 +274,7 @@ auto main(int argc, char *argv[]) -> int
     std::string ignore;
     static_cast<void>(std::getline(std::cin, ignore));
 
-    runtime.stop();
+    runner.stop();
     return 0;
   }
   catch (const std::exception &error)

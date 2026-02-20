@@ -15,6 +15,7 @@
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/server.hpp>
+#include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/tools.hpp>
 
 namespace
@@ -30,27 +31,7 @@ auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue  // NOL
   return content;
 }
 
-auto writeMessage(const mcp::jsonrpc::Message &message) -> void  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
-{
-  std::cout << mcp::jsonrpc::serializeMessage(message) << '\n';
-  std::cout.flush();
-}
-
-auto writeResponse(const mcp::jsonrpc::Response &response) -> void  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
-{
-  if (std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response))
-  {
-    writeMessage(mcp::jsonrpc::Message {std::get<mcp::jsonrpc::SuccessResponse>(response)});
-    return;
-  }
-
-  writeMessage(mcp::jsonrpc::Message {std::get<mcp::jsonrpc::ErrorResponse>(response)});
-}
-
-}  // namespace
-
-// NOLINTNEXTLINE(bugprone-exception-escape)
-auto main() -> int
+auto createServer() -> std::shared_ptr<mcp::Server>
 {
   mcp::ToolsCapability toolsCapability;
   toolsCapability.listChanged = true;
@@ -157,58 +138,31 @@ auto main() -> int
                            return result;
                          });
 
-  server->setOutboundMessageSender([](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Message &message) -> void { writeMessage(message); });
+  return server;
+}
 
-  std::cerr << "stdio_server: waiting for newline-delimited JSON-RPC messages on stdin" << '\n';
-  std::cerr.flush();
+}  // namespace
 
-  std::string line;
-  while (std::getline(std::cin, line))
+// NOLINTNEXTLINE(bugprone-exception-escape)
+auto main() -> int
+{
+  try
   {
-    if (line.empty())
-    {
-      continue;
-    }
+    mcp::StdioServerRunnerOptions runnerOptions;
+    runnerOptions.transportOptions.allowStderrLogs = false;
 
-    try
-    {
-      const mcp::jsonrpc::Message message = mcp::jsonrpc::parseMessage(line);
-      const mcp::jsonrpc::RequestContext context {};
+    mcp::StdioServerRunner runner(createServer, runnerOptions);
 
-      if (std::holds_alternative<mcp::jsonrpc::Request>(message))
-      {
-        const mcp::jsonrpc::Response response = server->handleRequest(context, std::get<mcp::jsonrpc::Request>(message)).get();
-        writeResponse(response);
-        continue;
-      }
+    std::cerr << "stdio_server: waiting for JSON-RPC messages on stdin" << '\n';
+    std::cerr.flush();
 
-      if (std::holds_alternative<mcp::jsonrpc::Notification>(message))
-      {
-        server->handleNotification(context, std::get<mcp::jsonrpc::Notification>(message));
-        continue;
-      }
+    runner.run();
 
-      if (std::holds_alternative<mcp::jsonrpc::SuccessResponse>(message))
-      {
-        const auto response = mcp::jsonrpc::Response {std::get<mcp::jsonrpc::SuccessResponse>(message)};
-        static_cast<void>(server->handleResponse(context, response));
-        continue;
-      }
-
-      const auto response = mcp::jsonrpc::Response {std::get<mcp::jsonrpc::ErrorResponse>(message)};
-      static_cast<void>(server->handleResponse(context, response));
-    }
-    catch (const std::exception &error)
-    {
-      std::cerr << "stdio_server parse/dispatch error: " << error.what() << '\n';
-      std::cerr.flush();
-
-      mcp::jsonrpc::ErrorResponse parseError;
-      parseError.id = std::nullopt;
-      parseError.error = mcp::jsonrpc::makeParseError(std::nullopt, "Failed to parse or dispatch JSON-RPC message");
-      writeMessage(mcp::jsonrpc::Message {parseError});
-    }
+    return 0;
   }
-
-  return 0;
+  catch (const std::exception &error)
+  {
+    std::cerr << "stdio_server error: " << error.what() << '\n';
+    return 1;
+  }
 }
