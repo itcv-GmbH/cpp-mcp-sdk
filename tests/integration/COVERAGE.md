@@ -59,3 +59,17 @@ For example:
 Format: test_name: protocol_item1, protocol_item2, ...
 All protocol items must be mapped to at least one test.
 -->
+
+### Python Reference Client to C++ HTTP Server Tests
+
+- `reference_client_to_cpp_server_utilities`: initialize, tools/list, tools/call, prompts/list, prompts/get
+- `reference_client_to_cpp_server_resources_advanced`: initialize, resources/list, resources/read, prompts/list
+- `reference_client_to_cpp_server_roots`: initialize, tools/list, tools/call
+- `reference_client_to_cpp_server_tasks`: initialize, tools/list, tools/call, resources/list, prompts/list
+
+### Python Reference Client to C++ STDIO Server Tests
+
+- `reference_client_to_cpp_stdio_server_utilities`: initialize, ping, logging/setLevel, notifications/message, completion/complete
+- `reference_client_to_cpp_stdio_server_resources_advanced`: resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, notifications/resources/list_changed, notifications/resources/updated
+- `reference_client_to_cpp_stdio_server_roots`: tools/list, tools/call, resources/list, resources/read, prompts/list, prompts/get, notifications/roots/list_changed
+- `reference_client_to_cpp_stdio_server_tasks`: tools/list, tools/call, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status

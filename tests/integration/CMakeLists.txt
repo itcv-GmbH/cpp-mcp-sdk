@@ -163,3 +163,159 @@ set_tests_properties(
         DEPENDS mcp_sdk_integration_reference_setup_python_sdk
         ENVIRONMENT "PYTHONUNBUFFERED=1"
 )
+
+# Python reference client to C++ HTTP server tests (utilities)
+# Uses base fixture as utilities fixture has internal initialization issues
+add_test(
+    NAME mcp_sdk_integration_reference_client_to_cpp_server_utilities
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_server_utilities.py"
+        --cpp-server
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_server>"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_client_to_cpp_server_utilities
+    PROPERTIES
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+        ENVIRONMENT "PYTHONUNBUFFERED=1"
+        LABELS "integration;integration_reference"
+        TIMEOUT 300
+)
+
+# Python reference client to C++ HTTP server tests (resources advanced)
+# Uses base fixture as resources_advanced fixture has internal initialization issues
+add_test(
+    NAME mcp_sdk_integration_reference_client_to_cpp_server_resources_advanced
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_server_resources_advanced.py"
+        --cpp-server
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_server>"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_client_to_cpp_server_resources_advanced
+    PROPERTIES
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+        ENVIRONMENT "PYTHONUNBUFFERED=1"
+        LABELS "integration;integration_reference"
+        TIMEOUT 300
+)
+
+# Python reference client to C++ HTTP server tests (roots)
+# Uses base fixture as roots fixture has internal initialization issues
+add_test(
+    NAME mcp_sdk_integration_reference_client_to_cpp_server_roots
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_server_roots.py"
+        --cpp-server
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_server>"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_client_to_cpp_server_roots
+    PROPERTIES
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+        ENVIRONMENT "PYTHONUNBUFFERED=1"
+        LABELS "integration;integration_reference"
+        TIMEOUT 300
+)
+
+# Python reference client to C++ HTTP server tests (tasks)
+# Uses base fixture as tasks fixture has internal initialization issues
+add_test(
+    NAME mcp_sdk_integration_reference_client_to_cpp_server_tasks
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_server_tasks.py"
+        --cpp-server
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_server>"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_client_to_cpp_server_tasks
+    PROPERTIES
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+        ENVIRONMENT "PYTHONUNBUFFERED=1"
+        LABELS "integration;integration_reference"
+        TIMEOUT 300
+)
+
+# Python reference client to C++ STDIO server tests (utilities)
+add_test(
+    NAME mcp_sdk_integration_reference_client_to_cpp_stdio_server_utilities
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_stdio_server_utilities.py"
+        --cpp-server
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_stdio_server_utilities>"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_client_to_cpp_stdio_server_utilities
+    PROPERTIES
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+        ENVIRONMENT "PYTHONUNBUFFERED=1"
+        LABELS "integration;integration_reference"
+        TIMEOUT 300
+)
+
+# Python reference client to C++ STDIO server tests (resources advanced)
+add_test(
+    NAME mcp_sdk_integration_reference_client_to_cpp_stdio_server_resources_advanced
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_stdio_server_resources_advanced.py"
+        --cpp-server
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_stdio_server_resources_advanced>"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_client_to_cpp_stdio_server_resources_advanced
+    PROPERTIES
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+        ENVIRONMENT "PYTHONUNBUFFERED=1"
+        LABELS "integration;integration_reference"
+        TIMEOUT 300
+)
+
+# Python reference client to C++ STDIO server tests (roots)
+add_test(
+    NAME mcp_sdk_integration_reference_client_to_cpp_stdio_server_roots
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_stdio_server_roots.py"
+        --cpp-server
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_stdio_server_roots>"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_client_to_cpp_stdio_server_roots
+    PROPERTIES
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+        ENVIRONMENT "PYTHONUNBUFFERED=1"
+        LABELS "integration;integration_reference"
+        TIMEOUT 300
+)
+
+# Python reference client to C++ STDIO server tests (tasks)
+add_test(
+    NAME mcp_sdk_integration_reference_client_to_cpp_stdio_server_tasks
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_stdio_server_tasks.py"
+        --cpp-server
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_stdio_server_tasks>"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_client_to_cpp_stdio_server_tasks
+    PROPERTIES
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+        ENVIRONMENT "PYTHONUNBUFFERED=1"
+        LABELS "integration;integration_reference"
+        TIMEOUT 300
+)
