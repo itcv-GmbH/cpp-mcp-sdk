@@ -129,7 +129,8 @@ private:
 /// ### requireSessionId=false (single-client mode)
 /// - Uses exactly one Server instance for all requests.
 /// - Treats RequestContext.sessionId as std::nullopt.
-/// - Calls Server::start() once during runner initialization.
+/// - Server instance is created and started on first accepted "initialize" request (not during runner initialization).
+/// - Does not provide per-session isolation; all clients share the same Server instance.
 /// - Calls Server::stop() when the runner is stopped or destroyed.
 ///
 /// ## Combined Runner

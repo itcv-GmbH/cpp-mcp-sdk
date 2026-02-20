@@ -187,6 +187,13 @@ struct StreamableHttpServerRunner::Impl
       // For requireSessionId=false: create/start ONLY on first initialize
       if (requireSessionId)
       {
+        // Explicit validation: sessionId must be present when requireSessionId=true
+        if (!routingSessionId.has_value())
+        {
+          result.response = jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Session ID is required"), request.id);
+          return result;
+        }
+
         if (isNewSession)
         {
           // New session - only create server for initialize request
@@ -197,9 +204,9 @@ struct StreamableHttpServerRunner::Impl
             return result;
           }
 
-          // Create new server for this session
+          // Create new server for this session but do NOT insert into sessionServers yet
+          // This ensures transactional creation - only commit to map after initialize succeeds
           server = serverFactory();
-          sessionServers[*routingSessionId] = server;
 
           // Set up outbound message sender
           server->setOutboundMessageSender(
@@ -215,6 +222,45 @@ struct StreamableHttpServerRunner::Impl
 
           // Start the server before handling any messages
           server->start();
+
+          // Now handle the initialize request - if this throws or returns an error, we clean up
+          try
+          {
+            result.response = server->handleRequest(context, request).get();
+          }
+          catch (...)
+          {
+            // Cleanup: stop the server and do NOT insert into sessionServers
+            try
+            {
+              server->stop();
+            }
+            catch (...)
+            {
+              detail::suppressException();
+            }
+            throw;
+          }
+
+          // Check if the response indicates a successful initialize
+          // If it's an error response, rollback the session creation
+          if (!result.response.has_value() || std::holds_alternative<jsonrpc::ErrorResponse>(*result.response))
+          {
+            // Rollback: stop the server and do NOT insert into sessionServers
+            try
+            {
+              server->stop();
+            }
+            catch (...)
+            {
+              detail::suppressException();
+            }
+            return result;
+          }
+
+          // SUCCESS: Now commit the server to sessionServers
+          sessionServers[*routingSessionId] = server;
+          return result;
         }
         else
         {
@@ -227,6 +273,10 @@ struct StreamableHttpServerRunner::Impl
             return result;
           }
           server = it->second;
+
+          // Handle the request for existing session
+          result.response = server->handleRequest(context, request).get();
+          return result;
         }
       }
       else
