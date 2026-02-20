@@ -31,6 +31,7 @@ struct RootsAssertionsState
   std::atomic<bool> started {false};
   std::atomic<bool> completed {false};
   std::atomic<bool> passed {false};
+  std::atomic<bool> rootsListChangedReceived {false};
   std::mutex mutex;
   std::optional<std::string> failureReason;
   std::thread worker;
@@ -136,7 +137,10 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
     // Shared registry to track server instances created by the runner's factory
     auto serverRegistry = std::make_shared<ServerRegistry>();
 
-    auto makeServer = [&serverRegistry]() -> std::shared_ptr<mcp::Server>
+    // Shared state for assertions (passed to makeServer for notification handler access)
+    auto assertionsState = std::make_shared<RootsAssertionsState>();
+
+    auto makeServer = [&serverRegistry, &assertionsState]() -> std::shared_ptr<mcp::Server>
     {
       mcp::ToolsCapability toolsCapability;
       mcp::ResourcesCapability resourcesCapability;
@@ -216,6 +220,33 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
                                return result;
                              });
 
+      // Register notification handler for roots/list_changed
+      server->registerNotificationHandler("notifications/roots/list_changed",
+                                          [&assertionsState](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Notification &)
+                                          {
+                                            std::scoped_lock lock(assertionsState->mutex);
+                                            assertionsState->rootsListChangedReceived.store(true);
+                                            std::cerr << "MARKER: NOTIFICATION_ROOTS_LIST_CHANGED_RECEIVED" << std::endl;
+                                          });
+
+      // Register a tool for Python client to signal root change
+      mcp::ToolDefinition triggerTool;
+      triggerTool.name = "cpp_trigger_roots_change";
+      triggerTool.description = "Signal that client will mutate roots";
+
+      server->registerTool(std::move(triggerTool),
+                           [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                           {
+                             // Client will now mutate its roots and emit notification
+                             mcp::CallToolResult result;
+                             result.content = mcp::jsonrpc::JsonValue::array();
+                             mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
+                             content["type"] = "text";
+                             content["text"] = "Trigger roots change signal sent";
+                             result.content.push_back(std::move(content));
+                             return result;
+                           });
+
       return server;
     };
 
@@ -224,12 +255,10 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
 
     mcp::StdioServerRunner runner(makeServer, std::move(runnerOptions));
 
-    RootsAssertionsState rootsAssertions;
-
     // Set up a polling worker to wait for session state and run roots assertions
     // The worker polls for the first session to reach kOperating state (after notifications/initialized)
-    rootsAssertions.worker = std::thread(
-      [&runner, &serverRegistry, &rootsAssertions]() -> void
+    assertionsState->worker = std::thread(
+      [&runner, &serverRegistry, &assertionsState]() -> void
       {
         try
         {
@@ -279,44 +308,44 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
           // Run the roots assertions with an empty context
           // The runner's outbound message sender handles routing using stored session ID
           runRootsAssertions(*targetServer, mcp::jsonrpc::RequestContext {});
-          rootsAssertions.passed.store(true);
+          assertionsState->passed.store(true);
         }
         catch (const std::exception &error)
         {
-          std::scoped_lock lock(rootsAssertions.mutex);
-          rootsAssertions.failureReason = error.what();
+          std::scoped_lock lock(assertionsState->mutex);
+          assertionsState->failureReason = error.what();
         }
         catch (...)
         {
-          std::scoped_lock lock(rootsAssertions.mutex);
-          rootsAssertions.failureReason = "unknown roots assertion failure";
+          std::scoped_lock lock(assertionsState->mutex);
+          assertionsState->failureReason = "unknown roots assertion failure";
         }
 
-        rootsAssertions.completed.store(true);
+        assertionsState->completed.store(true);
       });
 
     // Run the server - blocks until EOF on stdin
     runner.run();
 
-    if (rootsAssertions.worker.joinable())
+    if (assertionsState->worker.joinable())
     {
-      rootsAssertions.worker.join();
+      assertionsState->worker.join();
     }
 
     // Check if roots assertions were started
-    if (!rootsAssertions.completed.load())
+    if (!assertionsState->completed.load())
     {
       // The worker might still be running or not started - this is a timeout case
       std::cerr << "cpp_stdio_server_roots_fixture failed: roots assertions did not complete" << '\n';
       return 3;
     }
 
-    if (!rootsAssertions.passed.load())
+    if (!assertionsState->passed.load())
     {
       std::optional<std::string> failureReason;
       {
-        std::scoped_lock lock(rootsAssertions.mutex);
-        failureReason = rootsAssertions.failureReason;
+        std::scoped_lock lock(assertionsState->mutex);
+        failureReason = assertionsState->failureReason;
       }
 
       std::cerr << "cpp_stdio_server_roots_fixture failed: roots assertions failed";
@@ -325,6 +354,17 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
         std::cerr << " (" << *failureReason << ')';
       }
       std::cerr << '\n';
+      return 3;
+    }
+
+    // Validate that we received the roots/list_changed notification
+    if (!assertionsState->rootsListChangedReceived.load())
+    {
+      std::scoped_lock lock(assertionsState->mutex);
+      assertionsState->failureReason = "notifications/roots/list_changed was not received";
+      assertionsState->passed.store(false);
+
+      std::cerr << "cpp_stdio_server_roots_fixture failed: notifications/roots/list_changed was not received" << '\n';
       return 3;
     }
 
