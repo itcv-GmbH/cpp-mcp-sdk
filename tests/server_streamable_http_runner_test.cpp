@@ -281,6 +281,143 @@ TEST_CASE("StreamableHttpServerRunner rejects requests without session when requ
   runner.stop();
 }
 
+TEST_CASE("StreamableHttpServerRunner routes outbound notifications via SSE", "[server][streamable_http_runner]")
+{
+  // Track factory invocations and capture created servers
+  std::atomic<int> factoryCount {0};
+  std::vector<std::shared_ptr<mcp::Server>> createdServers;
+
+  auto countingFactory = [&factoryCount, &createdServers]() -> std::shared_ptr<mcp::Server>
+  {
+    auto server = createMinimalServer();
+    factoryCount++;
+    createdServers.push_back(server);
+    return server;
+  };
+
+  // Create runner with requireSessionId=true
+  mcp::StreamableHttpServerRunnerOptions options;
+  options.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
+  options.transportOptions.http.endpoint.path = "/mcp";
+  options.transportOptions.http.requireSessionId = true;
+
+  mcp::StreamableHttpServerRunner runner(std::move(countingFactory), std::move(options));
+  runner.start();
+
+  const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
+
+  // Create client runtime
+  mcp_transport::HttpClientOptions clientOptions;
+  clientOptions.endpointUrl = baseUrl;
+  mcp_transport::HttpClientRuntime client(std::move(clientOptions));
+
+  // Step 1: Initialize session A (POST initialize), capture sessionIdA
+  mcp_http::ServerResponse initResponseA = client.execute(makeRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeInitializeRequestJson()));
+
+  REQUIRE(initResponseA.statusCode == 200);
+  const std::optional<std::string> sessionIdA = mcp_http::getHeader(initResponseA.headers, mcp_http::kHeaderMcpSessionId);
+  REQUIRE(sessionIdA.has_value());
+  REQUIRE_FALSE(sessionIdA->empty());
+
+  // Send notifications/initialized to complete session initialization
+  mcp_http::ServerResponse notificationInit = client.execute(makeRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeInitializedNotificationJson(), *sessionIdA));
+  REQUIRE(notificationInit.statusCode == 202);
+
+  // Verify factory was called once and server was created
+  REQUIRE(factoryCount == 1);
+  REQUIRE(createdServers.size() == 1);
+
+  // Step 2 & 3: Open SSE stream for session A via GET with Accept, MCP-Session-Id, and MCP-Protocol-Version
+  mcp_http::ServerResponse sseResponse = client.execute(
+    makeRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, *sessionIdA, "text/event-stream", std::nullopt, std::string(mcp::kLatestProtocolVersion)));
+
+  REQUIRE(sseResponse.statusCode == 200);
+
+  // Extract Last-Event-ID from the first SSE response
+  const std::optional<std::string> contentType = mcp_http::getHeader(sseResponse.headers, mcp_http::kHeaderContentType);
+  REQUIRE(contentType.has_value());
+  REQUIRE(*contentType == "text/event-stream");
+
+  // Parse SSE events to get the event ID for polling
+  std::string sseBody = sseResponse.body;
+  REQUIRE(!sseBody.empty());
+
+  auto events = mcp::http::sse::parseEvents(sseBody);
+  REQUIRE(!events.empty());
+
+  // Find the event with an ID (this is the cursor for polling)
+  std::optional<std::string> lastEventId;
+  for (const auto &event : events)
+  {
+    if (event.id.has_value() && !event.id->empty())
+    {
+      lastEventId = event.id;
+      break;
+    }
+  }
+  REQUIRE(lastEventId.has_value());
+
+  // Step 4: Use the captured Server instance for session A
+  REQUIRE(createdServers.size() == 1);
+  auto &serverA = createdServers[0];
+
+  // Step 5: Call sendNotification on the server
+  mcp::jsonrpc::Notification testNotification;
+  testNotification.method = "test/notification";
+  testNotification.params = mcp::jsonrpc::JsonValue::object();
+  (*testNotification.params)["message"] = "hello from server";
+
+  mcp::jsonrpc::RequestContext context;
+  context.sessionId = *sessionIdA;
+  context.protocolVersion = std::string(mcp::kLatestProtocolVersion);
+
+  serverA->sendNotification(context, testNotification);
+
+  // Step 6: Poll the SSE stream using Last-Event-ID
+  mcp_http::ServerResponse polledResponse = client.execute(
+    makeRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, *sessionIdA, "text/event-stream", *lastEventId, std::string(mcp::kLatestProtocolVersion)));
+
+  REQUIRE(polledResponse.statusCode == 200);
+
+  // Step 7: Parse SSE events from polled response
+  std::string polledBody = polledResponse.body;
+  REQUIRE(!polledBody.empty());
+
+  auto polledEvents = mcp::http::sse::parseEvents(polledBody);
+
+  // Find the notification event
+  bool foundNotification = false;
+  for (const auto &event : polledEvents)
+  {
+    if (!event.data.empty())
+    {
+      // Parse event.data as JSON-RPC message
+      auto message = mcp::jsonrpc::parseMessage(event.data);
+
+      // Check if it's a notification with the expected method
+      if (std::holds_alternative<mcp::jsonrpc::Notification>(message))
+      {
+        const auto &receivedNotification = std::get<mcp::jsonrpc::Notification>(message);
+        if (receivedNotification.method == "test/notification")
+        {
+          foundNotification = true;
+          // Verify the params contain our message
+          if (receivedNotification.params.has_value())
+          {
+            REQUIRE(receivedNotification.params->contains("message"));
+            REQUIRE((*receivedNotification.params)["message"].as<std::string>() == "hello from server");
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  REQUIRE(foundNotification);
+
+  runner.stop();
+}
+
 TEST_CASE("StreamableHttpServerRunner initializes on first request when requireSessionId=false", "[server][streamable_http_runner]")
 {
   // Track factory invocations
