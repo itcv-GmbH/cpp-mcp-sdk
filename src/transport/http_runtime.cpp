@@ -383,6 +383,15 @@ struct HttpServerRuntime::Impl
         throw std::runtime_error("HTTP server failed to open listen socket.");
       }
 
+      // Enable SO_REUSEADDR to allow rebinding to the same port after server stops
+      // This is critical for tests that verify port release and rebind
+      acceptor.set_option(asio::socket_base::reuse_address(true), error);
+      if (error)
+      {
+        // Proceed conservatively - some platforms may not support this option
+        // but the server should still function
+      }
+
       const auto bindAddress = options_.endpoint.bindLocalhostOnly ? asio::ip::address_v4::loopback() : asio::ip::make_address_v4(options_.endpoint.bindAddress);
       acceptor.bind(tcp::endpoint {bindAddress, options_.endpoint.port}, error);
       if (error)
