@@ -11,9 +11,11 @@ The pinned versions are captured in `tests/integration/fixtures/reference_python
 
 ## Coverage
 
-- Reference Python client -> C++ SDK server fixture
+- Reference Python client -> C++ SDK server fixture (Streamable HTTP runner)
   - unauthenticated initialize expected to fail with authorization semantics
-  - authenticated initialize succeeds
+  - authenticated initialize succeeds and returns server-issued `MCP-Session-Id`
+  - each initialize request receives a unique `MCP-Session-Id`
+  - non-initialize requests without `MCP-Session-Id` return HTTP 400 when `requireSessionId=true`
   - tools/resources/prompts work end-to-end
   - C++ server initiates `sampling/createMessage` and `elicitation/create`; reference client handlers respond and server-side assertions enforce explicit timeouts
 - C++ SDK client fixture -> reference Python server

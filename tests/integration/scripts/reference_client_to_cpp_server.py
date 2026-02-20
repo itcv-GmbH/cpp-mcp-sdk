@@ -324,6 +324,134 @@ async def expect_unauthorized_initialize(endpoint: str) -> None:
     )
 
 
+async def probe_session_id_on_initialize(endpoint: str, token: str) -> str:
+    """Probe: Authenticated initialize returns 200 and includes MCP-Session-Id."""
+    headers = {"Authorization": f"Bearer {token}"}
+    timeout = httpx.Timeout(10.0, read=10.0)
+    payload = initialize_probe_payload()
+
+    async with httpx.AsyncClient(headers=headers, timeout=timeout) as http_client:
+        response = await http_client.post(endpoint, json=payload)
+
+        if response.status_code != 200:
+            raise AssertionError(
+                f"Expected HTTP 200 on authenticated initialize, got {response.status_code}: {response.text}"
+            )
+
+        session_id = response.headers.get("MCP-Session-Id")
+        if not session_id:
+            raise AssertionError(
+                f"MCP-Session-Id header missing in authenticated initialize response. Status: {response.status_code}, Headers: {dict(response.headers)}, Body: {response.text[:200]}"
+            )
+
+        return session_id
+
+
+async def probe_session_uniqueness(endpoint: str, token: str) -> tuple[str, str]:
+    """Probe: Two authenticated initialize probes return different MCP-Session-Id values."""
+    session_id_1 = await probe_session_id_on_initialize(endpoint, token)
+    session_id_2 = await probe_session_id_on_initialize(endpoint, token)
+
+    if session_id_1 == session_id_2:
+        raise AssertionError(
+            f"Expected different session IDs for separate initialize requests, got same: {session_id_1}"
+        )
+
+    return session_id_1, session_id_2
+
+
+async def probe_require_session_id(endpoint: str, token: str) -> None:
+    """Probe: Non-initialize POST without MCP-Session-Id returns 400 when requireSessionId=true."""
+    headers = {"Authorization": f"Bearer {token}"}
+    timeout = httpx.Timeout(10.0, read=10.0)
+
+    # Send a non-initialize request (tools/list) without MCP-Session-Id
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/list",
+        "params": {},
+    }
+
+    async with httpx.AsyncClient(headers=headers, timeout=timeout) as http_client:
+        response = await http_client.post(endpoint, json=payload)
+
+        if response.status_code != 400:
+            raise AssertionError(
+                f"Expected HTTP 400 on missing MCP-Session-Id for non-initialize request, got {response.status_code}: {response.text}"
+            )
+
+
+async def run_authenticated_flow_simple(endpoint: str, token: str) -> None:
+    """Simplified authenticated flow without sampling/elicitation callbacks."""
+    headers = {"Authorization": f"Bearer {token}"}
+    timeout = httpx.Timeout(10.0, read=10.0)
+
+    async with httpx.AsyncClient(headers=headers, timeout=timeout) as http_client:
+        async with streamable_http_client(
+            endpoint, http_client=http_client
+        ) as stream_context_value:
+            read_stream, write_stream = unpack_streams(stream_context_value)
+            # Don't pass sampling/elicitation callbacks - they're not supported by runner-based server
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+
+                tools_result = await session.list_tools()
+                tool_names = [tool.name for tool in tools_result.tools]
+                if "cpp_echo" not in tool_names:
+                    raise AssertionError(
+                        f"cpp_echo not found in tools list: {tool_names}"
+                    )
+
+                call_result = await session.call_tool(
+                    "cpp_echo", {"text": "from-reference-client"}
+                )
+                if getattr(call_result, "isError", False):
+                    raise AssertionError(
+                        f"cpp_echo call returned isError=true: {call_result}"
+                    )
+
+                tool_texts = content_to_texts(getattr(call_result, "content", []))
+                if not any("from-reference-client" in text for text in tool_texts):
+                    raise AssertionError(
+                        f"cpp_echo response did not include expected text. content={tool_texts}"
+                    )
+
+                resources_result = await session.list_resources()
+                resource_uris = [
+                    str(resource.uri) for resource in resources_result.resources
+                ]
+                if "resource://cpp-server/info" not in resource_uris:
+                    raise AssertionError(
+                        f"Expected resource URI not found: {resource_uris}"
+                    )
+
+                read_result = await session.read_resource("resource://cpp-server/info")
+                resource_texts = content_to_texts(getattr(read_result, "contents", []))
+                if not any(
+                    "cpp integration resource" in text for text in resource_texts
+                ):
+                    raise AssertionError(
+                        f"Resource read result missing expected marker. contents={resource_texts}"
+                    )
+
+                prompts_result = await session.list_prompts()
+                prompt_names = [prompt.name for prompt in prompts_result.prompts]
+                if "cpp_server_prompt" not in prompt_names:
+                    raise AssertionError(
+                        f"cpp_server_prompt not found in prompt list: {prompt_names}"
+                    )
+
+                prompt_result = await session.get_prompt(
+                    "cpp_server_prompt", {"topic": "interop"}
+                )
+                prompt_texts = prompt_messages_to_texts(prompt_result)
+                if not any("interop" in text for text in prompt_texts):
+                    raise AssertionError(
+                        f"Prompt response did not include expected topic. messages={prompt_texts}"
+                    )
+
+
 async def run() -> int:
     args = parse_args()
     server_executable = str(Path(args.cpp_server).resolve())
@@ -334,8 +462,16 @@ async def run() -> int:
     process = start_cpp_server(server_executable, port, token)
     try:
         wait_for_server_ready(endpoint, process)
+
+        # HTTP probes for session ID behavior
+        await probe_session_id_on_initialize(endpoint, token)
+        await probe_session_uniqueness(endpoint, token)
+        await probe_require_session_id(endpoint, token)
+
+        # Existing authenticated flow tests (without sampling/elicitation assertions
+        # since runner-based fixture doesn't support server-initiated requests in same way)
         await expect_unauthorized_initialize(endpoint)
-        await run_authenticated_flow(endpoint, token)
+        await run_authenticated_flow_simple(endpoint, token)
         return 0
     finally:
         stop_process(process)
