@@ -35,75 +35,85 @@ static constexpr std::size_t kIntegralRequestIdHashSeed = 0x9e3779b97f4a7c15ULL;
 static constexpr std::size_t kStringRequestIdHashSeed = 0x85ebca6bULL;
 static constexpr std::size_t kInboundCompletionWorkerCount = 4;
 
-// Dedicated thread for safely destroying thread pools.
+// Singleton class to safely manage a dedicated worker thread for pool deletion tasks.
 // This prevents pool destructor from running on pool worker threads (which crashes Boost.Asio).
-static std::shared_ptr<std::thread> &getDeleterThread()
+// The singleton's destructor properly shuts down the worker thread before static destruction completes.
+class DeletionWorkerSingleton
 {
-  static std::shared_ptr<std::thread> deleterThread = []
+public:
+  static DeletionWorkerSingleton &instance()
   {
-    auto thread = std::make_shared<std::thread>(
-      []
-      {
-        std::function<void()> task;
-        while (true)
-        {
-          {
-            // Sleep in a way that allows shutdown detection
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-          }
-        }
-      });
-    thread->detach();
-    return thread;
-  }();
-  return deleterThread;
-}
+    static DeletionWorkerSingleton instance;
+    return instance;
+  }
 
-// Queue for deletion tasks - thread-safe
-static std::queue<std::function<void()>> &getDeletionQueue()
-{
-  static std::mutex queueMutex;
-  static std::queue<std::function<void()>> queue;
-  return queue;
-}
+  // Post a deletion task to the worker thread
+  void postDeletion(std::function<void()> &&task)
+  {
+    {
+      std::unique_lock lock(mutex_);
+      queue_.push(std::move(task));
+    }
+    cv_.notify_one();
+  }
+
+private:
+  DeletionWorkerSingleton()
+    : worker_([this] { workerLoop(); })
+  {
+  }
+
+  ~DeletionWorkerSingleton()
+  {
+    // Signal shutdown
+    running_.store(false, std::memory_order_relaxed);
+    cv_.notify_one();
+
+    // Join the worker thread - this ensures the worker finishes before destruction completes
+    if (worker_.joinable())
+    {
+      worker_.join();
+    }
+  }
+
+  // Non-copyable, non-movable
+  DeletionWorkerSingleton(const DeletionWorkerSingleton &) = delete;
+  DeletionWorkerSingleton(DeletionWorkerSingleton &&) = delete;
+  auto operator=(const DeletionWorkerSingleton &) -> DeletionWorkerSingleton & = delete;
+  auto operator=(DeletionWorkerSingleton &&) -> DeletionWorkerSingleton & = delete;
+
+  void workerLoop()
+  {
+    while (running_.load(std::memory_order_relaxed))
+    {
+      std::function<void()> task;
+      {
+        std::unique_lock lock(mutex_);
+        cv_.wait_for(lock, std::chrono::milliseconds(100), [this] { return !queue_.empty() || !running_.load(std::memory_order_relaxed); });
+        if (!queue_.empty())
+        {
+          task = std::move(queue_.front());
+          queue_.pop();
+        }
+      }
+      if (task)
+      {
+        task();
+      }
+    }
+  }
+
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  std::queue<std::function<void()>> queue_;
+  std::atomic<bool> running_ {true};
+  std::thread worker_;
+};
 
 // Post a deletion task to the dedicated deleter thread
 static void postDeletion(std::function<void()> &&task)
 {
-  static std::mutex queueMutex;
-  static std::condition_variable cv;
-  static std::queue<std::function<void()>> queue;
-  static std::atomic<bool> running {true};
-
-  static std::thread worker(
-    []
-    {
-      while (running.load(std::memory_order_relaxed))
-      {
-        std::function<void()> task;
-        {
-          std::unique_lock lock(queueMutex);
-          cv.wait_for(lock, std::chrono::milliseconds(100), [] { return !queue.empty(); });
-          if (!queue.empty())
-          {
-            task = std::move(queue.front());
-            queue.pop();
-          }
-        }
-        if (task)
-        {
-          task();
-        }
-      }
-    });
-  static std::once_flag once;
-  std::call_once(once, [] { worker.detach(); });
-
-  {
-    std::unique_lock lock(queueMutex);
-    queue.push(std::move(task));
-  }
-  cv.notify_one();
+  DeletionWorkerSingleton::instance().postDeletion(std::move(task));
 }
 
 static auto senderKey(const RequestContext &context) -> std::string
