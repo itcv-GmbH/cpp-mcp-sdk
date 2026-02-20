@@ -145,20 +145,17 @@ class PopenProcessWrapper(anyio.abc.Process):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._popen.wait)
 
-    async def kill(self) -> None:
-        """Kill the process."""
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._popen.kill)
+    def kill(self) -> None:
+        """Kill the process (synchronous, as per anyio.abc.Process interface)."""
+        self._popen.kill()
 
-    async def terminate(self) -> None:
-        """Terminate the process."""
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._popen.terminate)
+    def terminate(self) -> None:
+        """Terminate the process (synchronous, as per anyio.abc.Process interface)."""
+        self._popen.terminate()
 
-    async def send_signal(self, sig: int) -> None:
-        """Send a signal to the process."""
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._popen.send_signal, sig)
+    def send_signal(self, sig: int) -> None:
+        """Send a signal to the process (synchronous, as per anyio.abc.Process interface)."""
+        self._popen.send_signal(sig)
 
     async def aclose(self) -> None:
         """Close the process and its streams."""
@@ -354,11 +351,7 @@ async def run() -> int:
     if client_error is not None:
         rendered = "".join(traceback.format_exception(client_error))
         print(rendered, file=sys.stderr)
-        if process.stderr:
-            stderr_output = process.stderr.read()
-            if stderr_output:
-                print(f"Server stderr:\n{stderr_output}", file=sys.stderr)
-        # Force kill process on error
+        # Terminate/kill process first to avoid potential deadlock on stderr read
         if process.stdin and not process.stdin.closed:
             try:
                 process.stdin.close()
@@ -366,6 +359,11 @@ async def run() -> int:
                 pass
         process.kill()
         process.wait()
+        # Now safe to read stderr (process is terminated)
+        if process.stderr:
+            stderr_output = process.stderr.read()
+            if stderr_output:
+                print(f"Server stderr:\n{stderr_output}", file=sys.stderr)
         return 1
 
     # MCP spec: stdio shutdown sequence
@@ -393,6 +391,18 @@ async def run() -> int:
             except asyncio.TimeoutError:
                 process.kill()
                 process.wait()
+        # Re-check returncode after wait/terminate/kill sequence
+        if process.returncode is not None and process.returncode != 0:
+            stderr_output = ""
+            if process.stderr:
+                stderr_output = process.stderr.read()
+            print(
+                f"C++ server fixture exited with non-zero code {process.returncode}",
+                file=sys.stderr,
+            )
+            if stderr_output:
+                print(f"Server stderr:\n{stderr_output}", file=sys.stderr)
+            return 1
     elif process.returncode != 0:
         stderr_output = ""
         if process.stderr:
