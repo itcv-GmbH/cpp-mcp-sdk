@@ -106,3 +106,20 @@ set_tests_properties(
         LABELS "integration;integration_reference"
         TIMEOUT 300
 )
+
+add_test(
+    NAME mcp_sdk_integration_reference_coverage_gate
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_coverage_gate.py"
+        --coverage-file
+        "${CMAKE_CURRENT_SOURCE_DIR}/COVERAGE.md"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_coverage_gate
+    PROPERTIES
+        LABELS "integration;integration_reference"
+        TIMEOUT 60
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+)
