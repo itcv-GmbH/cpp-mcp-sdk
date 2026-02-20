@@ -7,10 +7,7 @@
 #include <jsoncons/json.hpp>
 #include <mcp/lifecycle/session.hpp>
 
-namespace mcp
-{
-
-namespace detail
+namespace mcp::detail
 {
 
 // Icon JSON encoding
@@ -34,6 +31,4 @@ namespace detail
 // Server capabilities JSON parsing
 [[nodiscard]] auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> ServerCapabilities;
 
-}  // namespace detail
-
-}  // namespace mcp
+}  // namespace mcp::detail

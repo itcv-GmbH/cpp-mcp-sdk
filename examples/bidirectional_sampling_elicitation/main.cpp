@@ -26,7 +26,7 @@ constexpr std::int64_t kTaskPollIntervalMilliseconds = 250;
 constexpr std::int64_t kTaskTtlMilliseconds = 5000;
 constexpr std::int64_t kSamplingMaxTokens = 64;
 
-auto makeInitializeRequest(std::int64_t requestId = kRequestIdInitialize) -> mcp::jsonrpc::Request
+auto makeInitializeRequest(std::int64_t requestId = kRequestIdInitialize) -> mcp::jsonrpc::Request  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   mcp::jsonrpc::Request request;
   request.id = requestId;
@@ -47,7 +47,7 @@ auto makeInitializeRequest(std::int64_t requestId = kRequestIdInitialize) -> mcp
   return request;
 }
 
-auto completeInitialization(mcp::Server &server) -> void
+auto completeInitialization(mcp::Server &server) -> void  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   static_cast<void>(server.handleRequest(mcp::jsonrpc::RequestContext {}, makeInitializeRequest()).get());
 
@@ -56,7 +56,7 @@ auto completeInitialization(mcp::Server &server) -> void
   server.handleNotification(mcp::jsonrpc::RequestContext {}, initialized);
 }
 
-auto makeSuccessResponse(const mcp::jsonrpc::RequestId &id, mcp::jsonrpc::JsonValue result) -> mcp::jsonrpc::SuccessResponse
+auto makeSuccessResponse(const mcp::jsonrpc::RequestId &id, mcp::jsonrpc::JsonValue result) -> mcp::jsonrpc::SuccessResponse  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   mcp::jsonrpc::SuccessResponse response;
   response.id = id;

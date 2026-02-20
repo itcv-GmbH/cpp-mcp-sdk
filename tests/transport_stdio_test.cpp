@@ -9,6 +9,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/errors.hpp>
+
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/transport/stdio.hpp>
@@ -465,3 +470,7 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
     REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(message));
   }
 }
+
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#endif

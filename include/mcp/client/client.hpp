@@ -77,6 +77,11 @@ public:
   explicit Client(std::shared_ptr<Session> session);
   ~Client() noexcept;
 
+  Client(const Client &) = delete;
+  auto operator=(const Client &) -> Client & = delete;
+  Client(Client &&) = delete;
+  auto operator=(Client &&) -> Client & = delete;
+
   auto session() const noexcept -> const std::shared_ptr<Session> &;
 
   auto attachTransport(std::shared_ptr<transport::Transport> transport) -> void;

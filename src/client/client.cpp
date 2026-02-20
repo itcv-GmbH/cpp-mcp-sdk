@@ -77,6 +77,7 @@ static auto clientDeletionPool() -> boost::asio::thread_pool &
 
 static auto deferClientDeletion(Client *client) -> void
 {
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) - Intentional ownership transfer to async worker
   boost::asio::post(clientDeletionPool(), [client]() -> void { delete client; });
 }
 
@@ -1174,6 +1175,7 @@ private:
 
 auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 {
+  // NOLINTNEXTLINE(modernize-return-braced-init-list)
   return std::shared_ptr<Client>(new Client(std::make_shared<Session>(std::move(options))),
                                  [](Client *client) -> void
                                  {
@@ -1196,6 +1198,7 @@ auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
                                      return;
                                    }
 
+                                   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) - Intentional deletion in cleanup lambda
                                    delete client;
                                  });
 }
@@ -1316,8 +1319,10 @@ Client::Client(std::shared_ptr<Session> session)
       return makeReadyResponseFuture(jsonrpc::Response {std::move(response)});
     });
 
+  // NOLINTNEXTLINE(readability-function-cognitive-complexity)
   router_.registerRequestHandler(
     std::string(kSamplingCreateMessageMethod),
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     [this](const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> std::future<jsonrpc::Response>
     {
       const auto negotiatedCapabilities = negotiatedClientCapabilities();

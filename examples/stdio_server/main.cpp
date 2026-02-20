@@ -22,7 +22,7 @@ namespace
 
 constexpr std::int64_t kDelayedEchoMilliseconds = 300;
 
-auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
+auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
   content["type"] = "text";
@@ -30,13 +30,13 @@ auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
   return content;
 }
 
-auto writeMessage(const mcp::jsonrpc::Message &message) -> void
+auto writeMessage(const mcp::jsonrpc::Message &message) -> void  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   std::cout << mcp::jsonrpc::serializeMessage(message) << '\n';
   std::cout.flush();
 }
 
-auto writeResponse(const mcp::jsonrpc::Response &response) -> void
+auto writeResponse(const mcp::jsonrpc::Response &response) -> void  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   if (std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response))
   {
@@ -49,6 +49,7 @@ auto writeResponse(const mcp::jsonrpc::Response &response) -> void
 
 }  // namespace
 
+// NOLINTNEXTLINE(bugprone-exception-escape)
 auto main() -> int
 {
   mcp::ToolsCapability toolsCapability;

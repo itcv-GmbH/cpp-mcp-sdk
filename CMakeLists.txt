@@ -112,10 +112,6 @@ if(TARGET Boost::process)
     set(MCP_SDK_USES_BOOST_PROCESS ON)
 endif()
 
-if(WIN32)
-    target_link_libraries(mcp_sdk PUBLIC bcrypt)
-endif()
-
 target_include_directories(mcp_sdk
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

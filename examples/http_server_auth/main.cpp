@@ -91,7 +91,7 @@ struct Options
 
 constexpr std::uint64_t kMaxPort = std::numeric_limits<std::uint16_t>::max();
 
-auto parsePort(const std::string &value) -> std::uint16_t
+auto parsePort(const std::string &value) -> std::uint16_t  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   const auto parsed = static_cast<std::uint64_t>(std::strtoull(value.c_str(), nullptr, 10));  // NOLINT(cert-err34-c)
   if (parsed > kMaxPort)
@@ -102,51 +102,55 @@ auto parsePort(const std::string &value) -> std::uint16_t
   return static_cast<std::uint16_t>(parsed);
 }
 
-auto parseOptions(const std::vector<std::string> &arguments) -> Options
+auto parseOptions(const std::vector<std::string> &arguments) -> Options  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   Options options;
 
   for (std::size_t index = 0; index < arguments.size(); ++index)
   {
     const std::string_view argument = arguments[index];
-    const auto requireValue = [&arguments, &index](std::string_view name) -> std::string
+    const auto requireValue = [&arguments, index](std::string_view name) -> std::string
     {
       if (index + 1 >= arguments.size())
       {
         throw std::invalid_argument("Missing value for argument: " + std::string(name));
       }
 
-      ++index;
-      return arguments[index];
+      return arguments[index + 1];
     };
 
     if (argument == "--bind")
     {
       options.bindAddress = requireValue(argument);
+      ++index;
       continue;
     }
 
     if (argument == "--port")
     {
       options.port = parsePort(requireValue(argument));
+      ++index;
       continue;
     }
 
     if (argument == "--path")
     {
       options.path = requireValue(argument);
+      ++index;
       continue;
     }
 
     if (argument == "--tls-cert")
     {
       options.tlsCert = requireValue(argument);
+      ++index;
       continue;
     }
 
     if (argument == "--tls-key")
     {
       options.tlsKey = requireValue(argument);
+      ++index;
       continue;
     }
 
@@ -168,7 +172,7 @@ auto parseOptions(const std::vector<std::string> &arguments) -> Options
 
 }  // namespace
 
-auto main(int argc, char **argv) -> int
+auto main(int argc, char *argv[]) -> int
 {
   try
   {
@@ -176,7 +180,7 @@ auto main(int argc, char **argv) -> int
     arguments.reserve(static_cast<std::size_t>(argc > 1 ? argc - 1 : 0));
     for (int index = 1; index < argc; ++index)
     {
-      arguments.emplace_back(argv[index]);
+      arguments.emplace_back(argv[index]);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     }
 
     const Options options = parseOptions(arguments);

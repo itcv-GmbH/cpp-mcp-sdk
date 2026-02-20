@@ -1,21 +1,19 @@
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include <jsoncons/json.hpp>
+#include <jsoncons/json.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/detail/initialize_codec.hpp>
 #include <mcp/lifecycle/session.hpp>
 
-namespace mcp
-{
-
-namespace detail
+namespace mcp::detail
 {
 
 namespace
 {
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+// NOLINTNEXTLINE(readability-function-cognitive-complexity, llvm-prefer-static-over-anonymous-namespace, misc-include-cleaner)
 auto parseIcon(const jsoncons::json &iconJson) -> std::optional<Icon>
 {
   if (!iconJson.is_object() || !iconJson.contains("src") || !iconJson["src"].is_string())
@@ -516,6 +514,4 @@ auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> ServerCa
   return {logging, completions, prompts, resources, tools, tasks, std::move(experimental)};
 }
 
-}  // namespace detail
-
-}  // namespace mcp
+}  // namespace mcp::detail

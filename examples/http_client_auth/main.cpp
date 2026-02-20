@@ -9,7 +9,6 @@
 #include <string_view>
 #include <vector>
 
-#include <jsoncons/json.hpp>
 #include <mcp/auth/loopback_receiver.hpp>
 #include <mcp/auth/oauth_client.hpp>
 #include <mcp/auth/protected_resource_metadata.hpp>
@@ -27,9 +26,10 @@ constexpr std::uint16_t kHttpStatusBadRequest = 400;
 constexpr std::uint16_t kHttpStatusNotFound = 404;
 constexpr int kLoopbackTimeoutSeconds = 10;
 constexpr int kHexBase = 16;
+constexpr int kHexOffset = 10;
 constexpr std::string_view kMockAuthBaseUrl = "https://127.0.0.1:9443";
 
-auto hexValue(char c) -> int
+auto hexValue(char c) -> int  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   if (c >= '0' && c <= '9')
   {
@@ -37,17 +37,17 @@ auto hexValue(char c) -> int
   }
   if (c >= 'a' && c <= 'f')
   {
-    return kHexBase - 6 + (c - 'a');
+    return kHexBase - kHexOffset + (c - 'a');
   }
   if (c >= 'A' && c <= 'F')
   {
-    return kHexBase - 6 + (c - 'A');
+    return kHexBase - kHexOffset + (c - 'A');
   }
 
   return -1;
 }
 
-auto decodeUrlComponent(std::string_view encoded) -> std::string
+auto decodeUrlComponent(std::string_view encoded) -> std::string  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   std::string decoded;
   decoded.reserve(encoded.size());
@@ -66,7 +66,8 @@ auto decodeUrlComponent(std::string_view encoded) -> std::string
       const int low = hexValue(encoded[i + 2]);
       if (high >= 0 && low >= 0)
       {
-        const auto byte = static_cast<unsigned int>((static_cast<unsigned int>(high) << 4U) | static_cast<unsigned int>(low));
+        const auto byte =
+          static_cast<unsigned int>((static_cast<unsigned int>(high) << 4) | static_cast<unsigned int>(low));  // NOLINT(hicpp-signed-bitwise,readability-redundant-casting)
         decoded.push_back(static_cast<char>(byte));
         i += 2;
         continue;
@@ -79,14 +80,14 @@ auto decodeUrlComponent(std::string_view encoded) -> std::string
   return decoded;
 }
 
-auto toJsonString(const mcp::jsonrpc::JsonValue &value) -> std::string
+auto toJsonString(const mcp::jsonrpc::JsonValue &value) -> std::string  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   std::string encoded;
   jsoncons::encode_json(value, encoded);
   return encoded;
 }
 
-auto queryParameter(std::string_view pathAndQuery, std::string_view key) -> std::optional<std::string>
+auto queryParameter(std::string_view pathAndQuery, std::string_view key) -> std::optional<std::string>  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   const std::size_t queryStart = pathAndQuery.find('?');
   if (queryStart == std::string_view::npos || queryStart + 1 >= pathAndQuery.size())
@@ -120,7 +121,7 @@ auto queryParameter(std::string_view pathAndQuery, std::string_view key) -> std:
   return std::nullopt;
 }
 
-auto extractPathAndQuery(std::string_view absoluteUrl) -> std::string
+auto extractPathAndQuery(std::string_view absoluteUrl) -> std::string  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   const std::size_t schemePos = absoluteUrl.find("://");
   const std::size_t authorityStart = schemePos == std::string_view::npos ? 0 : schemePos + 3;
@@ -133,6 +134,7 @@ auto extractPathAndQuery(std::string_view absoluteUrl) -> std::string
   return std::string(absoluteUrl.substr(pathStart));
 }
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace, hicpp-special-member-functions)
 auto executeMockAuthorizationServerRequest(std::string_view method, std::string_view absoluteUrl, std::string_view body = std::string_view {}) -> mcp_http::ServerResponse
 {
   static_cast<void>(body);
@@ -206,7 +208,7 @@ auto executeMockAuthorizationServerRequest(std::string_view method, std::string_
   return notFound;
 }
 
-auto executeTokenHttpRequest(const mcp::auth::OAuthTokenHttpRequest &request) -> mcp::auth::OAuthHttpResponse
+auto executeTokenHttpRequest(const mcp::auth::OAuthTokenHttpRequest &request) -> mcp::auth::OAuthHttpResponse  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   const mcp_http::ServerResponse runtimeResponse = executeMockAuthorizationServerRequest(request.method, request.url, request.body);
 
@@ -222,7 +224,7 @@ auto executeTokenHttpRequest(const mcp::auth::OAuthTokenHttpRequest &request) ->
   return response;
 }
 
-auto executeDiscoveryRequest(const mcp::auth::DiscoveryHttpRequest &request) -> mcp::auth::DiscoveryHttpResponse
+auto executeDiscoveryRequest(const mcp::auth::DiscoveryHttpRequest &request) -> mcp::auth::DiscoveryHttpResponse  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   const mcp_http::ServerResponse runtimeResponse = executeMockAuthorizationServerRequest(request.method, request.url);
 
@@ -239,6 +241,8 @@ auto executeDiscoveryRequest(const mcp::auth::DiscoveryHttpRequest &request) -> 
 }
 
 }  // namespace
+
+#include <jsoncons/encode_json.hpp>
 
 auto main() -> int
 {

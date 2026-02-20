@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <exception>
 #include <iomanip>
+#include <ios>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -21,7 +22,6 @@
 #include <mcp/auth/oauth_server.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
-#include <mcp/lifecycle/session.hpp>
 #include <mcp/security/crypto_random.hpp>
 #include <mcp/transport/http.hpp>
 
@@ -29,9 +29,7 @@
 #  define MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY 0
 #endif
 
-namespace mcp::transport
-{
-namespace http
+namespace mcp::transport::http
 {
 enum class StreamKind : std::uint8_t
 {
@@ -515,7 +513,7 @@ static auto extractProtocolVersionFromInitializeResult(const jsonrpc::JsonValue 
     return std::nullopt;
   }
 
-  return protocolVersion;
+  return protocolVersion;  // NOLINT(performance-no-automatic-move)
 }
 
 static auto toRequestContext(const RequestValidationResult &validation) -> jsonrpc::RequestContext
@@ -1265,7 +1263,7 @@ struct StreamableHttpServer::Impl
 
         if (std::holds_alternative<jsonrpc::SuccessResponse>(responseMessage))
         {
-          const jsonrpc::SuccessResponse &successResponse = std::get<jsonrpc::SuccessResponse>(responseMessage);
+          const auto &successResponse = std::get<jsonrpc::SuccessResponse>(responseMessage);
           // Extract protocol version from the result
           negotiatedProtocolVersion = extractProtocolVersionFromInitializeResult(successResponse.result);
           isInitializeSuccess = true;
@@ -1319,7 +1317,7 @@ struct StreamableHttpServer::Impl
         // Check if the response is a successful initialize response
         if (std::holds_alternative<jsonrpc::SuccessResponse>(responseMessage))
         {
-          const jsonrpc::SuccessResponse &successResponse = std::get<jsonrpc::SuccessResponse>(responseMessage);
+          const auto &successResponse = std::get<jsonrpc::SuccessResponse>(responseMessage);
           // Extract protocol version from the result
           negotiatedProtocolVersionForSse = extractProtocolVersionFromInitializeResult(successResponse.result);
           if (negotiatedProtocolVersionForSse.has_value())
@@ -1687,6 +1685,4 @@ auto StreamableHttpServer::enqueueServerMessage(const jsonrpc::Message &message,
   return impl_->enqueueServerMessage(message, sessionId);
 }
 
-}  // namespace http
-
-}  // namespace mcp::transport
+}  // namespace mcp::transport::http
