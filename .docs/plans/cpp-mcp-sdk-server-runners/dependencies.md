@@ -25,7 +25,7 @@
 
 ## Phase 6: Integration / Interop Coverage (Blocked by Phases 2 and 4)
 - [x] `task-016`: Update Reference Interop Fixture to Use HTTP Runner (Depends on: `task-005`, `task-014`)
-- [ ] `task-017`: Add Reference Interop Tests for STDIO Runner (Depends on: `task-003`)
+- [x] `task-017`: Add Reference Interop Tests for STDIO Runner (Depends on: `task-003`)
 
 ## Phase 7: Build Wiring + Full Verification (Blocked by all prior phases)
 - [ ] `task-010`: Wire New Sources/Tests into CMake (Depends on: `task-004`, `task-006`, `task-013`, `task-015`)
