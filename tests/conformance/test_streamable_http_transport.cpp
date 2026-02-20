@@ -545,3 +545,102 @@ TEST_CASE("Streamable HTTP TLS handshake and verification", "[conformance][trans
   const mcp_transport::HttpClientRuntime defaultClient(std::move(defaultClientOptions));
   REQUIRE_THROWS(defaultClient.execute(makeRuntimePostRequest()));
 }
+
+TEST_CASE("Streamable HTTP session issuance and multi-session routing", "[conformance][transport][http]")
+{
+  mcp_http::StreamableHttpServerOptions serverOptions;
+  serverOptions.http.requireSessionId = true;
+
+  mcp_http::StreamableHttpServer server(serverOptions);
+  server.setRequestHandler(
+    [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> mcp_http::StreamableRequestResult
+    {
+      mcp_http::StreamableRequestResult result;
+
+      if (request.method == "initialize")
+      {
+        mcp::jsonrpc::SuccessResponse response;
+        response.id = request.id;
+        response.result = mcp::jsonrpc::JsonValue::object();
+        response.result["protocolVersion"] = std::string(mcp::kLatestProtocolVersion);
+        response.result["capabilities"] = mcp::jsonrpc::JsonValue::object();
+        response.result["serverInfo"] = mcp::jsonrpc::JsonValue::object();
+        response.result["serverInfo"]["name"] = "conformance-server";
+        response.result["serverInfo"]["version"] = "1.0.0";
+        result.response = response;
+      }
+      else
+      {
+        // For other requests, just return an error (we're testing transport, not handler)
+        mcp::jsonrpc::ErrorResponse error;
+        error.id = request.id;
+        error.error.code = -32601;  // Method not found
+        error.error.message = "Method not found";
+        result.response = error;
+      }
+
+      return result;
+    });
+
+  // Helper to make initialize request
+  auto makeInitializeRequest = [&server](std::int64_t id) -> mcp_http::ServerResponse
+  {
+    mcp::jsonrpc::Request request;
+    request.id = id;
+    request.method = "initialize";
+    request.params = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["protocolVersion"] = std::string(mcp::kLatestProtocolVersion);
+    (*request.params)["capabilities"] = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["clientInfo"] = mcp::jsonrpc::JsonValue::object();
+    (*request.params)["clientInfo"]["name"] = "conformance-client";
+    (*request.params)["clientInfo"]["version"] = "1.0.0";
+
+    const std::string body = mcp::jsonrpc::serializeMessage(mcp::jsonrpc::Message {request});
+    return server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", body));
+  };
+
+  // Step 1: Issue initialize request A without session ID, expect MCP-Session-Id in response
+  const mcp_http::ServerResponse initResponseA = makeInitializeRequest(1);
+  REQUIRE(initResponseA.statusCode == 200);
+  const std::optional<std::string> sessionIdA = mcp_http::getHeader(initResponseA.headers, mcp_http::kHeaderMcpSessionId);
+  REQUIRE(sessionIdA.has_value());
+  REQUIRE_FALSE(sessionIdA->empty());
+
+  // Step 2: Issue initialize request B without session ID, expect different MCP-Session-Id
+  const mcp_http::ServerResponse initResponseB = makeInitializeRequest(2);
+  REQUIRE(initResponseB.statusCode == 200);
+  const std::optional<std::string> sessionIdB = mcp_http::getHeader(initResponseB.headers, mcp_http::kHeaderMcpSessionId);
+  REQUIRE(sessionIdB.has_value());
+  REQUIRE_FALSE(sessionIdB->empty());
+
+  // Verify the two session IDs are different
+  REQUIRE(*sessionIdA != *sessionIdB);
+
+  // Step 3: Send notifications/initialized with each session ID, both should return HTTP 202
+  const mcp_http::ServerResponse notificationA =
+    server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeNotificationBody("notifications/initialized"), *sessionIdA));
+  REQUIRE(notificationA.statusCode == 202);
+
+  const mcp_http::ServerResponse notificationB =
+    server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeNotificationBody("notifications/initialized"), *sessionIdB));
+  REQUIRE(notificationB.statusCode == 202);
+
+  // Step 4: Send a non-initialize request without MCP-Session-Id, expect HTTP 400
+  const std::string pingBody = makeRequestBody(3, "ping");
+  const mcp_http::ServerResponse missingSessionResponse = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", pingBody));
+  REQUIRE(missingSessionResponse.statusCode == 400);
+
+  // Step 5: Send HTTP DELETE to terminate session A, expect HTTP 204
+  const mcp_http::ServerResponse deleteResponse = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kDelete, "/mcp", std::nullopt, *sessionIdA));
+  REQUIRE(deleteResponse.statusCode == 204);
+
+  // Step 6: After termination, requests with session A should return HTTP 404
+  const mcp_http::ServerResponse terminatedNotification =
+    server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeNotificationBody("notifications/initialized"), *sessionIdA));
+  REQUIRE(terminatedNotification.statusCode == 404);
+
+  // But session B should still work
+  const mcp_http::ServerResponse stillActiveNotification =
+    server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeNotificationBody("notifications/initialized"), *sessionIdB));
+  REQUIRE(stillActiveNotification.statusCode == 202);
+}
