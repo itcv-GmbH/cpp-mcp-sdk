@@ -52,6 +52,8 @@ struct StdioServerRunner::Impl
       errorStream.flush();
     }
   }
+
+  auto processMessage(const jsonrpc::Message &message, const jsonrpc::RequestContext &context, std::ostream &output, std::ostream &errorStream) const -> void;
 };
 
 StdioServerRunner::StdioServerRunner(ServerFactory serverFactory)
@@ -75,16 +77,58 @@ auto StdioServerRunner::run() -> void
   run(std::cin, std::cout, std::cerr);
 }
 
+namespace
+{
+
+/// RAII guard to ensure server stop is called on all exit paths
+class ServerStopGuard final
+{
+public:
+  explicit ServerStopGuard(std::shared_ptr<Server> serverIn)
+    : server(std::move(serverIn))
+  {
+  }
+
+  ~ServerStopGuard() noexcept
+  {
+    if (server != nullptr)
+    {
+      try
+      {
+        server->stop();
+      }
+      catch (...)
+      {
+        // Suppress all exceptions from stop() - it must not throw from destructor
+      }
+    }
+  }
+
+  // Non-copyable, non-movable
+  ServerStopGuard(const ServerStopGuard &) = delete;
+  auto operator=(const ServerStopGuard &) -> ServerStopGuard & = delete;
+  ServerStopGuard(ServerStopGuard &&) = delete;
+  auto operator=(ServerStopGuard &&) -> ServerStopGuard & = delete;
+
+private:
+  std::shared_ptr<Server> server;
+};
+
+}  // namespace
+
 auto StdioServerRunner::run(std::istream &input, std::ostream &output, std::ostream &errorStream) -> void
 {
   // Create exactly one Server instance via the factory
   impl_->server = impl_->serverFactory();
 
   // Set up the outbound message sender to write serialized JSON-RPC to output
-  impl_->server->setOutboundMessageSender([&output](const jsonrpc::RequestContext &, const jsonrpc::Message &message) { Impl::writeMessage(message, output); });
+  impl_->server->setOutboundMessageSender([&output](const jsonrpc::RequestContext &, const jsonrpc::Message &message) -> void { Impl::writeMessage(message, output); });
 
   // Call server->start() before processing messages
   impl_->server->start();
+
+  // RAII guard ensures server->stop() is called on all exit paths (including exceptions)
+  ServerStopGuard stopGuard(impl_->server);
 
   const auto &limits = impl_->options.transportOptions.limits;
   const auto maxMessageSize = limits.maxMessageSizeBytes;
@@ -114,8 +158,8 @@ auto StdioServerRunner::run(std::istream &input, std::ostream &output, std::ostr
       break;
     }
 
-    // Reject lines that exceed maxMessageSizeBytes before parsing
-    if (maxMessageSize > 0 && line.size() > static_cast<std::size_t>(maxMessageSize))
+    // Reject lines that exceed maxMessageSizeBytes before parsing (unconditionally enforced)
+    if (line.size() > static_cast<std::size_t>(maxMessageSize))
     {
       Impl::writeMessage(jsonrpc::Message {jsonrpc::makeUnknownIdErrorResponse(
                            jsonrpc::makeParseError(std::nullopt, "Message exceeds maximum size limit of " + std::to_string(maxMessageSize) + " bytes"))},
@@ -127,86 +171,84 @@ auto StdioServerRunner::run(std::istream &input, std::ostream &output, std::ostr
     {
       const jsonrpc::Message message = jsonrpc::parseMessage(line);
 
-      if (std::holds_alternative<jsonrpc::Request>(message))
-      {
-        const auto &request = std::get<jsonrpc::Request>(message);
-        try
-        {
-          const jsonrpc::Response response = impl_->server->handleRequest(context, request).get();
-          // Write response - convert Response variant to Message variant
-          if (std::holds_alternative<jsonrpc::SuccessResponse>(response))
-          {
-            Impl::writeMessage(jsonrpc::Message {std::get<jsonrpc::SuccessResponse>(response)}, output);
-          }
-          else
-          {
-            Impl::writeMessage(jsonrpc::Message {std::get<jsonrpc::ErrorResponse>(response)}, output);
-          }
-        }
-        catch (const std::exception &error)
-        {
-          impl_->writeError(error, errorStream);
-          // Emit internal error response with the original request id
-          Impl::writeMessage(jsonrpc::Message {jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, std::string {"Internal error: "} + error.what()), request.id)},
-                             output);
-        }
-      }
-      else if (std::holds_alternative<jsonrpc::Notification>(message))
-      {
-        const auto &notification = std::get<jsonrpc::Notification>(message);
-        try
-        {
-          impl_->server->handleNotification(context, notification);
-        }
-        catch (const std::exception &error)
-        {
-          impl_->writeError(error, errorStream);
-          // For notification dispatch exceptions, emit no output
-        }
-      }
-      else if (std::holds_alternative<jsonrpc::SuccessResponse>(message))
-      {
-        const auto response = jsonrpc::Response {std::get<jsonrpc::SuccessResponse>(message)};
-        try
-        {
-          static_cast<void>(impl_->server->handleResponse(context, response));
-        }
-        catch (const std::exception &error)
-        {
-          impl_->writeError(error, errorStream);
-          // For response dispatch exceptions, emit no output
-        }
-      }
-      else if (std::holds_alternative<jsonrpc::ErrorResponse>(message))
-      {
-        const auto response = jsonrpc::Response {std::get<jsonrpc::ErrorResponse>(message)};
-        try
-        {
-          static_cast<void>(impl_->server->handleResponse(context, response));
-        }
-        catch (const std::exception &error)
-        {
-          impl_->writeError(error, errorStream);
-          // For response dispatch exceptions, emit no output
-        }
-      }
+      impl_->processMessage(message, context, output, errorStream);
     }
     catch (const std::exception &error)
     {
       impl_->writeError(error, errorStream);
-      // Emit parse error response with id:null (unknown id)
-      Impl::writeMessage(jsonrpc::Message {jsonrpc::makeUnknownIdErrorResponse(jsonrpc::makeParseError(std::nullopt, std::string {"Parse error: "} + error.what()))}, output);
+      // Emit parse error response with fixed non-sensitive message
+      Impl::writeMessage(jsonrpc::Message {jsonrpc::makeUnknownIdErrorResponse(jsonrpc::makeParseError(std::nullopt, "Parse error"))}, output);
     }
   }
 
-  // If we had a successful read but then got EOF without a trailing newline
-  if (input.eof() && hadSuccessfulRead && !line.empty() && !impl_->stopRequested.load())
-  {
-    // This case is handled above - we already emitted the error
-  }
+  // Guard destructor will call server->stop() on exit
+  (void)stopGuard;
+}
 
-  // Call server->stop() on exit
-  impl_->server->stop();
+auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, const jsonrpc::RequestContext &context, std::ostream &output, std::ostream &errorStream) const -> void
+{
+  if (std::holds_alternative<jsonrpc::Request>(message))
+  {
+    const auto &request = std::get<jsonrpc::Request>(message);
+    try
+    {
+      const jsonrpc::Response response = server->handleRequest(context, request).get();
+      // Write response - convert Response variant to Message variant
+      if (std::holds_alternative<jsonrpc::SuccessResponse>(response))
+      {
+        Impl::writeMessage(jsonrpc::Message {std::get<jsonrpc::SuccessResponse>(response)}, output);
+      }
+      else
+      {
+        Impl::writeMessage(jsonrpc::Message {std::get<jsonrpc::ErrorResponse>(response)}, output);
+      }
+    }
+    catch (const std::exception &error)
+    {
+      writeError(error, errorStream);
+      // Emit internal error response with fixed non-sensitive message
+      Impl::writeMessage(jsonrpc::Message {jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Internal error"), request.id)}, output);
+    }
+  }
+  else if (std::holds_alternative<jsonrpc::Notification>(message))
+  {
+    const auto &notification = std::get<jsonrpc::Notification>(message);
+    try
+    {
+      server->handleNotification(context, notification);
+    }
+    catch (const std::exception &error)
+    {
+      writeError(error, errorStream);
+      // For notification dispatch exceptions, emit no output
+    }
+  }
+  else if (std::holds_alternative<jsonrpc::SuccessResponse>(message))
+  {
+    const auto response = jsonrpc::Response {std::get<jsonrpc::SuccessResponse>(message)};
+    try
+    {
+      static_cast<void>(server->handleResponse(context, response));
+    }
+    catch (const std::exception &error)
+    {
+      writeError(error, errorStream);
+      // For response dispatch exceptions, emit no output
+    }
+  }
+  else if (std::holds_alternative<jsonrpc::ErrorResponse>(message))
+  {
+    const auto response = jsonrpc::Response {std::get<jsonrpc::ErrorResponse>(message)};
+    try
+    {
+      static_cast<void>(server->handleResponse(context, response));
+    }
+    catch (const std::exception &error)
+    {
+      writeError(error, errorStream);
+      // For response dispatch exceptions, emit no output
+    }
+  }
 }
 
 auto StdioServerRunner::startAsync() -> std::thread
