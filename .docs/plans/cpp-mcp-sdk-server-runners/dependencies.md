@@ -5,8 +5,8 @@
 - [x] `task-002`: Define ServerFactory Contract + Session Isolation Rules
 
 ## Phase 2: Streamable HTTP Session Foundation (Blocked by Phase 1)
-- [ ] `task-014`: Implement Server-Issued MCP-Session-Id on Initialize (Transport)
-- [ ] `task-015`: Add Transport Conformance Tests for Session Issuance + Multi-Session Routing (Depends on: `task-014`)
+- [x] `task-014`: Implement Server-Issued MCP-Session-Id on Initialize (Transport)
+- [x] `task-015`: Add Transport Conformance Tests for Session Issuance + Multi-Session Routing (Depends on: `task-014`)
 
 ## Phase 3: STDIO Runner (Blocked by Phase 1)
 - [ ] `task-003`: Implement STDIO Server Runner (Blocking + Async)
