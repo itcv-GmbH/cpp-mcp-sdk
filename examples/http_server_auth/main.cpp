@@ -171,6 +171,8 @@ auto parseOptions(const std::vector<std::string> &arguments) -> Options  // NOLI
   return options;
 }
 
+}  // namespace
+
 auto createServer() -> std::shared_ptr<mcp::Server>
 {
   mcp::ToolsCapability toolsCapability;
@@ -211,8 +213,6 @@ auto createServer() -> std::shared_ptr<mcp::Server>
 
   return server;
 }
-
-}  // namespace
 
 auto main(int argc, char *argv[]) -> int
 {

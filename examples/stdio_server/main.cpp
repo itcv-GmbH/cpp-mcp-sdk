@@ -7,7 +7,6 @@
 #include <string>
 #include <thread>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <mcp/jsonrpc/messages.hpp>
@@ -30,6 +29,8 @@ auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue  // NOL
   content["text"] = text;
   return content;
 }
+
+}  // namespace
 
 auto createServer() -> std::shared_ptr<mcp::Server>
 {
@@ -140,8 +141,6 @@ auto createServer() -> std::shared_ptr<mcp::Server>
 
   return server;
 }
-
-}  // namespace
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
 auto main() -> int
