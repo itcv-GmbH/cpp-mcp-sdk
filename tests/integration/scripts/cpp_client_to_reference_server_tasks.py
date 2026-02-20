@@ -105,6 +105,33 @@ def run_cpp_client(command: list[str]) -> tuple[int, str]:
     return completed.returncode, combined_output
 
 
+def test_unauthenticated(endpoint: str) -> bool:
+    """Test that unauthenticated requests fail with 401."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-11-25",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0.0"},
+        },
+    }
+
+    try:
+        response = httpx.post(endpoint, json=payload, timeout=5.0)
+
+        if response.status_code == 401:
+            print("✓ Unauthenticated request correctly rejected with 401")
+            return True
+        else:
+            print(f"✗ Expected 401, got {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"✗ Unauthenticated request failed with exception: {e}")
+        return False
+
+
 def run() -> int:
     args = parse_args()
     cpp_client = str(Path(args.cpp_client).resolve())
@@ -136,6 +163,10 @@ def run() -> int:
 
     try:
         wait_for_server_ready(endpoint, server_process)
+
+        # Test unauthenticated access
+        if not test_unauthenticated(endpoint):
+            return 1
 
         # Run C++ client fixture with authentication
         command = [
