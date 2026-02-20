@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -166,8 +167,10 @@ struct StreamableHttpServerRunner::Impl
 
     try
     {
-      // Check if this is an initialize request for a new session (only for requireSessionId=true)
+      // Determine if this is an initialize request
       const bool isInitializeRequest = (request.method == "initialize");
+
+      // Determine if this is a new session (only when requireSessionId=true and no server exists yet)
       const bool isNewSession = [&]() -> bool
       {
         if (!requireSessionId || !routingSessionId.has_value())
@@ -180,39 +183,70 @@ struct StreamableHttpServerRunner::Impl
 
       std::shared_ptr<Server> server;
 
-      // For requireSessionId=true: create/start on first initialize for new session
-      // For requireSessionId=false: use single server, start on first request
-      if (requireSessionId && isNewSession)
+      // For requireSessionId=true: create/start ONLY on first initialize for new session
+      // For requireSessionId=false: create/start ONLY on first initialize
+      if (requireSessionId)
       {
-        // Create new server for this session
-        server = serverFactory();
-        sessionServers[*routingSessionId] = server;
-
-        // Set up outbound message sender
-        server->setOutboundMessageSender(
-          [this, sessionId = *routingSessionId](const jsonrpc::RequestContext &msgContext, const jsonrpc::Message &message) -> void
+        if (isNewSession)
+        {
+          // New session - only create server for initialize request
+          if (!isInitializeRequest)
           {
-            // Use the session ID from the message context if available, otherwise use the stored session ID
-            std::optional<std::string> targetSessionId = msgContext.sessionId.has_value() ? msgContext.sessionId : sessionId;
-            if (!streamableServer.enqueueServerMessage(message, targetSessionId))
-            {
-              // Log error but don't throw - server-initiated messages are best-effort
-            }
-          });
+            // Non-initialize request for new session - return error
+            result.response = jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Session not initialized"), request.id);
+            return result;
+          }
 
-        // Start the server before handling any messages
-        server->start();
+          // Create new server for this session
+          server = serverFactory();
+          sessionServers[*routingSessionId] = server;
+
+          // Set up outbound message sender
+          server->setOutboundMessageSender(
+            [this, sessionId = *routingSessionId](const jsonrpc::RequestContext &msgContext, const jsonrpc::Message &message) -> void
+            {
+              // Use the session ID from the message context if available, otherwise use the stored session ID
+              std::optional<std::string> targetSessionId = msgContext.sessionId.has_value() ? msgContext.sessionId : sessionId;
+              if (!streamableServer.enqueueServerMessage(message, targetSessionId))
+              {
+                // Log error but don't throw - server-initiated messages are best-effort
+              }
+            });
+
+          // Start the server before handling any messages
+          server->start();
+        }
+        else
+        {
+          // Existing session - get the server
+          const auto it = sessionServers.find(*routingSessionId);
+          if (it == sessionServers.end())
+          {
+            // Should not happen, but just in case
+            result.response = jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Session not found"), request.id);
+            return result;
+          }
+          server = it->second;
+        }
       }
-      else if (!requireSessionId)
+      else
       {
-        // Single server mode - create/start on first request
+        // Single server mode - create/start ONLY on first initialize
         if (!singleServer)
         {
+          // No server yet - only create for initialize request
+          if (!isInitializeRequest)
+          {
+            // Non-initialize request before initialize - return error
+            result.response = jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Server not initialized"), request.id);
+            return result;
+          }
+
           singleServer = serverFactory();
 
           // Set up outbound message sender
           singleServer->setOutboundMessageSender(
-            [this](const jsonrpc::RequestContext &msgContext, const jsonrpc::Message &message) -> void
+            [this](const jsonrpc::RequestContext & /*msgContext*/, const jsonrpc::Message &message) -> void
             {
               // In single-server mode, session ID is always nullopt
               if (!streamableServer.enqueueServerMessage(message, std::nullopt))
@@ -220,29 +254,21 @@ struct StreamableHttpServerRunner::Impl
                 // Log error but don't throw - server-initiated messages are best-effort
               }
             });
-        }
 
-        if (!singleServerStarted_)
-        {
           singleServer->start();
           singleServerStarted_ = true;
         }
 
         server = singleServer;
       }
-      else
-      {
-        // Existing session - get the server
-        server = getOrCreateServer(routingSessionId);
-      }
 
       // Handle the request
       result.response = server->handleRequest(context, request).get();
     }
-    catch (const std::exception &error)
+    catch (const std::exception & /*error*/)
     {
       // Return internal error response with original request ID
-      result.response = jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(request.id, "Internal error"), request.id);
+      result.response = jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Internal error"), request.id);
     }
 
     return result;
@@ -264,7 +290,32 @@ struct StreamableHttpServerRunner::Impl
 
     try
     {
-      std::shared_ptr<Server> server = getOrCreateServer(routingSessionId);
+      std::shared_ptr<Server> server;
+
+      if (requireSessionId)
+      {
+        // For per-session mode, server must already exist (created by initialize request)
+        if (!routingSessionId.has_value())
+        {
+          return false;
+        }
+        const auto it = sessionServers.find(*routingSessionId);
+        if (it == sessionServers.end())
+        {
+          return false;
+        }
+        server = it->second;
+      }
+      else
+      {
+        // For single-server mode, use existing single server
+        if (!singleServer)
+        {
+          return false;
+        }
+        server = singleServer;
+      }
+
       server->handleNotification(context, notification);
       return true;
     }
@@ -291,7 +342,32 @@ struct StreamableHttpServerRunner::Impl
 
     try
     {
-      std::shared_ptr<Server> server = getOrCreateServer(routingSessionId);
+      std::shared_ptr<Server> server;
+
+      if (requireSessionId)
+      {
+        // For per-session mode, server must already exist (created by initialize request)
+        if (!routingSessionId.has_value())
+        {
+          return false;
+        }
+        const auto it = sessionServers.find(*routingSessionId);
+        if (it == sessionServers.end())
+        {
+          return false;
+        }
+        server = it->second;
+      }
+      else
+      {
+        // For single-server mode, use existing single server
+        if (!singleServer)
+        {
+          return false;
+        }
+        server = singleServer;
+      }
+
       return server->handleResponse(context, response);
     }
     catch (const std::exception &)
