@@ -21,7 +21,7 @@
 
 ## Phase 4: C++ Client To Python Reference Server Tests (Blocked by Phase 1)
 - [x] `task-014`: Expand Python Reference Server Fixture (Depends on: `task-002`)
-- [ ] `task-015`: Add C++ Client Fixtures For Full Surface (Depends on: `task-014`)
+- [x] `task-015`: Add C++ Client Fixtures For Full Surface (Depends on: `task-014`)
 - [ ] `task-016`: Add C++ Client To Python Server Coverage Tests (Depends on: `task-015`)
 
 ## Phase 5: CI Gate (Blocked by Phase 3 And Phase 4)
