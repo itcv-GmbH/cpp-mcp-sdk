@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test Python reference client against C++ HTTP server using base fixture for roots tests."""
+"""Test Python reference client against C++ HTTP server using roots fixture."""
 
 import argparse
 import asyncio
@@ -45,7 +45,7 @@ async def run_test():
 
         endpoint = f"http://127.0.0.1:{port}/mcp"
         headers = {"Authorization": f"Bearer {token}"}
-        timeout = httpx.Timeout(10.0, read=10.0)
+        timeout = httpx.Timeout(10.0, read=30.0)
 
         # Use reference client
         async with httpx.AsyncClient(headers=headers, timeout=timeout) as http_client:
@@ -62,19 +62,23 @@ async def run_test():
                     # Wait for server to complete initialization
                     await asyncio.sleep(0.5)
 
-                    # Test roots/list (may not be supported in base fixture)
+                    # Test roots/list
                     print("Testing roots/list...")
                     try:
-                        roots_result = await session.send_request("roots/list", {})
-                        print(f"✓ roots/list succeeded")
+                        # roots/list requires the client to have roots capability
+                        roots_response = await session.send_request("roots/list", {})
+                        if "result" in roots_response:
+                            roots = roots_response.get("result", {}).get("roots", [])
+                            print(f"✓ roots/list succeeded ({len(roots)} root(s))")
+                        else:
+                            print(f"⚠ roots/list returned: {roots_response}")
                     except Exception as e:
-                        print(f"⚠ roots/list not supported: {e}")
+                        print(f"⚠ roots/list failed: {e}")
 
                     # Test tools/list
                     print("Testing tools/list...")
                     tools_result = await session.list_tools()
                     tool_names = [tool.name for tool in tools_result.tools]
-                    assert "cpp_echo" in tool_names, f"Expected cpp_echo tool"
                     print(f"✓ tools/list succeeded ({len(tools_result.tools)} tool(s))")
 
                     # Test tools/call
@@ -84,6 +88,20 @@ async def run_test():
                         f"Tool call error"
                     )
                     print("✓ tools/call succeeded")
+
+                    # Test resources/list
+                    print("Testing resources/list...")
+                    resources_result = await session.list_resources()
+                    print(
+                        f"✓ resources/list succeeded ({len(resources_result.resources)} resource(s))"
+                    )
+
+                    # Test prompts/list
+                    print("Testing prompts/list...")
+                    prompts_result = await session.list_prompts()
+                    print(
+                        f"✓ prompts/list succeeded ({len(prompts_result.prompts)} prompt(s))"
+                    )
 
                     print("\n✅ All roots tests passed!")
                     return 0

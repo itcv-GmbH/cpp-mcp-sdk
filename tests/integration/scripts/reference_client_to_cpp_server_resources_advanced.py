@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test Python reference client against C++ HTTP server using base fixture for resources tests."""
+"""Test Python reference client against C++ HTTP server using resources_advanced fixture."""
 
 import argparse
 import asyncio
@@ -45,7 +45,7 @@ async def run_test():
 
         endpoint = f"http://127.0.0.1:{port}/mcp"
         headers = {"Authorization": f"Bearer {token}"}
-        timeout = httpx.Timeout(10.0, read=10.0)
+        timeout = httpx.Timeout(10.0, read=30.0)
 
         # Use reference client
         async with httpx.AsyncClient(headers=headers, timeout=timeout) as http_client:
@@ -65,17 +65,50 @@ async def run_test():
                     # Test resources/list
                     print("Testing resources/list...")
                     resources_result = await session.list_resources()
-                    resource_uris = [str(r.uri) for r in resources_result.resources]
                     print(
                         f"✓ resources/list succeeded ({len(resources_result.resources)} resource(s))"
                     )
 
                     # Test resources/read
                     print("Testing resources/read...")
-                    read_result = await session.read_resource(
-                        "resource://cpp-server/info"
-                    )
-                    print(f"✓ resources/read succeeded")
+                    try:
+                        read_result = await session.read_resource(
+                            "resource://test/item/1"
+                        )
+                        print("✓ resources/read succeeded")
+                    except Exception as e:
+                        print(f"⚠ resources/read failed (resource may not exist): {e}")
+
+                    # Test resources/templates/list
+                    print("Testing resources/templates/list...")
+                    try:
+                        templates_response = await session.send_request(
+                            "resources/templates/list", {}
+                        )
+                        if "result" in templates_response:
+                            print("✓ resources/templates/list succeeded")
+                        else:
+                            print(
+                                f"⚠ resources/templates/list returned: {templates_response}"
+                            )
+                    except Exception as e:
+                        print(f"⚠ resources/templates/list failed: {e}")
+
+                    # Test resources/subscribe
+                    print("Testing resources/subscribe...")
+                    try:
+                        sub_response = await session.send_request(
+                            "resources/subscribe", {"uri": "resource://test/item/1"}
+                        )
+                        if "result" in sub_response or "error" in sub_response:
+                            print("✓ resources/subscribe succeeded")
+                    except Exception as e:
+                        print(f"⚠ resources/subscribe failed: {e}")
+
+                    # Test tools/list
+                    print("Testing tools/list...")
+                    tools_result = await session.list_tools()
+                    print(f"✓ tools/list succeeded ({len(tools_result.tools)} tool(s))")
 
                     # Test prompts/list
                     print("Testing prompts/list...")

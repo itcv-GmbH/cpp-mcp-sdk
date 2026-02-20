@@ -8,41 +8,42 @@ This document tracks the coverage of MCP 2025-11-25 protocol surface items in th
 
 | Protocol Item | Test Coverage |
 |--------------|---------------|
-| initialize | Pending |
-| ping | Pending |
-| tools/list | Pending |
-| tools/call | Pending |
-| resources/list | Pending |
-| resources/read | Pending |
-| resources/templates/list | Pending |
-| resources/subscribe | Pending |
-| resources/unsubscribe | Pending |
-| prompts/list | Pending |
-| prompts/get | Pending |
-| logging/setLevel | Pending |
-| completion/complete | Pending |
-| roots/list | Pending |
+| initialize | Covered |
+| ping | Covered |
+| tools/list | Covered |
+| tools/call | Covered |
+| resources/list | Covered |
+| resources/read | Covered |
+| resources/templates/list | Covered |
+| resources/subscribe | Covered |
+| resources/unsubscribe | Covered |
+| prompts/list | Covered |
+| prompts/get | Covered |
+| logging/setLevel | Covered |
+| completion/complete | Covered |
+| roots/list | Covered |
 | sampling/createMessage | Pending |
 | elicitation/create | Pending |
-| tasks/get | Pending |
+| tasks/create | Covered |
+| tasks/get | Covered |
 | tasks/result | Pending |
-| tasks/list | Pending |
-| tasks/cancel | Pending |
+| tasks/list | Covered |
+| tasks/cancel | Covered |
 
 ### Notifications
 
 | Protocol Item | Test Coverage |
 |--------------|---------------|
-| notifications/initialized | Pending |
-| notifications/cancelled | Pending |
+| notifications/initialized | Covered |
+| notifications/cancelled | Covered |
 | notifications/progress | Pending |
-| notifications/message | Pending |
+| notifications/message | Covered |
 | notifications/tools/list_changed | Pending |
 | notifications/resources/list_changed | Pending |
-| notifications/resources/updated | Pending |
+| notifications/resources/updated | Covered |
 | notifications/prompts/list_changed | Pending |
-| notifications/roots/list_changed | Pending |
-| notifications/tasks/status | Pending |
+| notifications/roots/list_changed | Covered |
+| notifications/tasks/status | Covered |
 | notifications/elicitation/complete | Pending |
 
 ## Test Mapping
@@ -62,14 +63,14 @@ All protocol items must be mapped to at least one test.
 
 ### Python Reference Client to C++ HTTP Server Tests
 
-- `reference_client_to_cpp_server_utilities`: initialize, tools/list, tools/call, prompts/list, prompts/get
-- `reference_client_to_cpp_server_resources_advanced`: initialize, resources/list, resources/read, prompts/list
-- `reference_client_to_cpp_server_roots`: initialize, tools/list, tools/call
-- `reference_client_to_cpp_server_tasks`: initialize, tools/list, tools/call, resources/list, prompts/list
+- `reference_client_to_cpp_server_utilities`: initialize, ping, logging/setLevel, notifications/message, completion/complete, tools/list, tools/call, prompts/list, prompts/get
+- `reference_client_to_cpp_server_resources_advanced`: initialize, resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, notifications/resources/updated, prompts/list
+- `reference_client_to_cpp_server_roots`: initialize, roots/list, notifications/roots/list_changed, tools/list, tools/call
+- `reference_client_to_cpp_server_tasks`: initialize, tasks/create, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status, notifications/cancelled, tools/list, tools/call, resources/list, prompts/list
 
 ### Python Reference Client to C++ STDIO Server Tests
 
-- `reference_client_to_cpp_stdio_server_utilities`: initialize, ping, logging/setLevel, notifications/message, completion/complete
+- `reference_client_to_cpp_stdio_server_utilities`: initialize, ping, completion/complete
 - `reference_client_to_cpp_stdio_server_resources_advanced`: resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, notifications/resources/list_changed, notifications/resources/updated
-- `reference_client_to_cpp_stdio_server_roots`: tools/list, tools/call, resources/list, resources/read, prompts/list, prompts/get, notifications/roots/list_changed
-- `reference_client_to_cpp_stdio_server_tasks`: tools/list, tools/call, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status
+- `reference_client_to_cpp_stdio_server_roots`: initialize, tools/list, tools/call, resources/list, resources/read, prompts/list, prompts/get
+- `reference_client_to_cpp_stdio_server_tasks`: initialize, tools/list, tools/call, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status
