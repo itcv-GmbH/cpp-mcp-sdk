@@ -33,7 +33,7 @@ struct Options
   std::string path = "/mcp";
 };
 
-constexpr std::string_view kStableTaskId = "deteterministic-long-task";
+constexpr std::string_view kStableTaskId = "deterministic-long-task";
 
 struct TaskState
 {
