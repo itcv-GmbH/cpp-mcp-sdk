@@ -1,11 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <iosfwd>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 
 #include <mcp/server/server.hpp>
 #include <mcp/transport/stdio.hpp>
@@ -35,6 +37,10 @@ struct StdioServerRunnerOptions
 /// By default, logs are written to stderr to avoid polluting stdout
 /// which is reserved for JSON-RPC messages.
 ///
+/// The runner creates exactly one Server instance for its lifetime,
+/// calls server->start() before processing messages, and calls
+/// server->stop() when the runner exits.
+///
 /// Usage:
 /// @code
 ///   ServerFactory makeServer = [] { return mcp::Server::create(); };
@@ -49,6 +55,16 @@ struct StdioServerRunnerOptions
 ///   ServerFactory makeServer = [] { return mcp::Server::create(); };
 ///   mcp::StdioServerRunner runner(makeServer, options);
 ///   runner.run();
+/// @endcode
+///
+/// For async usage:
+/// @code
+///   ServerFactory makeServer = [] { return mcp::Server::create(); };
+///   mcp::StdioServerRunner runner(makeServer);
+///   auto thread = runner.startAsync();
+///   // ... do other work ...
+///   runner.stop();
+///   thread.join();
 /// @endcode
 class StdioServerRunner final
 {
@@ -75,10 +91,30 @@ public:
 
   /// Runs the server with custom input/output/error streams.
   ///
-  /// @param input  Stream to read JSON-RPC messages from (default: std::cin)
-  /// @param output Stream to write JSON-RPC messages to (default: std::cout)
-  /// @param error  Stream to write log messages to (default: std::cerr)
-  auto run(std::istream &input, std::ostream &output, std::ostream &error) -> void;
+  /// @param input       Stream to read JSON-RPC messages from (default: std::cin)
+  /// @param output      Stream to write JSON-RPC messages to (default: std::cout)
+  /// @param errorStream Stream to write log messages to (default: std::cerr)
+  auto run(std::istream &input, std::ostream &output, std::ostream &errorStream) -> void;
+
+  /// Starts the server asynchronously on a joinable thread.
+  ///
+  /// This method runs the server in a separate thread, allowing the calling
+  /// thread to continue execution. The server thread will run until EOF is
+  /// reached on stdin or stop() is called.
+  ///
+  /// To stop the server, call stop() which sets an atomic flag. The host is
+  /// responsible for closing the input stream to unblock blocking reads.
+  ///
+  /// @note The returned thread must be joined by the caller.
+  [[nodiscard]] auto startAsync() -> std::thread;
+
+  /// Requests the server to stop.
+  ///
+  /// This method sets an atomic flag that signals the server loop to terminate.
+  /// The host must close the input stream to unblock any blocking reads.
+  ///
+  /// @note This does not block; it only signals the server thread to stop.
+  auto stop() -> void;
 
   /// Returns the options used by this runner.
   [[nodiscard]] auto options() const -> const StdioServerRunnerOptions &;
