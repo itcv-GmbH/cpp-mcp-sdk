@@ -29,4 +29,4 @@
 
 ## Phase 7: Build Wiring + Full Verification (Blocked by all prior phases)
 - [x] `task-010`: Wire New Sources/Tests into CMake (Depends on: `task-004`, `task-006`, `task-013`, `task-015`)
-- [ ] `task-011`: Full Conformance + Regression Run (Depends on: `task-010`, `task-016`, `task-017`)
+- [x] `task-011`: Full Conformance + Regression Run (Depends on: `task-010`, `task-016`, `task-017`)
