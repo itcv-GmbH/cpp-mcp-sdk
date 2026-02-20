@@ -3,6 +3,7 @@
 import json
 import queue
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -32,8 +33,13 @@ class StdioRawClient:
         self._reader_thread.start()
 
     def stop(self) -> None:
-        """Stop the reader thread."""
+        """Stop the reader thread and signal EOF to server."""
         self._running = False
+
+        # Close stdin to signal EOF per MCP spec shutdown sequence
+        if self.process.stdin and not self.process.stdin.closed:
+            self.process.stdin.close()
+
         if self._reader_thread:
             self._reader_thread.join(timeout=1.0)
 
@@ -53,7 +59,9 @@ class StdioRawClient:
             except json.JSONDecodeError:
                 # Skip non-JSON lines (these might be log output)
                 continue
-            except Exception:
+            except Exception as e:
+                # Log unexpected errors for debugging
+                print(f"STDIO read loop error: {e}", file=sys.stderr)
                 continue
 
     def _handle_message(self, message: dict[str, Any]) -> None:

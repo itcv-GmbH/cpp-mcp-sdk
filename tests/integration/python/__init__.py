@@ -1,9 +1,9 @@
 """Python integration test harness for MCP JSON-RPC testing."""
 
-from python import harness
-from python import streamable_http_raw
-from python import stdio_raw
-from python import assertions
+from . import harness
+from . import streamable_http_raw
+from . import stdio_raw
+from . import assertions
 
 __all__ = [
     "harness",
