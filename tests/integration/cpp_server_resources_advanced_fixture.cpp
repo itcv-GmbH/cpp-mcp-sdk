@@ -52,6 +52,23 @@ struct ServerRegistry
   std::atomic<bool> outboundAssertionsTriggered {false};
 };
 
+// Subscription state tracking for resources (used by the emit resource updated tool)
+struct Subscription
+{
+  std::string uri;
+  std::string sessionId;
+};
+std::mutex subscriptionsMutex;
+std::vector<Subscription> subscriptions;
+
+// Helper to create a ready future from a response
+auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::future<mcp::jsonrpc::Response>
+{
+  std::promise<mcp::jsonrpc::Response> promise;
+  promise.set_value(std::move(response));
+  return promise.get_future();
+}
+
 class StaticTokenVerifier final : public mcp::auth::OAuthTokenVerifier
 {
 public:
@@ -230,6 +247,108 @@ auto main(int argc, char **argv) -> int
       templateDefinition.mimeType = "application/json";
 
       server->registerResourceTemplate(std::move(templateDefinition));
+
+      // Register custom subscribe handler to track subscriptions
+      server->registerRequestHandler("resources/subscribe",
+                                     [](const mcp::jsonrpc::RequestContext &ctx, const mcp::jsonrpc::Request &req) -> std::future<mcp::jsonrpc::Response>
+                                     {
+                                       if (!req.params.has_value() || !req.params->is_object())
+                                       {
+                                         return makeReadyResponseFuture(mcp::jsonrpc::Response {mcp::jsonrpc::ErrorResponse {}});
+                                       }
+
+                                       const auto &params = *req.params;
+                                       if (!params.contains("uri") || !params["uri"].is_string())
+                                       {
+                                         return makeReadyResponseFuture(mcp::jsonrpc::Response {mcp::jsonrpc::ErrorResponse {}});
+                                       }
+
+                                       std::string uri = params["uri"].as<std::string>();
+                                       std::string sessionId = ctx.sessionId.value_or("");
+
+                                       {
+                                         std::scoped_lock lock(subscriptionsMutex);
+                                         // Check if already subscribed
+                                         auto it =
+                                           std::find_if(subscriptions.begin(), subscriptions.end(), [&](const auto &s) { return s.uri == uri && s.sessionId == sessionId; });
+                                         if (it == subscriptions.end())
+                                         {
+                                           subscriptions.push_back({uri, sessionId});
+                                         }
+                                       }
+
+                                       mcp::jsonrpc::SuccessResponse response;
+                                       response.id = req.id;
+                                       response.result = mcp::jsonrpc::JsonValue::object();
+                                       return makeReadyResponseFuture(mcp::jsonrpc::Response {response});
+                                     });
+
+      // Register custom unsubscribe handler to remove subscriptions
+      server->registerRequestHandler("resources/unsubscribe",
+                                     [](const mcp::jsonrpc::RequestContext &ctx, const mcp::jsonrpc::Request &req) -> std::future<mcp::jsonrpc::Response>
+                                     {
+                                       if (!req.params.has_value() || !req.params->is_object())
+                                       {
+                                         return makeReadyResponseFuture(mcp::jsonrpc::Response {mcp::jsonrpc::ErrorResponse {}});
+                                       }
+
+                                       const auto &params = *req.params;
+                                       if (!params.contains("uri") || !params["uri"].is_string())
+                                       {
+                                         return makeReadyResponseFuture(mcp::jsonrpc::Response {mcp::jsonrpc::ErrorResponse {}});
+                                       }
+
+                                       std::string uri = params["uri"].as<std::string>();
+                                       std::string sessionId = ctx.sessionId.value_or("");
+
+                                       {
+                                         std::scoped_lock lock(subscriptionsMutex);
+                                         subscriptions.erase(
+                                           std::remove_if(subscriptions.begin(), subscriptions.end(), [&](const auto &s) { return s.uri == uri && s.sessionId == sessionId; }),
+                                           subscriptions.end());
+                                       }
+
+                                       mcp::jsonrpc::SuccessResponse response;
+                                       response.id = req.id;
+                                       response.result = mcp::jsonrpc::JsonValue::object();
+                                       return makeReadyResponseFuture(mcp::jsonrpc::Response {response});
+                                     });
+
+      // Register a tool that emits resource updated notification to all subscribers
+      mcp::ToolDefinition updateResourceTool;
+      updateResourceTool.name = "cpp_emit_resource_updated";
+      updateResourceTool.description = "Emit resource updated notification to all subscribers";
+      server->registerTool(updateResourceTool,
+                           [&](const mcp::ToolCallContext &ctx)
+                           {
+                             // Emit notification to all subscribers using notifyResourceUpdated
+                             std::vector<std::string> urisToUpdate;
+                             {
+                               std::scoped_lock lock(subscriptionsMutex);
+                               for (const auto &sub : subscriptions)
+                               {
+                                 // Only emit once per URI (in case multiple sessions subscribed to same URI)
+                                 if (std::find(urisToUpdate.begin(), urisToUpdate.end(), sub.uri) == urisToUpdate.end())
+                                 {
+                                   urisToUpdate.push_back(sub.uri);
+                                 }
+                               }
+                             }
+
+                             for (const auto &uri : urisToUpdate)
+                             {
+                               server->notifyResourceUpdated(uri, ctx.requestContext);
+                             }
+
+                             mcp::CallToolResult result;
+                             result.content = mcp::jsonrpc::JsonValue::array();
+                             // Create text content in MCP format: {"type": "text", "text": "..."}
+                             mcp::jsonrpc::JsonValue textContent = mcp::jsonrpc::JsonValue::object();
+                             textContent["type"] = "text";
+                             textContent["text"] = "Resource updated notification emitted";
+                             result.content.push_back(textContent);
+                             return result;
+                           });
 
       return server;
     };
