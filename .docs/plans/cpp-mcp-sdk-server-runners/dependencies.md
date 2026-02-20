@@ -21,7 +21,7 @@
 - [x] `task-013`: Add Combined Runner Unit Tests (Depends on: `task-012`)
 - [x] `task-007`: Add Dual-Transport Example (STDIO + HTTP) (Depends on: `task-012`)
 - [x] `task-008`: Migrate Existing Examples to Runners (Depends on: `task-007`)
-- [ ] `task-009`: Update Quickstarts + API Overview (Depends on: `task-008`)
+- [x] `task-009`: Update Quickstarts + API Overview (Depends on: `task-008`)
 
 ## Phase 6: Integration / Interop Coverage (Blocked by Phases 2 and 4)
 - [ ] `task-016`: Update Reference Interop Fixture to Use HTTP Runner (Depends on: `task-005`, `task-014`)
