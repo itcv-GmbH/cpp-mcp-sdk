@@ -11,8 +11,12 @@ from pathlib import Path
 from typing import Any
 
 import anyio
+import anyio.abc
+import anyio.streams.file
+import anyio.streams.text
 
 from mcp import ClientSession, types
+from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.shared.message import SessionMessage
 
 
@@ -82,6 +86,111 @@ def extract_sampling_prompt_text(params: Any) -> str:
         return str(content["text"])
 
     return str(content)
+
+
+class PopenProcessWrapper(anyio.abc.Process):
+    """
+    Wrapper around subprocess.Popen that implements the anyio.abc.Process interface.
+    This allows us to use subprocess.Popen for process spawning while using the official
+    mcp.client.stdio.stdio_client transport API.
+    """
+
+    def __init__(self, popen: subprocess.Popen):
+        self._popen = popen
+        # Create anyio stream wrappers for stdin/stdout/stderr
+        self._stdin_stream: anyio.streams.file.FileWriteStream | None = None
+        self._stdout_stream: anyio.streams.file.FileReadStream | None = None
+        self._stderr_stream: anyio.streams.file.FileReadStream | None = None
+
+    def _get_stdin_stream(self) -> anyio.streams.file.FileWriteStream:
+        if self._stdin_stream is None:
+            # Create unbuffered binary stream from stdin pipe
+            self._stdin_stream = anyio.streams.file.FileWriteStream(self._popen.stdin)
+        return self._stdin_stream
+
+    def _get_stdout_stream(self) -> anyio.streams.file.FileReadStream:
+        if self._stdout_stream is None:
+            # Create unbuffered binary stream from stdout pipe
+            self._stdout_stream = anyio.streams.file.FileReadStream(self._popen.stdout)
+        return self._stdout_stream
+
+    def _get_stderr_stream(self) -> anyio.streams.file.FileReadStream | None:
+        if self._stderr_stream is None and self._popen.stderr is not None:
+            # Create unbuffered binary stream from stderr pipe
+            self._stderr_stream = anyio.streams.file.FileReadStream(self._popen.stderr)
+        return self._stderr_stream
+
+    @property
+    def pid(self) -> int:
+        return self._popen.pid
+
+    @property
+    def returncode(self) -> int | None:
+        return self._popen.returncode
+
+    @property
+    def stdin(self) -> anyio.streams.file.FileWriteStream:
+        return self._get_stdin_stream()
+
+    @property
+    def stdout(self) -> anyio.streams.file.FileReadStream:
+        return self._get_stdout_stream()
+
+    @property
+    def stderr(self) -> anyio.streams.file.FileReadStream | None:
+        return self._get_stderr_stream()
+
+    async def wait(self) -> int:
+        """Wait for the process to exit."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._popen.wait)
+
+    async def kill(self) -> None:
+        """Kill the process."""
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._popen.kill)
+
+    async def terminate(self) -> None:
+        """Terminate the process."""
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._popen.terminate)
+
+    async def send_signal(self, sig: int) -> None:
+        """Send a signal to the process."""
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._popen.send_signal, sig)
+
+    async def aclose(self) -> None:
+        """Close the process and its streams."""
+        if self._stdin_stream is not None:
+            await self._stdin_stream.aclose()
+        if self._stdout_stream is not None:
+            await self._stdout_stream.aclose()
+        if self._stderr_stream is not None:
+            await self._stderr_stream.aclose()
+        # Note: we don't wait() here because the process management
+        # (including wait for termination) is handled by stdio_client
+
+
+class PopenProcessWrapperFactory:
+    """
+    Factory that creates PopenProcessWrapper instances.
+    This is used to inject our pre-spawned process into the stdio_client.
+    """
+
+    def __init__(self, popen: subprocess.Popen):
+        self._popen = popen
+
+    async def __call__(
+        self,
+        command: str,
+        args: list[str],
+        env: dict[str, str] | None = None,
+        errlog: Any = None,
+        cwd: Path | str | None = None,
+    ) -> PopenProcessWrapper:
+        """Create a PopenProcessWrapper around our pre-spawned Popen."""
+        return PopenProcessWrapper(self._popen)
 
 
 async def run_stdio_client_flow(
@@ -196,130 +305,51 @@ async def run_stdio_client_flow(
         await asyncio.sleep(2.0)
 
 
-async def stdout_reader_task(
-    stdout_fd: int,
-    read_stream_writer: "anyio.MemoryObjectSendStream[SessionMessage | Exception]",
-) -> None:
-    """Task that reads from process stdout using async I/O and sends messages to the read stream."""
-    buffer = ""
-    try:
-        async with read_stream_writer:
-            while True:
-                # Wait for data to be available asynchronously
-                try:
-                    await anyio.wait_readable(stdout_fd)
-                except anyio.BrokenResourceError:
-                    # EOF or pipe closed
-                    break
-
-                # Read data from stdout (non-blocking read via thread pool)
-                data = await anyio.to_thread.run_sync(os.read, stdout_fd, 8192)
-                if not data:
-                    # EOF
-                    break
-
-                # Process as text - handle line buffering properly
-                text = data.decode("utf-8", errors="replace")
-                lines = (buffer + text).split("\n")
-                # Last part might be incomplete, keep in buffer
-                buffer = lines.pop() if lines else ""
-
-                for line in lines:
-                    if line.strip():
-                        try:
-                            message = types.JSONRPCMessage.model_validate_json(line)
-                            session_message = SessionMessage(message)
-                            await read_stream_writer.send(session_message)
-                        except Exception as exc:
-                            import logging
-
-                            logging.getLogger(__name__).exception(
-                                f"Failed to parse JSONRPC message: {line[:100]}"
-                            )
-                            await read_stream_writer.send(exc)
-
-                # Handle any remaining buffer at EOF
-                if not data:
-                    if buffer.strip():
-                        try:
-                            message = types.JSONRPCMessage.model_validate_json(buffer)
-                            session_message = SessionMessage(message)
-                            await read_stream_writer.send(session_message)
-                        except Exception:
-                            pass
-    except anyio.ClosedResourceError:
-        pass
-
-
-async def stdin_writer_task(
-    stdin_fd: int,
-    write_stream_reader: "anyio.MemoryObjectReceiveStream[SessionMessage]",
-) -> None:
-    """Task that writes messages from the write stream to process stdin using async I/O."""
-    try:
-        async with write_stream_reader:
-            async for session_message in write_stream_reader:
-                json_str = session_message.message.model_dump_json(
-                    by_alias=True, exclude_none=True
-                )
-                data = (json_str + "\n").encode("utf-8", errors="replace")
-                await anyio.to_thread.run_sync(os.write, stdin_fd, data)
-    except anyio.ClosedResourceError:
-        pass
-
-
 async def run() -> int:
     args = parse_args()
     server_executable = str(Path(args.cpp_server).resolve())
 
     # Spawn the process manually using subprocess.Popen
+    # Using bufsize=0 for unbuffered I/O and start_new_session for proper process group
     process = subprocess.Popen(
         [server_executable],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        bufsize=0,
+        start_new_session=True,
     )
 
-    # Get file descriptors for stdin/stdout for async I/O
-    stdin_fd = process.stdin.fileno()
-    stdout_fd = process.stdout.fileno()
+    # Create the factory that will wrap our Popen
+    factory = PopenProcessWrapperFactory(process)
 
-    # Create memory object streams (same as stdio_client does internally)
-    read_stream_writer: "anyio.MemoryObjectSendStream[SessionMessage | Exception]"
-    read_stream: "anyio.MemoryObjectReceiveStream[SessionMessage | Exception]"
-    write_stream: "anyio.MemoryObjectSendStream[SessionMessage]"
-    write_stream_reader: "anyio.MemoryObjectReceiveStream[SessionMessage]"
+    # Monkeypatch _create_platform_compatible_process to use our factory
+    # This allows stdio_client to use our pre-spawned process while still
+    # using the official stdio transport API
+    import mcp.client.stdio as stdio_module
 
-    read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
-    write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
+    original_create_process = stdio_module._create_platform_compatible_process
+    stdio_module._create_platform_compatible_process = factory
 
     client_error = None
 
-    # Create background tasks for I/O
-    reader_task = asyncio.create_task(stdout_reader_task(stdout_fd, read_stream_writer))
-    writer_task = asyncio.create_task(stdin_writer_task(stdin_fd, write_stream_reader))
-
-    # Run the client flow
     try:
-        await run_stdio_client_flow(read_stream, write_stream)
+        # Use the official stdio_client API to get the streams
+        # The process is already spawned; stdio_client will manage I/O through our wrapper
+        async with stdio_client(
+            StdioServerParameters(
+                command=server_executable,
+                args=[],
+            )
+        ) as (read_stream, write_stream):
+            # Run the client flow using the streams from stdio_client
+            await run_stdio_client_flow(read_stream, write_stream)
+
     except Exception as e:
         client_error = e
     finally:
-        # Close the streams to signal EOF to the I/O tasks
-        await read_stream.aclose()
-        await write_stream.aclose()
-        await read_stream_writer.aclose()
-        await write_stream_reader.aclose()
-
-        # Wait for I/O tasks to finish with timeout
-        try:
-            await asyncio.wait_for(reader_task, timeout=2.0)
-        except asyncio.TimeoutError:
-            reader_task.cancel()
-        try:
-            await asyncio.wait_for(writer_task, timeout=2.0)
-        except asyncio.TimeoutError:
-            writer_task.cancel()
+        # Restore the original function
+        stdio_module._create_platform_compatible_process = original_create_process
 
     if client_error is not None:
         rendered = "".join(traceback.format_exception(client_error))
@@ -339,34 +369,31 @@ async def run() -> int:
         return 1
 
     # MCP spec: stdio shutdown sequence
-    # 1. Close input stream to server
-    if process.stdin and not process.stdin.closed:
-        try:
-            process.stdin.close()
-        except Exception:
-            pass
+    # Note: The stdio_client context manager already handles:
+    # 1. Closing stdin to signal EOF to the server
+    # 2. Waiting for server to exit
+    # 3. SIGTERM -> SIGKILL escalation if needed
+    # However, we need to explicitly check the exit code since we're managing the process
 
-    # 2. Wait for server to exit
-    try:
-        await asyncio.wait_for(
-            asyncio.get_event_loop().run_in_executor(None, process.wait),
-            timeout=PROCESS_TERMINATION_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        process.terminate()
+    # Check process exit code
+    if process.returncode is None:
+        # Process still running - wait for it
         try:
             await asyncio.wait_for(
                 asyncio.get_event_loop().run_in_executor(None, process.wait),
                 timeout=PROCESS_TERMINATION_TIMEOUT,
             )
         except asyncio.TimeoutError:
-            process.kill()
-            process.wait()
-    except ProcessLookupError:
-        pass
-
-    # Check process exit code
-    if process.returncode != 0:
+            process.terminate()
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, process.wait),
+                    timeout=PROCESS_TERMINATION_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                process.wait()
+    elif process.returncode != 0:
         stderr_output = ""
         if process.stderr:
             stderr_output = process.stderr.read()
