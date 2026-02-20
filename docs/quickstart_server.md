@@ -10,7 +10,7 @@ This quickstart covers runnable server paths in this repository using the runner
 
 The SDK provides three high-level runners that handle transport lifecycle and session management:
 
-- **STDIO Runner** (`mcp::StdioServerRunner`): Guarantees no logs to stdout (logs go to stderr). Creates one `Server` instance for the runner's lifetime.
+- **STDIO Runner** (`mcp::StdioServerRunner`): Guarantees no logs to stdout (logs go to stderr). Creates one `Server` instance per `run()` call.
 - **HTTP Runner** (`mcp::StreamableHttpServerRunner`): Provides `start()`/`stop()` methods and creates one `mcp::Server` per `MCP-Session-Id` via a `ServerFactory`. Supports multi-client isolation when `requireSessionId=true`.
 - **Combined Runner** (`mcp::CombinedServerRunner`): Supports starting STDIO, HTTP, or both in a single process. Shares a `ServerFactory` across transports.
 
@@ -33,7 +33,7 @@ cmake --build build/vcpkg-unix-release --target mcp_sdk_example_stdio_server mcp
 
 ## Run a stdio server
 
-The stdio server example uses `mcp::StdioServerRunner`, which guarantees no logs go to stdout (they're written to stderr). The runner creates one `Server` instance and calls `start()` before processing messages.
+The stdio server example uses `mcp::StdioServerRunner`, which guarantees no logs go to stdout (they're written to stderr). The runner creates one `Server` instance per `run()` call and calls `start()` before processing messages.
 
 Start the example:
 

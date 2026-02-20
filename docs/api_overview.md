@@ -28,9 +28,9 @@ The SDK provides runners for different transport types. The following rules defi
 
 ### STDIO Runner
 
-- Uses exactly one `Server` instance for its entire lifetime.
-- Calls `mcp::Server::start()` once during runner initialization.
-- Calls `mcp::Server::stop()` when the runner is stopped or destroyed.
+- Creates a `Server` instance from the `ServerFactory` at the start of each `run()` call.
+- Calls `mcp::Server::start()` before processing messages within `run()`.
+- Calls `mcp::Server::stop()` when `run()` exits (including on exceptions).
 
 ### Streamable HTTP Runner
 
@@ -121,7 +121,7 @@ using mcp::ServerFactory = std::function<std::shared_ptr<mcp::Server>()>;
 ```
 
 The factory is invoked by the runner to create Server instances:
-- `mcp::StdioServerRunner`: creates one Server instance for its lifetime.
+- `mcp::StdioServerRunner`: creates one Server instance per `run()` call.
 - `mcp::StreamableHttpServerRunner`: creates one Server per session (when `requireSessionId=true`).
 - `mcp::CombinedServerRunner`: creates one Server for STDIO and one per HTTP session.
 
