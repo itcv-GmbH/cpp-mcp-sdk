@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -37,6 +38,10 @@ constexpr std::uint16_t kHttpPort = 8080;
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 static volatile std::sig_atomic_t g_shutdownRequested = 0;
+
+// Completion signal for STDIO thread - set to true when STDIO transport ends
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+static std::atomic_bool g_stdioDone {false};
 
 auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
 {
@@ -196,13 +201,20 @@ auto runCombinedRunnerExample() -> void
   std::cerr.flush();
 
   mcp::StdioServerRunner *stdioRunnerPtr = runner.stdioRunner();
-  std::thread stdioThread = stdioRunnerPtr->startAsync();
 
-  // Main control loop - check for shutdown signal
+  // Start STDIO in a thread and wrap to set completion flag when done
+  std::thread stdioThread(
+    [stdioRunnerPtr]()
+    {
+      stdioRunnerPtr->run();
+      g_stdioDone = true;
+    });
+
+  // Main control loop - check for shutdown signal or STDIO completion
   while (g_shutdownRequested == 0)
   {
     // Check if the STDIO thread has finished naturally
-    if (!stdioThread.joinable())
+    if (g_stdioDone)
     {
       break;
     }
