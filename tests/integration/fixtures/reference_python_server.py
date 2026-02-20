@@ -3,7 +3,7 @@
 import argparse
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any, Dict, Optional, Set
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
@@ -73,6 +73,9 @@ def main() -> int:
 
     # Task storage for tasks/cancel support
     tasks: dict[str, dict] = {}
+
+    # Track resource subscriptions
+    resource_subscriptions: Dict[str, Set[str]] = {}  # uri -> set of session_ids
 
     async def verify_sampling_round_trip(session: Any, related_request_id: str) -> None:
         sampling_result = await asyncio.wait_for(
@@ -305,6 +308,59 @@ def main() -> int:
     )
     def resource_template(item_id: str) -> str:
         return f"Template resource for item {item_id}"
+
+    async def notify_resource_updated(uri: str) -> None:
+        """Emit notification to all subscribers of a resource."""
+        if uri in resource_subscriptions:
+            for session_id in resource_subscriptions[uri]:
+                # In real implementation, would send to specific session
+                pass
+
+    @server.tool(name="resources_subscribe", description="Subscribe to a resource")
+    async def resources_subscribe(uri: str, ctx: Context) -> str:
+        """Subscribe to a resource for updates."""
+        nonlocal resource_subscriptions
+        session_id = str(ctx.request_id)
+        if uri not in resource_subscriptions:
+            resource_subscriptions[uri] = set()
+        resource_subscriptions[uri].add(session_id)
+        return f"Subscribed to {uri}"
+
+    @server.tool(
+        name="resources_unsubscribe", description="Unsubscribe from a resource"
+    )
+    async def resources_unsubscribe(uri: str, ctx: Context) -> str:
+        """Unsubscribe from a resource."""
+        nonlocal resource_subscriptions
+        session_id = str(ctx.request_id)
+        if uri in resource_subscriptions and session_id in resource_subscriptions[uri]:
+            resource_subscriptions[uri].remove(session_id)
+        return f"Unsubscribed from {uri}"
+
+    @server.tool(
+        name="emit_resource_updated",
+        description="Trigger resource updated notification for testing",
+    )
+    async def emit_resource_updated(uri: str) -> str:
+        """Trigger resource updated notification for testing."""
+        await notify_resource_updated(uri)
+        return f"Emitted update for {uri}"
+
+    @server.tool(
+        name="emit_resources_list_changed",
+        description="Trigger resources list changed notification",
+    )
+    async def emit_resources_list_changed(ctx: Context) -> str:
+        """Trigger resources list changed notification."""
+        session = ctx.session
+        await session.send_notification(
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/resources/list_changed",
+                "params": {},
+            }
+        )
+        return "Emitted resources/list_changed"
 
     @server.prompt(
         name="python_server_prompt",
