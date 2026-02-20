@@ -25,4 +25,4 @@
 - [x] `task-016`: Add C++ Client To Python Server Coverage Tests (Depends on: `task-015`)
 
 ## Phase 5: CI Gate (Blocked by Phase 3 And Phase 4)
-- [ ] `task-017`: Add CI Job For Python Reference Integration Suite (Depends on: `task-012`, `task-013`, `task-016`)
+- [x] `task-017`: Add CI Job For Python Reference Integration Suite (Depends on: `task-012`, `task-013`, `task-016`)
