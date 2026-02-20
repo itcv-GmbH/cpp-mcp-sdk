@@ -9,7 +9,7 @@
 #include <mcp/server/server.hpp>
 #include <mcp/transport/stdio.hpp>
 
-namespace mcp::server
+namespace mcp
 {
 
 /// Configuration options for the STDIO server runner.
@@ -88,4 +88,4 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace mcp::server
+}  // namespace mcp

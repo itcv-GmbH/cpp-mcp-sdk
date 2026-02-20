@@ -7,7 +7,7 @@
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 
-namespace mcp::server
+namespace mcp
 {
 
 /// Flags to control which transports a CombinedServerRunner should enable.
@@ -32,7 +32,13 @@ struct CombinedServerRunnerOptions
 ///
 /// This runner supports running an MCP server over STDIO, Streamable HTTP,
 /// or both simultaneously. It provides a unified API for managing multiple
-/// transports with a single server instance.
+/// transports.
+///
+/// In STDIO-only mode, a single Server instance is used.
+/// In HTTP-only mode, a single Server instance is used.
+/// In dual-transport mode with session isolation, each transport maintains
+/// its own Server instance to ensure proper session isolation between
+/// STDIO and HTTP clients.
 ///
 /// Usage (STDIO only):
 /// @code
@@ -137,4 +143,4 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace mcp::server
+}  // namespace mcp

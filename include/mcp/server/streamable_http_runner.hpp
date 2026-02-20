@@ -8,7 +8,7 @@
 #include <mcp/server/server.hpp>
 #include <mcp/transport/http.hpp>
 
-namespace mcp::server
+namespace mcp
 {
 
 /// Configuration options for the Streamable HTTP server runner.
@@ -107,4 +107,4 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace mcp::server
+}  // namespace mcp
