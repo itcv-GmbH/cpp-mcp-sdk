@@ -21,6 +21,50 @@ This document defines the initial public API surface and module boundaries for t
 - Runners:
   - `include/mcp/server/streamable_http_runner.hpp` defines `ServerFactory` contract and session isolation rules for HTTP runners.
   - `ServerFactory = std::function<std::shared_ptr<mcp::Server>()>` - a session-agnostic factory for creating Server instances.
+
+## Runner Behavior Rules
+
+The SDK provides runners for different transport types. The following rules define session isolation and lifecycle management:
+
+### STDIO Runner
+
+- Uses exactly one `Server` instance for its entire lifetime.
+- Calls `mcp::Server::start()` once during runner initialization.
+- Calls `mcp::Server::stop()` when the runner is stopped or destroyed.
+
+### Streamable HTTP Runner
+
+#### requireSessionId=true (multi-client mode)
+
+- Creates a new `Server` instance per unique MCP-Session-Id.
+- Session creation is triggered on the first accepted "initialize" request for a newly issued MCP-Session-Id.
+- Uses `RequestContext.sessionId` as the key to track per-session servers.
+- **Treats missing sessionId in requests as an internal error.**
+- Each per-session `Server` instance must call `mcp::Server::start()` before handling any messages.
+- Each per-session `Server` instance must call `mcp::Server::stop()` before being dropped.
+
+#### requireSessionId=false (single-client mode)
+
+- Uses exactly one `Server` instance for all requests.
+- Treats `RequestContext.sessionId` as `std::nullopt` (the header is ignored).
+- Calls `mcp::Server::start()` once during runner initialization.
+- Calls `mcp::Server::stop()` when the runner is stopped or destroyed.
+
+### Combined Runner
+
+- Creates one `Server` instance for STDIO transport.
+- Creates one `Server` instance per HTTP session when `requireSessionId=true`.
+- Uses the same lifecycle rules as individual runners for each transport.
+
+### Cleanup Triggers
+
+- **HTTP DELETE**: When an HTTP DELETE request is received for a specific sessionId, the runner must drop the corresponding `Server` instance after calling `mcp::Server::stop()`.
+- **HTTP 404**: When the transport returns HTTP 404 for a session (indicating the session is expired or terminated), the runner must drop the corresponding `Server` instance after calling `mcp::Server::stop()`.
+
+### Lifecycle Requirements
+
+- **Start**: The runner must call `mcp::Server::start()` for every `Server` instance it creates before handling any messages.
+- **Stop**: The runner must call `mcp::Server::stop()` before dropping a `Server` instance due to HTTP DELETE, HTTP 404 cleanup, runner stop, or runner destruction.
 - Auth:
   - `include/mcp/auth/provider.hpp` defines async auth provider and verifier interfaces for HTTP authorization integration.
 - Core constants and protocol errors:

@@ -122,7 +122,7 @@ private:
 /// - Session creation is triggered on the first accepted "initialize" request for a newly issued
 ///   MCP-Session-Id.
 /// - Uses RequestContext.sessionId as the key to track per-session servers.
-/// - Treats missing sessionId in requests (after initialization) as an internal error.
+/// - Treats missing sessionId in requests as an internal error.
 /// - Each per-session Server instance must call Server::start() before handling any messages.
 /// - Each per-session Server instance must call Server::stop() before being dropped.
 ///
@@ -167,7 +167,7 @@ inline constexpr std::string_view kCleanupTriggerHttp404 = "drop per-session ser
 /// @details When StreamableHttpServerOptions.http.requireSessionId is true:
 /// - Use RequestContext.sessionId as the key to track and route requests to the correct
 ///   per-session Server instance.
-/// - Treat missing sessionId in requests (after the initialize phase) as an internal error.
+/// - Treat missing sessionId in requests as an internal error.
 inline constexpr std::string_view kSessionKeyingRequireSessionIdTrue = "use RequestContext.sessionId as the key; treat missing sessionId as an internal error";
 
 /// @brief Session-keying behavior for requireSessionId=false
