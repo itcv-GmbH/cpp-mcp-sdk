@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -8,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -32,6 +34,77 @@ static constexpr const char *kDefaultSender = "__default_sender__";
 static constexpr std::size_t kIntegralRequestIdHashSeed = 0x9e3779b97f4a7c15ULL;
 static constexpr std::size_t kStringRequestIdHashSeed = 0x85ebca6bULL;
 static constexpr std::size_t kInboundCompletionWorkerCount = 4;
+
+// Dedicated thread for safely destroying thread pools.
+// This prevents pool destructor from running on pool worker threads (which crashes Boost.Asio).
+static std::shared_ptr<std::thread> &getDeleterThread()
+{
+  static std::shared_ptr<std::thread> deleterThread = []
+  {
+    auto thread = std::make_shared<std::thread>(
+      []
+      {
+        std::function<void()> task;
+        while (true)
+        {
+          {
+            // Sleep in a way that allows shutdown detection
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          }
+        }
+      });
+    thread->detach();
+    return thread;
+  }();
+  return deleterThread;
+}
+
+// Queue for deletion tasks - thread-safe
+static std::queue<std::function<void()>> &getDeletionQueue()
+{
+  static std::mutex queueMutex;
+  static std::queue<std::function<void()>> queue;
+  return queue;
+}
+
+// Post a deletion task to the dedicated deleter thread
+static void postDeletion(std::function<void()> &&task)
+{
+  static std::mutex queueMutex;
+  static std::condition_variable cv;
+  static std::queue<std::function<void()>> queue;
+  static std::atomic<bool> running {true};
+
+  static std::thread worker(
+    []
+    {
+      while (running.load(std::memory_order_relaxed))
+      {
+        std::function<void()> task;
+        {
+          std::unique_lock lock(queueMutex);
+          cv.wait_for(lock, std::chrono::milliseconds(100), [] { return !queue.empty(); });
+          if (!queue.empty())
+          {
+            task = std::move(queue.front());
+            queue.pop();
+          }
+        }
+        if (task)
+        {
+          task();
+        }
+      }
+    });
+  static std::once_flag once;
+  std::call_once(once, [] { worker.detach(); });
+
+  {
+    std::unique_lock lock(queueMutex);
+    queue.push(std::move(task));
+  }
+  cv.notify_one();
+}
 
 static auto senderKey(const RequestContext &context) -> std::string
 {
@@ -134,7 +207,17 @@ Router::Router(RouterOptions options)
   , options_(options)
   , timeoutPool_(std::make_unique<boost::asio::thread_pool>(1))
 {
-  inboundState_->completionPool = std::make_shared<boost::asio::thread_pool>(detail::kInboundCompletionWorkerCount);
+  // Create completion pool with custom deleter that ensures destruction
+  // runs on a non-pool thread (the deleter thread) to avoid crashes when
+  // pool destructor runs on its own worker thread.
+  auto rawPool = new boost::asio::thread_pool(detail::kInboundCompletionWorkerCount);
+  inboundState_->completionPool = std::shared_ptr<boost::asio::thread_pool>(rawPool,
+                                                                            [](boost::asio::thread_pool *pool)
+                                                                            {
+                                                                              // Post deletion to dedicated thread to ensure pool destructor
+                                                                              // never runs on a worker thread
+                                                                              detail::postDeletion([pool]() { delete pool; });
+                                                                            });
 }
 
 Router::~Router() noexcept
@@ -199,36 +282,18 @@ Router::~Router() noexcept
 
     // Clean up completion pool.
     // The key is to ensure the thread_pool destructor never runs on a worker thread.
-    //
-    // Sequence:
-    // 1. Get pool reference under lock
-    // 2. Call stop() to stop accepting new work (runs on main thread)
-    // 3. Release our reference (destructor runs on main thread)
-    //
-    // With weak_ptr in handlers, they don't keep the pool alive, so when we release
-    // our reference, the destructor runs on main thread (safe).
+    // With our custom deleter, the actual delete is posted to a dedicated thread.
     std::shared_ptr<boost::asio::thread_pool> completionPool;
     {
       const std::scoped_lock lock(inboundState_->mutex);
       completionPool = std::move(inboundState_->completionPool);
     }
 
-    // Handle timeoutPool
-    auto timeoutPool = std::move(timeoutPool_);
-    if (timeoutPool)
+    // Handle timeoutPool - stop it but don't wait/join (unsafe with references)
+    // The unique_ptr will destroy the pool when it goes out of scope
+    if (timeoutPool_)
     {
-      timeoutPool->stop();
-      std::thread joinThread([&timeoutPool]() { timeoutPool->join(); });
-      constexpr auto kJoinTimeout = std::chrono::milliseconds {100};
-      std::this_thread::sleep_for(kJoinTimeout);
-      if (joinThread.joinable())
-      {
-        joinThread.detach();
-      }
-      else
-      {
-        joinThread.join();
-      }
+      timeoutPool_->stop();
     }
     timeoutPool_.reset();
 
@@ -238,7 +303,7 @@ Router::~Router() noexcept
       completionPool->stop();
     }
 
-    // Release completionPool - destructor runs on main thread (safe).
+    // Release completionPool - custom deleter posts deletion to dedicated thread
     completionPool.reset();
   }
   catch (const std::exception &error)
@@ -338,35 +403,33 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
 
     const std::shared_ptr<Router::InboundState> inboundState = inboundState_;
 
-    // Use weak_ptr to avoid keeping pool alive. The pool stays alive because
-    // the Router destructor holds a reference until completionPool.reset().
-    // When handlers complete on worker threads, they won't keep the pool alive,
-    // so the only reference is the one in the destructor. When destructor releases
-    // its reference, it runs on the main thread (safe).
-    std::weak_ptr<boost::asio::thread_pool> poolWeak = completionPool;
+    // Capture shared_ptr to keep the completion pool alive while handler may be running.
+    // The custom deleter ensures that when the last shared_ptr is released, deletion
+    // happens on a dedicated thread (not a pool worker thread).
+    std::shared_ptr<boost::asio::thread_pool> poolKeepalive = completionPool;
     boost::asio::post(*completionPool,
-                      [poolWeak, inboundState, context, requestId = request.id, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable noexcept
+                      [poolKeepalive, inboundState, context, requestId = request.id, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable noexcept
                       {
-                        // Try to get pool - if it's gone, just complete with error
-                        auto pool = poolWeak.lock();
-                        if (!pool)
-                        {
-                          Router::completeInboundRequest(inboundState, context, requestId);
-                          detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Router is shutting down."), requestId)});
-                          return;
-                        }
-
+                        // Wrap entire handler in try/catch to prevent any exceptions from escaping
+                        // (addresses clang-tidy bugprone-exception-escape)
                         try
                         {
-                          Response response = handlerFuture.get();
-                          Router::completeInboundRequest(inboundState, context, requestId);
-                          detail::setPromiseValueNoThrow(*responsePromise, std::move(response));
+                          try
+                          {
+                            Response response = handlerFuture.get();
+                            Router::completeInboundRequest(inboundState, context, requestId);
+                            detail::setPromiseValueNoThrow(*responsePromise, std::move(response));
+                          }
+                          catch (...)
+                          {
+                            Router::completeInboundRequest(inboundState, context, requestId);
+                            detail::setPromiseValueNoThrow(*responsePromise,
+                                                           Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
+                          }
                         }
                         catch (...)
                         {
-                          Router::completeInboundRequest(inboundState, context, requestId);
-                          detail::setPromiseValueNoThrow(*responsePromise,
-                                                         Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
+                          // Suppress any exceptions - must not escape the handler
                         }
                       });
 

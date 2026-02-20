@@ -144,9 +144,8 @@ private:
     std::unordered_map<std::string, InboundRequestMap> inboundRequestsBySender;
     std::unordered_map<std::string, RequestIdByProgressTokenMap> inboundRequestIdsByProgressTokenBySender;
     InboundResponsePromiseBySenderMap inboundResponsePromisesBySender;
-    // Shared pointer to completion thread_pool. Must be carefully managed to avoid
-    // destructor running on a worker thread (causes crashes in Boost.Asio).
-    // Handlers use weak_ptr to avoid keeping pool alive, ensuring destructor runs on main thread.
+    // Shared pointer to completion thread_pool with custom deleter that posts
+    // deletion to a dedicated thread to avoid destructor running on a worker thread.
     std::shared_ptr<boost::asio::thread_pool> completionPool;
   };
 
