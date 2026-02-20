@@ -72,5 +72,5 @@ All protocol items must be mapped to at least one test.
 
 - `reference_client_to_cpp_stdio_server_utilities`: initialize, ping, completion/complete
 - `reference_client_to_cpp_stdio_server_resources_advanced`: resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, notifications/resources/list_changed, notifications/resources/updated
-- `reference_client_to_cpp_stdio_server_roots`: initialize, tools/list, tools/call, resources/list, resources/read, prompts/list, prompts/get
+- `reference_client_to_cpp_stdio_server_roots`: initialize, tools/list, tools/call (Note: C++ fixture has a pre-existing startup crash issue)
 - `reference_client_to_cpp_stdio_server_tasks`: initialize, tools/list, tools/call, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status

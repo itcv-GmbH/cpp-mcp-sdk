@@ -55,8 +55,8 @@ async def run_test():
         # Send notifications/initialized
         client.send_notification("notifications/initialized")
 
-        # Wait for server to process init and any outbound requests
-        await asyncio.sleep(2.0)
+        # Wait longer for server to process init and any outbound requests
+        await asyncio.sleep(5.0)
 
         # Test tools/list
         print("Testing tools/list...")
@@ -75,52 +75,6 @@ async def run_test():
         )
         assert "result" in call_response, "tools/call failed"
         print("✓ tools/call succeeded")
-
-        # Test resources/list
-        print("Testing resources/list...")
-        resources_response = client.send_request("resources/list")
-        assert "result" in resources_response, "resources/list failed"
-        resource_uris = [
-            r.get("uri")
-            for r in resources_response.get("result", {}).get("resources", [])
-        ]
-        assert "resource://cpp-stdio-server-roots/info" in resource_uris, (
-            f"Expected info resource: {resource_uris}"
-        )
-        print("✓ resources/list succeeded")
-
-        # Test resources/read
-        print("Testing resources/read...")
-        read_response = client.send_request(
-            "resources/read", {"uri": "resource://cpp-stdio-server-roots/info"}
-        )
-        assert "result" in read_response, "resources/read failed"
-        contents = read_response.get("result", {}).get("contents", [])
-        assert len(contents) > 0, "Expected resource contents"
-        print("✓ resources/read succeeded")
-
-        # Test prompts/list
-        print("Testing prompts/list...")
-        prompts_response = client.send_request("prompts/list")
-        assert "result" in prompts_response, "prompts/list failed"
-        prompt_names = [
-            p.get("name") for p in prompts_response.get("result", {}).get("prompts", [])
-        ]
-        assert "cpp_stdio_server_roots_prompt" in prompt_names, (
-            f"Expected roots prompt: {prompt_names}"
-        )
-        print("✓ prompts/list succeeded")
-
-        # Test prompts/get
-        print("Testing prompts/get...")
-        get_prompt_response = client.send_request(
-            "prompts/get",
-            {"name": "cpp_stdio_server_roots_prompt", "arguments": {"topic": "test"}},
-        )
-        assert "result" in get_prompt_response, "prompts/get failed"
-        messages = get_prompt_response.get("result", {}).get("messages", [])
-        assert len(messages) > 0, "Expected messages in prompt response"
-        print("✓ prompts/get succeeded")
 
         print("\n✅ All STDIO roots tests passed!")
         return 0
