@@ -9,6 +9,15 @@
 namespace mcp::detail
 {
 
+constexpr std::uint8_t kAsciiControlMax = 0x20;
+constexpr char kAsciiDelete = 0x7F;
+constexpr std::uint32_t kMaxPort = 65535;
+constexpr std::uint32_t kDecimalBase = 10;
+constexpr std::uint16_t kPortHttp = 80;
+constexpr std::uint16_t kPortHttps = 443;
+constexpr std::uint16_t kPortFtp = 21;
+constexpr std::uint16_t kPortFtps = 990;
+
 /**
  * Parsed representation of an absolute URL.
  * Provides a structured view of scheme, host, port, path, and query components
@@ -35,7 +44,7 @@ namespace detail
  */
 inline auto isWhitespaceOrControl(char c) -> bool
 {
-  return static_cast<unsigned char>(c) <= 0x20 || c == 0x7F;
+  return static_cast<unsigned char>(c) <= kAsciiControlMax || c == kAsciiDelete;
 }
 
 /**
@@ -57,9 +66,9 @@ inline auto toLowerAscii(std::string_view input, std::string &output) -> void
 {
   output.clear();
   output.reserve(input.size());
-  for (char c : input)
+  for (const char ch : input)
   {
-    output.push_back(toLowerAscii(c));
+    output.push_back(toLowerAscii(ch));
   }
 }
 
@@ -75,17 +84,16 @@ inline auto parsePort(std::string_view portStr) -> std::optional<std::uint16_t>
   }
 
   std::uint32_t port = 0;
-  for (char c : portStr)
+  for (const char ch : portStr)
   {
-    if (!std::isdigit(static_cast<unsigned char>(c)))
+    if (std::isdigit(static_cast<unsigned char>(ch)) == 0)
     {
       return std::nullopt;
     }
 
-    port = port * 10 + static_cast<std::uint32_t>(c - '0');
+    port = (port * kDecimalBase) + static_cast<std::uint32_t>(ch - '0');
 
-    // Check for overflow during accumulation
-    if (port > 65535)
+    if (port > kMaxPort)
     {
       return std::nullopt;
     }
@@ -102,27 +110,27 @@ inline auto getDefaultPort(std::string_view scheme) -> std::uint16_t
 {
   if (scheme == "http")
   {
-    return 80;
+    return kPortHttp;
   }
   if (scheme == "https")
   {
-    return 443;
+    return kPortHttps;
   }
   if (scheme == "ftp")
   {
-    return 21;
+    return kPortFtp;
   }
   if (scheme == "ftps")
   {
-    return 990;
+    return kPortFtps;
   }
   if (scheme == "ws")
   {
-    return 80;
+    return kPortHttp;
   }
   if (scheme == "wss")
   {
-    return 443;
+    return kPortHttps;
   }
   return 0;
 }
@@ -143,12 +151,12 @@ inline auto getDefaultPort(std::string_view scheme) -> std::uint16_t
  * @param rawUrl The URL string to parse
  * @return ParsedAbsoluteUrl if parsing succeeds, nullopt otherwise
  */
-inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbsoluteUrl>
+inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbsoluteUrl>  // NOLINT(readability-function-cognitive-complexity)
 {
   // Reject whitespace and control characters anywhere in the URL
-  for (char c : rawUrl)
+  for (const char ch : rawUrl)
   {
-    if (detail::isWhitespaceOrControl(c))
+    if (detail::isWhitespaceOrControl(ch))
     {
       return std::nullopt;
     }
@@ -170,17 +178,17 @@ inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbs
   // Validate scheme characters (must start with letter, then alphanumeric or +-.)
   for (std::size_t i = 0; i < schemeView.size(); ++i)
   {
-    char c = schemeView[i];
+    const char ch = schemeView[i];
     if (i == 0)
     {
-      if (!std::isalpha(static_cast<unsigned char>(c)))
+      if (std::isalpha(static_cast<unsigned char>(ch)) == 0)
       {
         return std::nullopt;
       }
     }
     else
     {
-      if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+      if (std::isalnum(static_cast<unsigned char>(ch)) == 0 && ch != '+' && ch != '-' && ch != '.')
       {
         return std::nullopt;
       }
@@ -191,11 +199,10 @@ inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbs
   const std::size_t authorityStart = schemeEnd + 3;
   if (authorityStart >= rawUrl.size())
   {
-    // No authority component (e.g., "http://")
     return std::nullopt;
   }
 
-  std::string_view remainder = rawUrl.substr(authorityStart);
+  const std::string_view remainder = rawUrl.substr(authorityStart);
 
   // Find end of authority (start of path, query, or fragment)
   std::size_t pathStart = remainder.find_first_of("/?#");
@@ -204,7 +211,7 @@ inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbs
     pathStart = remainder.size();
   }
 
-  std::string_view authority = remainder.substr(0, pathStart);
+  const std::string_view authority = remainder.substr(0, pathStart);
   if (authority.empty())
   {
     return std::nullopt;
@@ -232,7 +239,7 @@ inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbs
     }
 
     // Extract host without brackets
-    std::string_view ipv6Content = hostPort.substr(1, bracketEnd - 1);
+    const std::string_view ipv6Content = hostPort.substr(1, bracketEnd - 1);
     if (ipv6Content.empty())
     {
       return std::nullopt;  // Empty IPv6 address
@@ -289,8 +296,7 @@ inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbs
 
   if (pathStart < remainder.size())
   {
-    // We have path/query/fragment after authority
-    char firstChar = remainder[pathStart];
+    const char firstChar = remainder[pathStart];
 
     if (firstChar == '?')
     {

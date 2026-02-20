@@ -15,35 +15,35 @@ namespace detail
 
 // ASCII whitespace: space (0x20), horizontal tab (0x09), line feed (0x0A),
 // vertical tab (0x0B), form feed (0x0C), carriage return (0x0D)
-constexpr bool isAsciiWhitespace(char c) noexcept
+constexpr auto isAsciiWhitespace(char c) noexcept -> bool
 {
   const auto byte = static_cast<unsigned char>(c);
   return byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0B || byte == 0x0C || byte == 0x0D;
 }
 
 // ASCII control characters: 0x00-0x1F and 0x7F (DEL)
-constexpr bool isAsciiControl(char c) noexcept
+constexpr auto isAsciiControl(char c) noexcept -> bool
 {
   const auto byte = static_cast<unsigned char>(c);
   return byte <= 0x1F || byte == 0x7F;
 }
 
 // ASCII uppercase letter: 'A' (0x41) to 'Z' (0x5A)
-constexpr bool isAsciiUpper(char c) noexcept
+constexpr auto isAsciiUpper(char c) noexcept -> bool
 {
   const auto byte = static_cast<unsigned char>(c);
   return byte >= 0x41 && byte <= 0x5A;
 }
 
 // ASCII lowercase letter: 'a' (0x61) to 'z' (0x7A)
-constexpr bool isAsciiLower(char c) noexcept
+constexpr auto isAsciiLower(char c) noexcept -> bool
 {
   const auto byte = static_cast<unsigned char>(c);
   return byte >= 0x61 && byte <= 0x7A;
 }
 
 // Convert ASCII uppercase to lowercase: 'A' -> 'a', others unchanged
-constexpr char toAsciiLower(char c) noexcept
+constexpr auto toAsciiLower(char c) noexcept -> char
 {
   if (isAsciiUpper(c))
   {
@@ -134,14 +134,7 @@ inline auto equalsIgnoreCaseAscii(std::string_view left, std::string_view right)
 ///       Does NOT use <cctype> functions to avoid locale-dependent behavior.
 inline auto containsAsciiWhitespaceOrControl(std::string_view value) -> bool
 {
-  for (const char character : value)
-  {
-    if (detail::isAsciiWhitespace(character) || detail::isAsciiControl(character))
-    {
-      return true;
-    }
-  }
-  return false;
+  return std::any_of(value.begin(), value.end(), [](char character) -> bool { return detail::isAsciiWhitespace(character) || detail::isAsciiControl(character); });
 }
 
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)

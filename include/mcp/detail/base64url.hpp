@@ -10,18 +10,35 @@
 namespace mcp::detail
 {
 
-/**
- * @brief Encodes bytes to base64url (URL-safe alphabet, no padding).
- *
- * Uses the URL-safe base64 alphabet: A-Z, a-z, 0-9, -, _
- * Does not include padding characters (=).
- *
- * @param bytes The input bytes to encode.
- * @return std::string The base64url-encoded string.
- */
+constexpr std::size_t kBase64AlphabetSize = 64;
+constexpr std::size_t kDecodeTableSize = 256;
+constexpr std::size_t kUppercaseLetterCount = 26;
+constexpr std::size_t kLowercaseLetterCount = 26;
+constexpr std::size_t kDigitCount = 10;
+constexpr std::size_t kBase64UrlValueMinus = 62;
+constexpr std::size_t kBase64UrlValueUnderscore = 63;
+constexpr std::uint8_t kMask6Bits = 0x3FU;
+constexpr std::uint8_t kMask8Bits = 0xFFU;
+constexpr std::uint8_t kMask4Bits = 0x0FU;
+constexpr std::uint32_t kShift16 = 16U;
+constexpr std::uint32_t kShift8 = 8U;
+
 inline auto encodeBase64UrlNoPad(std::string_view bytes) -> std::string
 {
-  static constexpr char kBase64UrlAlphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  static constexpr std::array<char, kBase64AlphabetSize> kBase64UrlAlphabet = []() -> std::array<char, kBase64AlphabetSize>
+  {
+    std::array<char, kBase64AlphabetSize> table {};
+    const char *alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    for (std::size_t i = 0; i < kBase64AlphabetSize; ++i)
+    {
+      table[i] = alphabet[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-pro-bounds-constant-array-index)
+    }
+    return table;
+  }();
+
+  constexpr auto kShift18 = 18U;
+  constexpr auto kShift12 = 12U;
+  constexpr auto kShift6 = 6U;
 
   const std::size_t inputLength = bytes.size();
   if (inputLength == 0)
@@ -29,59 +46,42 @@ inline auto encodeBase64UrlNoPad(std::string_view bytes) -> std::string
     return {};
   }
 
-  // Calculate output size: ceil(inputLength * 4 / 3), but without padding
   const std::size_t outputLength = ((inputLength + 2U) / 3U) * 4U;
   std::string encoded;
   encoded.reserve(outputLength);
 
-  std::size_t index = 0;
-  while (index + 2U < inputLength)
+  std::size_t idx = 0;
+  while (idx + 2U < inputLength)
   {
-    const std::uint32_t triple = (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << 16U)
-      | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 1U])) << 8U) | static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 2U]));
+    const std::uint32_t triple = (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[idx])) << 16U)
+      | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[idx + 1U])) << 8U) | static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[idx + 2U]));
 
-    encoded.push_back(kBase64UrlAlphabet[(triple >> 18U) & 0x3FU]);
-    encoded.push_back(kBase64UrlAlphabet[(triple >> 12U) & 0x3FU]);
-    encoded.push_back(kBase64UrlAlphabet[(triple >> 6U) & 0x3FU]);
-    encoded.push_back(kBase64UrlAlphabet[triple & 0x3FU]);
-    index += 3U;
+    encoded.push_back(kBase64UrlAlphabet[(triple >> kShift18) & kMask6Bits]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    encoded.push_back(kBase64UrlAlphabet[(triple >> kShift12) & kMask6Bits]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    encoded.push_back(kBase64UrlAlphabet[(triple >> kShift6) & kMask6Bits]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    encoded.push_back(kBase64UrlAlphabet[triple & kMask6Bits]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    idx += 3U;
   }
 
-  const std::size_t remainder = inputLength - index;
-  if (remainder == 1U)
+  const std::size_t remaining = inputLength - idx;
+  if (remaining == 1U)
   {
-    const std::uint32_t triple = static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << 16U;
-    encoded.push_back(kBase64UrlAlphabet[(triple >> 18U) & 0x3FU]);
-    encoded.push_back(kBase64UrlAlphabet[(triple >> 12U) & 0x3FU]);
-    // No padding for base64url
+    const std::uint32_t triple = static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[idx])) << 16U;
+    encoded.push_back(kBase64UrlAlphabet[(triple >> kShift18) & kMask6Bits]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    encoded.push_back(kBase64UrlAlphabet[(triple >> kShift12) & kMask6Bits]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
   }
-  else if (remainder == 2U)
+  else if (remaining == 2U)
   {
     const std::uint32_t triple =
-      (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index])) << 16U) | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[index + 1U])) << 8U);
-    encoded.push_back(kBase64UrlAlphabet[(triple >> 18U) & 0x3FU]);
-    encoded.push_back(kBase64UrlAlphabet[(triple >> 12U) & 0x3FU]);
-    encoded.push_back(kBase64UrlAlphabet[(triple >> 6U) & 0x3FU]);
-    // No padding for base64url
+      (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[idx])) << 16U) | (static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[idx + 1U])) << 8U);
+    encoded.push_back(kBase64UrlAlphabet[(triple >> kShift18) & kMask6Bits]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    encoded.push_back(kBase64UrlAlphabet[(triple >> kShift12) & kMask6Bits]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    encoded.push_back(kBase64UrlAlphabet[(triple >> kShift6) & kMask6Bits]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
   }
 
   return encoded;
 }
 
-/**
- * @brief Decodes a base64url (URL-safe alphabet, no padding) string.
- *
- * Uses the URL-safe base64 alphabet: A-Z, a-z, 0-9, -, _
- * Does not accept padding characters (=).
- *
- * Decoding is strict:
- * - Rejects inputs with remainder length 1 (invalid base64 quantum)
- * - Rejects characters not in the url-safe alphabet
- * - Rejects padding characters (=)
- *
- * @param text The base64url-encoded string to decode.
- * @return std::optional<std::string> The decoded bytes, or std::nullopt if invalid.
- */
 inline auto decodeBase64UrlNoPad(std::string_view text) -> std::optional<std::string>
 {
   const std::size_t inputLength = text.size();
@@ -90,49 +90,41 @@ inline auto decodeBase64UrlNoPad(std::string_view text) -> std::optional<std::st
     return std::string {};
   }
 
-  // Build reverse lookup table
-  static const auto kDecodeTable = []() -> std::array<std::int8_t, 256>
+  static const auto kDecodeTable = []() -> std::array<std::int8_t, kDecodeTableSize>
   {
-    std::array<std::int8_t, 256> table {};
+    std::array<std::int8_t, kDecodeTableSize> table {};
     table.fill(-1);
-    for (std::int8_t i = 0; i < 26; ++i)
+    for (std::size_t i = 0; i < kUppercaseLetterCount; ++i)
     {
-      table[static_cast<std::size_t>('A' + i)] = i;
+      table[static_cast<std::size_t>('A' + i)] = static_cast<std::int8_t>(i);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     }
-    for (std::int8_t i = 0; i < 26; ++i)
+    for (std::size_t i = 0; i < kLowercaseLetterCount; ++i)
     {
-      table[static_cast<std::size_t>('a' + i)] = 26 + i;
+      table[static_cast<std::size_t>('a' + i)] = static_cast<std::int8_t>(kUppercaseLetterCount + i);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     }
-    for (std::int8_t i = 0; i < 10; ++i)
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
+    for (std::size_t i = 0; i < kDigitCount; ++i)
     {
-      table[static_cast<std::size_t>('0' + i)] = 52 + i;
+      table[static_cast<std::size_t>('0' + i)] = static_cast<std::int8_t>(kUppercaseLetterCount + kLowercaseLetterCount + i);
     }
-    table[static_cast<std::size_t>('-')] = 62;
-    table[static_cast<std::size_t>('_')] = 63;
+    // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
+    table[static_cast<std::size_t>('-')] = static_cast<std::int8_t>(kBase64UrlValueMinus);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    table[static_cast<std::size_t>('_')] = static_cast<std::int8_t>(kBase64UrlValueUnderscore);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     return table;
   }();
 
-  // Check for invalid characters and padding
   for (const char character : text)
   {
-    const unsigned char byte = static_cast<unsigned char>(character);
-    if (kDecodeTable[byte] < 0)
+    const auto byte = static_cast<unsigned char>(character);
+    if (kDecodeTable[byte] < 0)  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     {
-      // Invalid character (includes '=' padding, whitespace, standard base64 +/, etc.)
       return std::nullopt;
     }
   }
 
-  // Calculate output size
-  // For unpadded base64url: every 4 chars decode to 3 bytes
-  // Remainder 0: exact multiple of 3 bytes
-  // Remainder 2: 1 extra byte
-  // Remainder 3: 2 extra bytes
-  // Remainder 1: invalid (would decode to partial byte)
   const std::size_t remainder = inputLength % 4;
   if (remainder == 1)
   {
-    // Invalid: remainder of 1 would decode to a partial byte
     return std::nullopt;
   }
 
@@ -149,36 +141,41 @@ inline auto decodeBase64UrlNoPad(std::string_view text) -> std::optional<std::st
   std::string decoded;
   decoded.reserve(outputLength);
 
-  std::size_t index = 0;
-  while (index + 3 < inputLength)
+  std::size_t idx = 0;
+  while (idx + 3 < inputLength)
   {
-    const std::uint32_t quad = (static_cast<std::uint32_t>(kDecodeTable[static_cast<unsigned char>(text[index])]) << 18U)
-      | (static_cast<std::uint32_t>(kDecodeTable[static_cast<unsigned char>(text[index + 1])]) << 12U)
-      | (static_cast<std::uint32_t>(kDecodeTable[static_cast<unsigned char>(text[index + 2])]) << 6U)
-      | static_cast<std::uint32_t>(kDecodeTable[static_cast<unsigned char>(text[index + 3])]);
+    const auto byte0 = static_cast<unsigned char>(text[idx]);
+    const auto byte1 = static_cast<unsigned char>(text[idx + 1]);
+    const auto byte2 = static_cast<unsigned char>(text[idx + 2]);
+    const auto byte3 = static_cast<unsigned char>(text[idx + 3]);
+    const std::uint32_t quad = (static_cast<std::uint32_t>(kDecodeTable[byte0]) << 18U)  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+      | (static_cast<std::uint32_t>(kDecodeTable[byte1]) << 12U)  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+      | (static_cast<std::uint32_t>(kDecodeTable[byte2]) << 6U) | static_cast<std::uint32_t>(kDecodeTable[byte3]);  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
 
-    decoded.push_back(static_cast<char>((quad >> 16U) & 0xFFU));
-    decoded.push_back(static_cast<char>((quad >> 8U) & 0xFFU));
-    decoded.push_back(static_cast<char>(quad & 0xFFU));
-    index += 4;
+    decoded.push_back(static_cast<char>((quad >> kShift16) & kMask8Bits));
+    decoded.push_back(static_cast<char>((quad >> kShift8) & kMask8Bits));
+    decoded.push_back(static_cast<char>(quad & kMask8Bits));
+    idx += 4;
   }
 
-  // Handle remaining characters (0, 2, or 3)
-  // Remainder 2: 2 chars -> 1 byte: (c0 << 2) | (c1 >> 4)
-  // Remainder 3: 3 chars -> 2 bytes: ((c0 << 2) | (c1 >> 4)), (((c1 & 0x0F) << 4) | (c2 >> 2))
   if (remainder == 2)
   {
-    const std::uint32_t c0 = static_cast<std::uint32_t>(kDecodeTable[static_cast<unsigned char>(text[index])]);
-    const std::uint32_t c1 = static_cast<std::uint32_t>(kDecodeTable[static_cast<unsigned char>(text[index + 1])]);
-    decoded.push_back(static_cast<char>((c0 << 2U) | (c1 >> 4U)));
+    const auto char0 = static_cast<unsigned char>(text[idx]);
+    const auto char1 = static_cast<unsigned char>(text[idx + 1]);
+    const auto val0 = static_cast<std::uint32_t>(static_cast<std::uint8_t>(kDecodeTable[char0]));  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    const auto val1 = static_cast<std::uint32_t>(static_cast<std::uint8_t>(kDecodeTable[char1]));  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    decoded.push_back(static_cast<char>((val0 << 2U) | (val1 >> 4U)));
   }
   else if (remainder == 3)
   {
-    const std::uint32_t c0 = static_cast<std::uint32_t>(kDecodeTable[static_cast<unsigned char>(text[index])]);
-    const std::uint32_t c1 = static_cast<std::uint32_t>(kDecodeTable[static_cast<unsigned char>(text[index + 1])]);
-    const std::uint32_t c2 = static_cast<std::uint32_t>(kDecodeTable[static_cast<unsigned char>(text[index + 2])]);
-    decoded.push_back(static_cast<char>((c0 << 2U) | (c1 >> 4U)));
-    decoded.push_back(static_cast<char>(((c1 & 0x0FU) << 4U) | (c2 >> 2U)));
+    const auto char0 = static_cast<unsigned char>(text[idx]);
+    const auto char1 = static_cast<unsigned char>(text[idx + 1]);
+    const auto char2 = static_cast<unsigned char>(text[idx + 2]);
+    const auto val0 = static_cast<std::uint32_t>(static_cast<std::uint8_t>(kDecodeTable[char0]));  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    const auto val1 = static_cast<std::uint32_t>(static_cast<std::uint8_t>(kDecodeTable[char1]));  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    const auto val2 = static_cast<std::uint32_t>(static_cast<std::uint8_t>(kDecodeTable[char2]));  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    decoded.push_back(static_cast<char>((val0 << 2U) | (val1 >> 4U)));
+    decoded.push_back(static_cast<char>(((val1 & kMask4Bits) << 4U) | (val2 >> 2U)));
   }
 
   return decoded;
