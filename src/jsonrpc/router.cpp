@@ -35,20 +35,67 @@ static constexpr std::size_t kIntegralRequestIdHashSeed = 0x9e3779b97f4a7c15ULL;
 static constexpr std::size_t kStringRequestIdHashSeed = 0x85ebca6bULL;
 static constexpr std::size_t kInboundCompletionWorkerCount = 4;
 
-// Singleton class to safely manage a dedicated worker thread for pool deletion tasks.
+// Immortal executor class to safely manage a dedicated worker thread for pool deletion tasks.
 // This prevents pool destructor from running on pool worker threads (which crashes Boost.Asio).
-// The singleton's destructor properly shuts down the worker thread before static destruction completes.
-class DeletionWorkerSingleton
+//
+// IMPLEMENTATION NOTES:
+// - Uses Meyer's singleton pattern with heap allocation: static DeletionExecutor* exec = new DeletionExecutor();
+// - This makes the executor "immortal" - it is never destroyed, avoiding static destruction order UB.
+// - We intentionally do NOT join the worker thread at exit because:
+//   1) Joining can hang if the pool destructor blocks waiting for worker threads that are themselves waiting for destruction.
+//   2) At process exit, the OS will clean up the worker thread regardless.
+//   3) This avoids the "static destruction UB" where the singleton is accessed during process teardown.
+// - The executor runs until process termination, ensuring all pool deletions complete before the process exits
+//   (assuming the process exits normally after the Router is destroyed).
+class DeletionExecutor
 {
 public:
-  static DeletionWorkerSingleton &instance()
+  // Post a deletion task to the worker thread. MUST be noexcept.
+  // On failure to enqueue, falls back to spawning a detached thread for the deletion.
+  // If even that fails, we leak the pool (better than terminating).
+  static void postDeletion(std::function<void()> &&task) noexcept
   {
-    static DeletionWorkerSingleton instance;
-    return instance;
+    try
+    {
+      get().postDeletionImpl(std::move(task));
+    }
+    catch (...)
+    {
+      // Failed to enqueue - fall back to spawning a separate thread
+      try
+      {
+        std::thread fallbackThread([t = std::move(task)]() mutable { t(); });
+        fallbackThread.detach();
+      }
+      catch (...)
+      {
+        // If even thread creation fails, we must leak the pool to avoid std::terminate.
+        // This is acceptable as it only happens in extreme memory pressure scenarios.
+      }
+    }
   }
 
-  // Post a deletion task to the worker thread
-  void postDeletion(std::function<void()> &&task)
+private:
+  // Meyer's singleton with immortal heap allocation - never destroyed
+  static DeletionExecutor &get()
+  {
+    static DeletionExecutor *exec = new DeletionExecutor();
+    return *exec;
+  }
+
+  DeletionExecutor()
+    : worker_([this] { workerLoop(); })
+  {
+  }
+
+  // Non-copyable, non-movable
+  DeletionExecutor(const DeletionExecutor &) = delete;
+  DeletionExecutor(DeletionExecutor &&) = delete;
+  auto operator=(const DeletionExecutor &) -> DeletionExecutor & = delete;
+  auto operator=(DeletionExecutor &&) -> DeletionExecutor & = delete;
+
+  // Implementation of postDeletion - can throw, caller wraps in try/catch
+  void postDeletionImpl(std::function<void()> &&task)
   {
     {
       std::unique_lock lock(mutex_);
@@ -57,39 +104,14 @@ public:
     cv_.notify_one();
   }
 
-private:
-  DeletionWorkerSingleton()
-    : worker_([this] { workerLoop(); })
-  {
-  }
-
-  ~DeletionWorkerSingleton()
-  {
-    // Signal shutdown
-    running_.store(false, std::memory_order_relaxed);
-    cv_.notify_one();
-
-    // Join the worker thread - this ensures the worker finishes before destruction completes
-    if (worker_.joinable())
-    {
-      worker_.join();
-    }
-  }
-
-  // Non-copyable, non-movable
-  DeletionWorkerSingleton(const DeletionWorkerSingleton &) = delete;
-  DeletionWorkerSingleton(DeletionWorkerSingleton &&) = delete;
-  auto operator=(const DeletionWorkerSingleton &) -> DeletionWorkerSingleton & = delete;
-  auto operator=(DeletionWorkerSingleton &&) -> DeletionWorkerSingleton & = delete;
-
   void workerLoop()
   {
-    while (running_.load(std::memory_order_relaxed))
+    while (true)
     {
       std::function<void()> task;
       {
         std::unique_lock lock(mutex_);
-        cv_.wait_for(lock, std::chrono::milliseconds(100), [this] { return !queue_.empty() || !running_.load(std::memory_order_relaxed); });
+        cv_.wait_for(lock, std::chrono::milliseconds(100), [this] { return !queue_.empty(); });
         if (!queue_.empty())
         {
           task = std::move(queue_.front());
@@ -106,14 +128,14 @@ private:
   std::mutex mutex_;
   std::condition_variable cv_;
   std::queue<std::function<void()>> queue_;
-  std::atomic<bool> running_ {true};
   std::thread worker_;
 };
 
-// Post a deletion task to the dedicated deleter thread
-static void postDeletion(std::function<void()> &&task)
+// Helper function to post deletion task - calls the static noexcept method.
+// This wrapper is noexcept to ensure the custom deleter for shared_ptr can call it safely.
+static void postDeletion(std::function<void()> &&task) noexcept
 {
-  DeletionWorkerSingleton::instance().postDeletion(std::move(task));
+  DeletionExecutor::postDeletion(std::move(task));
 }
 
 static auto senderKey(const RequestContext &context) -> std::string
@@ -220,12 +242,12 @@ Router::Router(RouterOptions options)
   // Create completion pool with custom deleter that ensures destruction
   // runs on a non-pool thread (the deleter thread) to avoid crashes when
   // pool destructor runs on its own worker thread.
+  // The deleter is marked noexcept to ensure std::shared_ptr's destructor won't throw.
   auto rawPool = new boost::asio::thread_pool(detail::kInboundCompletionWorkerCount);
   inboundState_->completionPool = std::shared_ptr<boost::asio::thread_pool>(rawPool,
-                                                                            [](boost::asio::thread_pool *pool)
+                                                                            [](boost::asio::thread_pool *pool) noexcept
                                                                             {
-                                                                              // Post deletion to dedicated thread to ensure pool destructor
-                                                                              // never runs on a worker thread
+                                                                              // postDeletion is noexcept, so this deleter is safe
                                                                               detail::postDeletion([pool]() { delete pool; });
                                                                             });
 }
