@@ -208,7 +208,7 @@ runner.stop();   // Stops HTTP
 ### Relationship to Transport Primitives
 
 Runners wrap the lower-level transport types:
-- `mcp::StdioServerRunner` uses `mcp::transport::StdioTransport::run()` internally.
+- `mcp::StdioServerRunner` directly handles stdio I/O without using `StdioTransport::run()`.
 - `mcp::StreamableHttpServerRunner` owns `mcp::transport::HttpServerRuntime` and delegates to `mcp::transport::http::StreamableHttpServer`.
 - `mcp::CombinedServerRunner` orchestrates multiple runners.
 
