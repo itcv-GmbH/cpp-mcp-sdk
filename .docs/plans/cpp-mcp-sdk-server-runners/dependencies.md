@@ -9,7 +9,7 @@
 - [x] `task-015`: Add Transport Conformance Tests for Session Issuance + Multi-Session Routing (Depends on: `task-014`)
 
 ## Phase 3: STDIO Runner (Blocked by Phase 1)
-- [ ] `task-003`: Implement STDIO Server Runner (Blocking + Async)
+- [x] `task-003`: Implement STDIO Server Runner (Blocking + Async)
 - [ ] `task-004`: Add STDIO Runner Unit Tests (Depends on: `task-003`)
 
 ## Phase 4: Streamable HTTP Runner (Blocked by Phase 2)
