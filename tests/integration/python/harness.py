@@ -34,8 +34,14 @@ def start_process(
 
 def stop_process(process: subprocess.Popen[str], timeout: float = 5.0) -> None:
     """Stop a process gracefully with escalation."""
-    if process.stdin and not process.stdin.closed:
-        process.stdin.close()
+    # Only close stdin if the process is still running
+    if process.poll() is None:
+        try:
+            if process.stdin and not process.stdin.closed:
+                process.stdin.close()
+        except (BrokenPipeError, OSError):
+            # Server may have already closed the pipe
+            pass
 
     try:
         process.wait(timeout=timeout)

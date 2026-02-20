@@ -3,11 +3,9 @@
 import json
 import queue
 import subprocess
-import sys
 import threading
 import time
-import uuid
-from typing import Any, IO, Optional
+from typing import Any, Callable, Dict, IO, Optional
 
 
 class StdioRawClient:
@@ -21,10 +19,20 @@ class StdioRawClient:
         self.process = process
         self.timeout = timeout
         self._notification_queue: queue.Queue[dict[str, Any]] = queue.Queue()
-        self._response_queues: dict[str, queue.Queue[dict[str, Any]]] = {}
+        self._response_queues: dict[str | int, queue.Queue[dict[str, Any]]] = {}
         self._lock = threading.Lock()
         self._reader_thread: Optional[threading.Thread] = None
         self._running = False
+        # Handler for server-initiated requests (e.g., ping, roots/list from server)
+        self._request_handlers: Dict[
+            str, Callable[[dict[str, Any]], dict[str, Any]]
+        ] = {}
+
+    def register_request_handler(
+        self, method: str, handler: Callable[[dict[str, Any]], dict[str, Any]]
+    ) -> None:
+        """Register a handler for server-initiated requests."""
+        self._request_handlers[method] = handler
 
     def start(self) -> None:
         """Start the reader thread."""
@@ -36,9 +44,8 @@ class StdioRawClient:
         """Stop the reader thread and signal EOF to server."""
         self._running = False
 
-        # Close stdin to signal EOF per MCP spec shutdown sequence
-        if self.process.stdin and not self.process.stdin.closed:
-            self.process.stdin.close()
+        # Note: We don't close stdin here because the test harness handles process cleanup
+        # and closing stdin may cause broken pipe errors if the server has already closed it
 
         if self._reader_thread:
             self._reader_thread.join(timeout=1.0)
@@ -54,34 +61,87 @@ class StdioRawClient:
                 if not line:
                     continue
 
-                message = json.loads(line.strip())
-                self._handle_message(message)
-            except json.JSONDecodeError:
-                # Skip non-JSON lines (these might be log output)
-                continue
-            except Exception as e:
-                # Log unexpected errors for debugging
-                print(f"STDIO read loop error: {e}", file=sys.stderr)
+                # Check if it's a JSON line
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    message = json.loads(stripped)
+                    self._handle_message(message)
+                except json.JSONDecodeError:
+                    # This is a non-JSON line (stderr log output)
+                    continue
+            except Exception:
+                # Log unexpected errors silently
                 continue
 
     def _handle_message(self, message: dict[str, Any]) -> None:
         """Route incoming messages to appropriate handlers."""
+        msg_method = message.get("method")
         msg_id = message.get("id")
+
+        # Handle server-initiated requests first (these have both method and id)
+        if msg_method is not None and msg_id is not None:
+            # This is a server-initiated request (e.g., ping, roots/list from server)
+            # The server expects a response from the client
+            response_result: dict[str, Any] = {}
+            if msg_method in self._request_handlers:
+                handler = self._request_handlers[msg_method]
+                try:
+                    response_result = handler(message)
+                except Exception:
+                    # Send error response
+                    error_response = {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "error": {
+                            "code": -32603,
+                            "message": "Internal error",
+                        },
+                    }
+                    self._send_message(error_response)
+                    return
+
+            # Send success response
+            response = {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": response_result,
+            }
+            self._send_message(response)
+            return  # Don't process this as a response
 
         if msg_id is None:
             # This is a notification
             self._notification_queue.put(message)
         else:
-            # This is a response
+            # This is a response - handle both string and numeric IDs
             with self._lock:
+                # Check with original type
                 if msg_id in self._response_queues:
                     self._response_queues[msg_id].put(message)
+                # Also check with converted type (string <-> int)
+                elif isinstance(msg_id, str):
+                    try:
+                        num_id = int(msg_id)
+                        if num_id in self._response_queues:
+                            self._response_queues[num_id].put(message)
+                    except ValueError:
+                        pass
+                elif isinstance(msg_id, int):
+                    str_id = str(msg_id)
+                    if str_id in self._response_queues:
+                        self._response_queues[str_id].put(message)
 
     def send_request(
         self, method: str, params: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
         """Send a JSON-RPC request and return the response."""
-        request_id = str(uuid.uuid4())
+        # Use a unique ID based on time to avoid collision with server's outbound requests
+        # The server may use small integers (1, 2, 3) for its outbound requests, so we use
+        # a different range based on the current time in milliseconds
+        request_id = int(time.time() * 1000) % 100000
+
         request: dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": request_id,
