@@ -4,10 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <iomanip>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -20,6 +22,7 @@
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/security/crypto_random.hpp>
 #include <mcp/transport/http.hpp>
 
 #ifndef MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY
@@ -473,6 +476,46 @@ static auto isInitializeRequest(const jsonrpc::Message &message) -> bool
   }
 
   return std::get<jsonrpc::Request>(message).method == "initialize";
+}
+
+static auto generateSessionId() -> std::string
+{
+  // Generate 16 bytes of cryptographically secure random data
+  // and hex-encode them to produce visible ASCII characters (0-9, a-f)
+  constexpr std::size_t kSessionIdRandomBytes = 16;
+  const std::vector<std::uint8_t> randomBytes = mcp::security::cryptoRandomBytes(kSessionIdRandomBytes);
+
+  std::ostringstream oss;
+  oss << std::hex << std::setfill('0');
+  for (const std::uint8_t byte : randomBytes)
+  {
+    oss << std::setw(2) << static_cast<int>(byte);
+  }
+
+  return oss.str();
+}
+
+static auto extractProtocolVersionFromInitializeResult(const jsonrpc::JsonValue &result) -> std::optional<std::string>
+{
+  // The InitializeResult contains protocolVersion in the result
+  // format: { "protocolVersion": "2024-11-05", ... }
+  if (!result.is_object())
+  {
+    return std::nullopt;
+  }
+
+  if (!result.contains("protocolVersion") || !result["protocolVersion"].is_string())
+  {
+    return std::nullopt;
+  }
+
+  const std::string protocolVersion = result["protocolVersion"].as<std::string>();
+  if (!http::isValidProtocolVersion(protocolVersion))
+  {
+    return std::nullopt;
+  }
+
+  return protocolVersion;
 }
 
 static auto toRequestContext(const RequestValidationResult &validation) -> jsonrpc::RequestContext
@@ -1115,7 +1158,19 @@ struct StreamableHttpServer::Impl
       return *authorizationRejection;
     }
 
-    const jsonrpc::RequestContext context = toRequestContext(validation);
+    // Generate a new session ID for initialize requests when requireSessionId is enabled
+    std::optional<std::string> generatedSessionId;
+    if (requestKind == RequestKind::kInitialize && options.http.requireSessionId)
+    {
+      generatedSessionId = generateSessionId();
+    }
+
+    jsonrpc::RequestContext context = toRequestContext(validation);
+    // If we generated a session ID for initialize, set it on the context
+    if (generatedSessionId.has_value())
+    {
+      context.sessionId = generatedSessionId;
+    }
 
     if (std::holds_alternative<jsonrpc::Notification>(message))
     {
@@ -1200,6 +1255,35 @@ struct StreamableHttpServer::Impl
       }
 
       const jsonrpc::Message responseMessage = std::visit([](const auto &typedResponse) -> jsonrpc::Message { return jsonrpc::Message {typedResponse}; }, *requestResult.response);
+
+      // Handle session creation for initialize requests
+      if (generatedSessionId.has_value())
+      {
+        // Check if the response is a successful initialize response
+        bool isInitializeSuccess = false;
+        std::optional<std::string> negotiatedProtocolVersion;
+
+        if (std::holds_alternative<jsonrpc::SuccessResponse>(responseMessage))
+        {
+          const jsonrpc::SuccessResponse &successResponse = std::get<jsonrpc::SuccessResponse>(responseMessage);
+          // Extract protocol version from the result
+          negotiatedProtocolVersion = extractProtocolVersionFromInitializeResult(successResponse.result);
+          isInitializeSuccess = true;
+        }
+
+        if (isInitializeSuccess && negotiatedProtocolVersion.has_value())
+        {
+          // Success: upsert session as active with negotiated protocol version
+          upsertSession(*generatedSessionId, SessionLookupState::kActive, negotiatedProtocolVersion);
+
+          // Add MCP-Session-Id header to the response
+          ServerResponse response = jsonResponse(kStatusOk, jsonrpc::serializeMessage(responseMessage));
+          setHeader(response.headers, kHeaderMcpSessionId, *generatedSessionId);
+          return response;
+        }
+        // On error or invalid response: do not include header, no session entry remains
+      }
+
       return jsonResponse(kStatusOk, jsonrpc::serializeMessage(responseMessage));
     }
 
@@ -1213,6 +1297,9 @@ struct StreamableHttpServer::Impl
       }
     }
 
+    std::optional<std::string> negotiatedProtocolVersionForSse;
+    bool isInitializeSuccessForSse = false;
+
     if (requestResult.response.has_value())
     {
       const jsonrpc::Message responseMessage = std::visit([](const auto &typedResponse) -> jsonrpc::Message { return jsonrpc::Message {typedResponse}; }, *requestResult.response);
@@ -1225,6 +1312,25 @@ struct StreamableHttpServer::Impl
       {
         stream.terminated = true;
       }
+
+      // Handle session creation for initialize requests in SSE case
+      if (generatedSessionId.has_value())
+      {
+        // Check if the response is a successful initialize response
+        if (std::holds_alternative<jsonrpc::SuccessResponse>(responseMessage))
+        {
+          const jsonrpc::SuccessResponse &successResponse = std::get<jsonrpc::SuccessResponse>(responseMessage);
+          // Extract protocol version from the result
+          negotiatedProtocolVersionForSse = extractProtocolVersionFromInitializeResult(successResponse.result);
+          if (negotiatedProtocolVersionForSse.has_value())
+          {
+            isInitializeSuccessForSse = true;
+            // Success: upsert session as active with negotiated protocol version
+            upsertSession(*generatedSessionId, SessionLookupState::kActive, negotiatedProtocolVersionForSse);
+          }
+        }
+        // On error or invalid response: no session entry remains (already handled by not upserting)
+      }
     }
 
     std::vector<mcp::http::sse::Event> outboundEvents = replayFromCursor(stream, 0);
@@ -1233,7 +1339,15 @@ struct StreamableHttpServer::Impl
       outboundEvents.push_back(makeRetryGuidanceEvent(*requestResult.retryMilliseconds));
     }
 
-    return sseResponse(stream, std::move(outboundEvents), stream.terminated ? kTerminateStream : kKeepStreamOpen);
+    ServerResponse response = sseResponse(stream, std::move(outboundEvents), stream.terminated ? kTerminateStream : kKeepStreamOpen);
+
+    // Add MCP-Session-Id header for successful initialize in SSE case
+    if (isInitializeSuccessForSse && generatedSessionId.has_value())
+    {
+      setHeader(response.headers, kHeaderMcpSessionId, *generatedSessionId);
+    }
+
+    return response;
   }
 
   auto handleLegacyPost(const ServerRequest &request, std::unique_lock<std::mutex> &lock) -> ServerResponse
