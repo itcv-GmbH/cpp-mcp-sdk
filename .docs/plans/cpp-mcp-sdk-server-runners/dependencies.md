@@ -1,8 +1,8 @@
 # Dependency Graph
 
 ## Phase 1: API Design (Must complete first)
-- [ ] `task-001`: Define Runner Public API + Docs Updates
-- [ ] `task-002`: Define ServerFactory Contract + Session Isolation Rules
+- [x] `task-001`: Define Runner Public API + Docs Updates
+- [x] `task-002`: Define ServerFactory Contract + Session Isolation Rules
 
 ## Phase 2: Streamable HTTP Session Foundation (Blocked by Phase 1)
 - [ ] `task-014`: Implement Server-Issued MCP-Session-Id on Initialize (Transport)
