@@ -26,6 +26,13 @@ target_link_libraries(mcp_sdk_test_integration_cpp_client
         mcp::sdk
 )
 
+add_executable(mcp_sdk_test_integration_cpp_stdio_server cpp_stdio_server_fixture.cpp)
+
+target_link_libraries(mcp_sdk_test_integration_cpp_stdio_server
+    PRIVATE
+        mcp::sdk
+)
+
 add_test(
     NAME mcp_sdk_integration_reference_setup_python_sdk
     COMMAND
@@ -75,6 +82,24 @@ add_test(
 
 set_tests_properties(
     mcp_sdk_integration_reference_cpp_client_to_reference_server
+    PROPERTIES
+        DEPENDS mcp_sdk_integration_reference_setup_python_sdk
+        ENVIRONMENT "PYTHONUNBUFFERED=1"
+        LABELS "integration;integration_reference"
+        TIMEOUT 300
+)
+
+add_test(
+    NAME mcp_sdk_integration_reference_client_to_cpp_stdio_server
+    COMMAND
+        "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_stdio_server.py"
+        --cpp-server
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_stdio_server>"
+)
+
+set_tests_properties(
+    mcp_sdk_integration_reference_client_to_cpp_stdio_server
     PROPERTIES
         DEPENDS mcp_sdk_integration_reference_setup_python_sdk
         ENVIRONMENT "PYTHONUNBUFFERED=1"

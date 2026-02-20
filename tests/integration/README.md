@@ -18,6 +18,9 @@ The pinned versions are captured in `tests/integration/fixtures/reference_python
   - non-initialize requests without `MCP-Session-Id` return HTTP 400 when `requireSessionId=true`
   - tools/resources/prompts work end-to-end
   - C++ server initiates `sampling/createMessage` and `elicitation/create`; reference client handlers respond and server-side assertions enforce explicit timeouts
+- Reference Python client -> C++ SDK STDIO server fixture (STDIO runner)
+  - tools/resources/prompts work end-to-end
+  - C++ server initiates `sampling/createMessage` and `elicitation/create`; reference client handlers respond and server-side assertions enforce explicit timeouts
 - C++ SDK client fixture -> reference Python server
   - unauthenticated initialize is explicitly verified as HTTP `401` with `WWW-Authenticate: Bearer ...`
   - C++ client unauthorized path additionally requires `401`/authorization evidence (not just generic initialize failure)
