@@ -1,6 +1,4 @@
-#include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -9,7 +7,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <queue>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -35,107 +32,24 @@ static constexpr std::size_t kIntegralRequestIdHashSeed = 0x9e3779b97f4a7c15ULL;
 static constexpr std::size_t kStringRequestIdHashSeed = 0x85ebca6bULL;
 static constexpr std::size_t kInboundCompletionWorkerCount = 4;
 
-// Immortal executor class to safely manage a dedicated worker thread for pool deletion tasks.
-// This prevents pool destructor from running on pool worker threads (which crashes Boost.Asio).
-//
-// IMPLEMENTATION NOTES:
-// - Uses Meyer's singleton pattern with heap allocation: static DeletionExecutor* exec = new DeletionExecutor();
-// - This makes the executor "immortal" - it is never destroyed, avoiding static destruction order UB.
-// - We intentionally do NOT join the worker thread at exit because:
-//   1) Joining can hang if the pool destructor blocks waiting for worker threads that are themselves waiting for destruction.
-//   2) At process exit, the OS will clean up the worker thread regardless.
-//   3) This avoids the "static destruction UB" where the singleton is accessed during process teardown.
-// - The executor runs until process termination, ensuring all pool deletions complete before the process exits
-//   (assuming the process exits normally after the Router is destroyed).
-class DeletionExecutor
+// Noexcept custom deleter for thread_pool that spawns a detached thread to perform deletion.
+// This ensures:
+// 1) The deleter itself is noexcept - no exceptions can escape shared_ptr destruction.
+// 2) Each deletion is isolated in its own thread - no starvation from blocking deletes.
+// 3) On thread creation failure, we leak the pool (acceptable tradeoff vs terminating).
+// 4) No caller-side allocations (no std::function construction that could throw).
+static void deleteThreadPoolNoexcept(boost::asio::thread_pool *pool) noexcept
 {
-public:
-  // Post a deletion task to the worker thread. MUST be noexcept.
-  // On failure to enqueue, falls back to spawning a detached thread for the deletion.
-  // If even that fails, we leak the pool (better than terminating).
-  static void postDeletion(std::function<void()> &&task) noexcept
+  try
   {
-    try
-    {
-      get().postDeletionImpl(std::move(task));
-    }
-    catch (...)
-    {
-      // Failed to enqueue - fall back to spawning a separate thread
-      try
-      {
-        std::thread fallbackThread([t = std::move(task)]() mutable { t(); });
-        fallbackThread.detach();
-      }
-      catch (...)
-      {
-        // If even thread creation fails, we must leak the pool to avoid std::terminate.
-        // This is acceptable as it only happens in extreme memory pressure scenarios.
-      }
-    }
+    std::thread deletionThread([pool]() { delete pool; });
+    deletionThread.detach();
   }
-
-private:
-  // Meyer's singleton with immortal heap allocation - never destroyed
-  static DeletionExecutor &get()
+  catch (...)
   {
-    static DeletionExecutor *exec = new DeletionExecutor();
-    return *exec;
+    // Thread creation failed - leak the pool to avoid std::terminate.
+    // This only happens under extreme memory pressure.
   }
-
-  DeletionExecutor()
-    : worker_([this] { workerLoop(); })
-  {
-  }
-
-  // Non-copyable, non-movable
-  DeletionExecutor(const DeletionExecutor &) = delete;
-  DeletionExecutor(DeletionExecutor &&) = delete;
-  auto operator=(const DeletionExecutor &) -> DeletionExecutor & = delete;
-  auto operator=(DeletionExecutor &&) -> DeletionExecutor & = delete;
-
-  // Implementation of postDeletion - can throw, caller wraps in try/catch
-  void postDeletionImpl(std::function<void()> &&task)
-  {
-    {
-      std::unique_lock lock(mutex_);
-      queue_.push(std::move(task));
-    }
-    cv_.notify_one();
-  }
-
-  void workerLoop()
-  {
-    while (true)
-    {
-      std::function<void()> task;
-      {
-        std::unique_lock lock(mutex_);
-        cv_.wait_for(lock, std::chrono::milliseconds(100), [this] { return !queue_.empty(); });
-        if (!queue_.empty())
-        {
-          task = std::move(queue_.front());
-          queue_.pop();
-        }
-      }
-      if (task)
-      {
-        task();
-      }
-    }
-  }
-
-  std::mutex mutex_;
-  std::condition_variable cv_;
-  std::queue<std::function<void()>> queue_;
-  std::thread worker_;
-};
-
-// Helper function to post deletion task - calls the static noexcept method.
-// This wrapper is noexcept to ensure the custom deleter for shared_ptr can call it safely.
-static void postDeletion(std::function<void()> &&task) noexcept
-{
-  DeletionExecutor::postDeletion(std::move(task));
 }
 
 static auto senderKey(const RequestContext &context) -> std::string
@@ -240,16 +154,11 @@ Router::Router(RouterOptions options)
   , timeoutPool_(std::make_unique<boost::asio::thread_pool>(1))
 {
   // Create completion pool with custom deleter that ensures destruction
-  // runs on a non-pool thread (the deleter thread) to avoid crashes when
+  // runs on a non-pool thread (a detached thread) to avoid crashes when
   // pool destructor runs on its own worker thread.
   // The deleter is marked noexcept to ensure std::shared_ptr's destructor won't throw.
   auto rawPool = new boost::asio::thread_pool(detail::kInboundCompletionWorkerCount);
-  inboundState_->completionPool = std::shared_ptr<boost::asio::thread_pool>(rawPool,
-                                                                            [](boost::asio::thread_pool *pool) noexcept
-                                                                            {
-                                                                              // postDeletion is noexcept, so this deleter is safe
-                                                                              detail::postDeletion([pool]() { delete pool; });
-                                                                            });
+  inboundState_->completionPool = std::shared_ptr<boost::asio::thread_pool>(rawPool, &detail::deleteThreadPoolNoexcept);
 }
 
 Router::~Router() noexcept
@@ -438,32 +347,46 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
     // Capture shared_ptr to keep the completion pool alive while handler may be running.
     // The custom deleter ensures that when the last shared_ptr is released, deletion
     // happens on a dedicated thread (not a pool worker thread).
-    std::shared_ptr<boost::asio::thread_pool> poolKeepalive = completionPool;
-    boost::asio::post(*completionPool,
-                      [poolKeepalive, inboundState, context, requestId = request.id, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable noexcept
-                      {
-                        // Wrap entire handler in try/catch to prevent any exceptions from escaping
-                        // (addresses clang-tidy bugprone-exception-escape)
-                        try
-                        {
-                          try
-                          {
-                            Response response = handlerFuture.get();
-                            Router::completeInboundRequest(inboundState, context, requestId);
-                            detail::setPromiseValueNoThrow(*responsePromise, std::move(response));
-                          }
-                          catch (...)
-                          {
-                            Router::completeInboundRequest(inboundState, context, requestId);
-                            detail::setPromiseValueNoThrow(*responsePromise,
-                                                           Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
-                          }
-                        }
-                        catch (...)
-                        {
-                          // Suppress any exceptions - must not escape the handler
-                        }
-                      });
+    // Wrap the post in try/catch because copying the lambda captures (e.g., context)
+    // can throw std::bad_alloc, and we must not let exceptions escape.
+    const RequestId localRequestId = request.id;
+    try
+    {
+      std::shared_ptr<boost::asio::thread_pool> poolKeepalive = completionPool;
+      // Construct lambda separately to ensure exception is caught by outer try/catch
+      auto completionHandler = [poolKeepalive, inboundState, context, requestId = localRequestId, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable
+      {
+        // Wrap entire handler in try/catch to prevent any exceptions from escaping.
+        // We removed noexcept from this lambda because the capture/copy path can throw,
+        // but the outer catch-all ensures no exceptions escape to the caller.
+        try
+        {
+          try
+          {
+            Response response = handlerFuture.get();
+            Router::completeInboundRequest(inboundState, context, requestId);
+            detail::setPromiseValueNoThrow(*responsePromise, std::move(response));
+          }
+          catch (...)
+          {
+            Router::completeInboundRequest(inboundState, context, requestId);
+            detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
+          }
+        }
+        catch (...)
+        {
+          // Suppress any exceptions - must not escape the handler
+        }
+      };
+      boost::asio::post(*completionPool, std::move(completionHandler));
+    }
+    catch (...)
+    {
+      // If posting fails (e.g., lambda construction throws), complete the request
+      // with an error rather than letting the exception escape.
+      completeInboundRequest(context, localRequestId);
+      detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Failed to post completion handler."), localRequestId)});
+    }
 
     return responseFuture;
   }
