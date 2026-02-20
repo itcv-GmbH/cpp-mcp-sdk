@@ -18,6 +18,9 @@ This document defines the initial public API surface and module boundaries for t
 - Role facades:
   - `include/mcp/server/server.hpp` defines `mcp::Server` as a server-facing facade over a shared session.
   - `include/mcp/client/client.hpp` defines `mcp::Client` as a client-facing facade over a shared session.
+- Runners:
+  - `include/mcp/server/streamable_http_runner.hpp` defines `ServerFactory` contract and session isolation rules for HTTP runners.
+  - `ServerFactory = std::function<std::shared_ptr<mcp::Server>()>` - a session-agnostic factory for creating Server instances.
 - Auth:
   - `include/mcp/auth/provider.hpp` defines async auth provider and verifier interfaces for HTTP authorization integration.
 - Core constants and protocol errors:
