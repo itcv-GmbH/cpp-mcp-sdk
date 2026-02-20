@@ -1,5 +1,338 @@
-// Placeholder fixture - will be implemented in a future task
-int main()
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <cstdlib>
+#include <exception>
+#include <future>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include <mcp/server/server.hpp>
+#include <mcp/server/stdio_runner.hpp>
+
+namespace
 {
-  return 0;
+
+constexpr std::chrono::seconds kOutboundRequestTimeout {10};
+constexpr std::chrono::seconds kSessionStateWaitTimeout {15};
+constexpr std::int64_t kRootsListRequestId = 4201;
+
+struct RootsAssertionsState
+{
+  std::atomic<bool> started {false};
+  std::atomic<bool> completed {false};
+  std::atomic<bool> passed {false};
+  std::mutex mutex;
+  std::optional<std::string> failureReason;
+  std::thread worker;
+};
+
+// Shared state between factory and fixture to track created server instances
+struct ServerRegistry
+{
+  std::mutex mutex;
+  std::vector<std::weak_ptr<mcp::Server>> servers;
+};
+
+auto throwIfErrorResponse(const mcp::jsonrpc::Response &response, std::string_view methodName) -> void
+{
+  if (!std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response))
+  {
+    return;
+  }
+
+  const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response).error;
+  throw std::runtime_error(std::string(methodName) + " failed: " + error.message);
+}
+
+auto awaitResponse(std::future<mcp::jsonrpc::Response> &future, std::string_view methodName) -> mcp::jsonrpc::Response
+{
+  if (future.wait_for(kOutboundRequestTimeout) != std::future_status::ready)
+  {
+    throw std::runtime_error(std::string(methodName) + " did not complete within timeout");
+  }
+
+  return future.get();
+}
+
+auto runRootsAssertions(mcp::Server &server, const mcp::jsonrpc::RequestContext &context) -> void
+{
+  // Send roots/list request to the client
+  mcp::jsonrpc::Request rootsListRequest;
+  rootsListRequest.id = std::int64_t {kRootsListRequestId};
+  rootsListRequest.method = "roots/list";
+  rootsListRequest.params = mcp::jsonrpc::JsonValue::object();
+
+  std::future<mcp::jsonrpc::Response> rootsListFuture = server.sendRequest(context, std::move(rootsListRequest));
+  const mcp::jsonrpc::Response rootsListResponse = awaitResponse(rootsListFuture, "roots/list");
+  throwIfErrorResponse(rootsListResponse, "roots/list");
+
+  if (!std::holds_alternative<mcp::jsonrpc::SuccessResponse>(rootsListResponse))
+  {
+    throw std::runtime_error("roots/list did not return a success response");
+  }
+
+  const auto &rootsResult = std::get<mcp::jsonrpc::SuccessResponse>(rootsListResponse).result;
+
+  // Validate response structure
+  if (!rootsResult.is_object() || !rootsResult.contains("roots") || !rootsResult["roots"].is_array())
+  {
+    throw std::runtime_error("roots/list response did not contain roots array");
+  }
+
+  const auto &roots = rootsResult["roots"];
+  if (roots.size() == 0)
+  {
+    throw std::runtime_error("roots/list returned no roots - expected at least one root from client");
+  }
+
+  // Validate at least one root has required fields
+  bool foundValidRoot = false;
+  for (std::size_t i = 0; i < roots.size(); ++i)
+  {
+    const auto &root = roots[i];
+    if (!root.is_object())
+    {
+      continue;
+    }
+
+    if (!root.contains("uri") || !root["uri"].is_string())
+    {
+      continue;
+    }
+
+    // Check URI scheme - must be file://
+    const std::string uri = root["uri"].as<std::string>();
+    if (uri.rfind("file://", 0) == 0)
+    {
+      foundValidRoot = true;
+      break;
+    }
+  }
+
+  if (!foundValidRoot)
+  {
+    throw std::runtime_error("roots/list did not return any roots with file:// URI scheme");
+  }
+
+  std::cerr << "cpp stdio integration server roots/list assertions passed (received " << roots.size() << " root(s))" << '\n';
+}
+
+}  // namespace
+
+auto main(int /*argc*/, char ** /*argv*/) -> int
+{
+  try
+  {
+    // Shared registry to track server instances created by the runner's factory
+    auto serverRegistry = std::make_shared<ServerRegistry>();
+
+    auto makeServer = [&serverRegistry]() -> std::shared_ptr<mcp::Server>
+    {
+      mcp::ToolsCapability toolsCapability;
+      mcp::ResourcesCapability resourcesCapability;
+      mcp::PromptsCapability promptsCapability;
+
+      mcp::ServerConfiguration configuration;
+      configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
+      configuration.serverInfo = mcp::Implementation("cpp-integration-stdio-server-roots", "1.0.0");
+      configuration.instructions = "STDIO integration fixture server for reference SDK roots tests.";
+
+      const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+
+      // Register this server in the registry
+      {
+        std::scoped_lock lock(serverRegistry->mutex);
+        serverRegistry->servers.push_back(server);
+      }
+
+      mcp::ToolDefinition echoTool;
+      echoTool.name = "cpp_echo";
+      echoTool.description = "Echo text from arguments.text";
+      echoTool.inputSchema = mcp::jsonrpc::JsonValue::object();
+      echoTool.inputSchema["type"] = "object";
+      echoTool.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
+      echoTool.inputSchema["properties"]["text"] = mcp::jsonrpc::JsonValue::object();
+      echoTool.inputSchema["properties"]["text"]["type"] = "string";
+      echoTool.inputSchema["required"] = mcp::jsonrpc::JsonValue::array();
+      echoTool.inputSchema["required"].push_back("text");
+
+      server->registerTool(std::move(echoTool),
+                           [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                           {
+                             mcp::CallToolResult result;
+                             result.content = mcp::jsonrpc::JsonValue::array();
+                             mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
+                             content["type"] = "text";
+                             content["text"] = "cpp echo: " + context.arguments["text"].as<std::string>();
+                             result.content.push_back(std::move(content));
+                             return result;
+                           });
+
+      mcp::ResourceDefinition infoResource;
+      infoResource.uri = "resource://cpp-stdio-server-roots/info";
+      infoResource.name = "cpp-stdio-server-roots-info";
+      infoResource.description = "Reference data exposed by the C++ STDIO roots integration fixture";
+      infoResource.mimeType = "text/plain";
+
+      server->registerResource(std::move(infoResource),
+                               [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                               {
+                                 return {
+                                   mcp::ResourceContent::text("resource://cpp-stdio-server-roots/info", "cpp stdio roots integration resource", std::string("text/plain")),
+                                 };
+                               });
+
+      mcp::PromptDefinition prompt;
+      prompt.name = "cpp_stdio_server_roots_prompt";
+      prompt.description = "Returns a prompt with the provided topic";
+
+      mcp::PromptArgumentDefinition topicArgument;
+      topicArgument.name = "topic";
+      topicArgument.required = true;
+      prompt.arguments.push_back(std::move(topicArgument));
+
+      server->registerPrompt(std::move(prompt),
+                             [](const mcp::PromptGetContext &context) -> mcp::PromptGetResult
+                             {
+                               mcp::PromptGetResult result;
+                               result.description = "C++ STDIO roots integration prompt";
+
+                               mcp::PromptMessage message;
+                               message.role = "user";
+                               message.content = mcp::jsonrpc::JsonValue::object();
+                               message.content["type"] = "text";
+                               message.content["text"] = "C++ stdio roots prompt topic: " + context.arguments["topic"].as<std::string>();
+                               result.messages.push_back(std::move(message));
+                               return result;
+                             });
+
+      return server;
+    };
+
+    mcp::StdioServerRunnerOptions runnerOptions;
+    runnerOptions.transportOptions.allowStderrLogs = true;
+
+    mcp::StdioServerRunner runner(makeServer, std::move(runnerOptions));
+
+    RootsAssertionsState rootsAssertions;
+
+    // Set up a polling worker to wait for session state and run roots assertions
+    // The worker polls for the first session to reach kOperating state (after notifications/initialized)
+    rootsAssertions.worker = std::thread(
+      [&runner, &serverRegistry, &rootsAssertions]() -> void
+      {
+        try
+        {
+          const auto startTime = std::chrono::steady_clock::now();
+          std::shared_ptr<mcp::Server> targetServer;
+
+          // Poll for a server that has reached kOperating state
+          while (true)
+          {
+            const auto elapsed = std::chrono::steady_clock::now() - startTime;
+            if (elapsed > kSessionStateWaitTimeout)
+            {
+              throw std::runtime_error("timeout waiting for session to reach kOperating state");
+            }
+
+            // Find a server that has reached kOperating state
+            {
+              std::scoped_lock lock(serverRegistry->mutex);
+              for (const auto &weakServer : serverRegistry->servers)
+              {
+                auto server = weakServer.lock();
+                if (server)
+                {
+                  const auto sessionState = server->session()->state();
+                  if (sessionState == mcp::SessionState::kOperating)
+                  {
+                    targetServer = std::move(server);
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (targetServer)
+            {
+              break;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          }
+
+          if (!targetServer)
+          {
+            throw std::runtime_error("no server reached kOperating state");
+          }
+
+          // Run the roots assertions with an empty context
+          // The runner's outbound message sender handles routing using stored session ID
+          runRootsAssertions(*targetServer, mcp::jsonrpc::RequestContext {});
+          rootsAssertions.passed.store(true);
+        }
+        catch (const std::exception &error)
+        {
+          std::scoped_lock lock(rootsAssertions.mutex);
+          rootsAssertions.failureReason = error.what();
+        }
+        catch (...)
+        {
+          std::scoped_lock lock(rootsAssertions.mutex);
+          rootsAssertions.failureReason = "unknown roots assertion failure";
+        }
+
+        rootsAssertions.completed.store(true);
+      });
+
+    // Run the server - blocks until EOF on stdin
+    runner.run();
+
+    if (rootsAssertions.worker.joinable())
+    {
+      rootsAssertions.worker.join();
+    }
+
+    // Check if roots assertions were started
+    if (!rootsAssertions.completed.load())
+    {
+      // The worker might still be running or not started - this is a timeout case
+      std::cerr << "cpp_stdio_server_roots_fixture failed: roots assertions did not complete" << '\n';
+      return 3;
+    }
+
+    if (!rootsAssertions.passed.load())
+    {
+      std::optional<std::string> failureReason;
+      {
+        std::scoped_lock lock(rootsAssertions.mutex);
+        failureReason = rootsAssertions.failureReason;
+      }
+
+      std::cerr << "cpp_stdio_server_roots_fixture failed: roots assertions failed";
+      if (failureReason.has_value())
+      {
+        std::cerr << " (" << *failureReason << ')';
+      }
+      std::cerr << '\n';
+      return 3;
+    }
+
+    return 0;
+  }
+  catch (const std::exception &error)
+  {
+    std::cerr << "cpp_stdio_server_roots_fixture failed: " << error.what() << '\n';
+    return 1;
+  }
 }
