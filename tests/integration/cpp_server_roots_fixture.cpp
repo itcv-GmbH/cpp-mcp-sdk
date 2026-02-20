@@ -41,6 +41,7 @@ struct RootsAssertionsState
   std::atomic<bool> started {false};
   std::atomic<bool> completed {false};
   std::atomic<bool> passed {false};
+  std::atomic<bool> rootsListRequestCompleted {false};
   std::atomic<bool> rootsListChangedReceived {false};
   std::mutex mutex;
   std::optional<std::string> failureReason;
@@ -233,11 +234,11 @@ auto runRootsAssertions(mcp::Server &server, const mcp::jsonrpc::RequestContext 
     throw std::runtime_error("roots/list response does not contain any valid root with uri and name");
   }
 
+  // Mark roots/list request as completed successfully
+  assertionsState.rootsListRequestCompleted.store(true);
+
   std::cout << "cpp integration server roots/list assertions passed (received " << roots.size() << " root(s))" << '\n';
   std::cout.flush();
-
-  // Mark roots list check as passed
-  assertionsState.rootsListChangedReceived.store(true);
 }
 
 }  // namespace
@@ -381,6 +382,7 @@ auto main(int argc, char **argv) -> int
                                                     [&rootsAssertions](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Notification &) -> void
                                                     {
                                                       std::cout << "cpp integration server received notifications/roots/list_changed" << '\n';
+                                                      std::cout << "MARKER: ROOTS_LIST_CHANGED_RECEIVED" << '\n';
                                                       std::cout.flush();
                                                       rootsAssertions.rootsListChangedReceived.store(true);
                                                     });
@@ -388,7 +390,24 @@ auto main(int argc, char **argv) -> int
           // Run the roots assertions with an empty context
           // The runner's outbound message sender handles routing using stored session ID
           runRootsAssertions(*targetServer, mcp::jsonrpc::RequestContext {}, rootsAssertions);
-          rootsAssertions.passed.store(true);
+
+          // Validate both conditions before passing
+          if (!rootsAssertions.rootsListRequestCompleted.load() || !rootsAssertions.rootsListChangedReceived.load())
+          {
+            std::scoped_lock lock(rootsAssertions.mutex);
+            if (!rootsAssertions.rootsListRequestCompleted.load())
+            {
+              rootsAssertions.failureReason = "roots/list request did not complete successfully";
+            }
+            else
+            {
+              rootsAssertions.failureReason = "notifications/roots/list_changed was not received";
+            }
+          }
+          else
+          {
+            rootsAssertions.passed.store(true);
+          }
         }
         catch (const std::exception &error)
         {
