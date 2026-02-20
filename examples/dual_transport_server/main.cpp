@@ -12,7 +12,6 @@
 #include <utility>
 #include <vector>
 
-#include <fcntl.h>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/combined_runner.hpp>
@@ -22,7 +21,11 @@
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/server/tools.hpp>
-#include <unistd.h>
+
+#ifndef _WIN32
+#  include <fcntl.h>
+#  include <unistd.h>
+#endif
 
 namespace
 {
@@ -33,7 +36,7 @@ constexpr const char *kHttpBind = "127.0.0.1";
 constexpr std::uint16_t kHttpPort = 8080;
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::atomic<bool> g_shutdownRequested {false};
+static volatile std::sig_atomic_t g_shutdownRequested = 0;
 
 auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
 {
@@ -195,57 +198,47 @@ auto runCombinedRunnerExample() -> void
   mcp::StdioServerRunner *stdioRunnerPtr = runner.stdioRunner();
   std::thread stdioThread = stdioRunnerPtr->startAsync();
 
-  // Use a promise/future to detect when STDIO thread finishes
-  std::promise<void> stdioDonePromise;
-  std::future<void> stdioDoneFuture = stdioDonePromise.get_future();
-
-  // Background thread that joins stdioThread and signals when done
-  std::thread monitorThread(
-    [&stdioThread, &stdioDonePromise]() mutable
-    {
-      if (stdioThread.joinable())
-      {
-        stdioThread.join();
-      }
-      stdioDonePromise.set_value();
-    });
-  // Detach so it runs independently
-  monitorThread.detach();
-
-  // Main control loop - check for shutdown signal OR STDIO thread exit
-  while (!g_shutdownRequested.load())
+  // Main control loop - check for shutdown signal
+  while (g_shutdownRequested == 0)
   {
-    // Check if the STDIO thread has finished
-    if (stdioDoneFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)
+    // Check if the STDIO thread has finished naturally
+    if (!stdioThread.joinable())
     {
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
-  // Wait for monitor thread to finish joining stdioThread
-  stdioDoneFuture.wait();
-
   // Check what caused us to exit the loop
-  if (g_shutdownRequested.load())
+  if (g_shutdownRequested != 0)
   {
     // SIGINT received - perform best-effort shutdown
     std::cerr << "\nReceived SIGINT, initiating graceful shutdown..." << '\n';
     std::cerr.flush();
 
-    // Stop HTTP server
+    // Stop HTTP server immediately
     runner.stopHttp();
 
-    // Signal STDIO runner to stop
+    // Request STDIO runner to stop
     stdioRunnerPtr->stop();
 
-    // Redirect stdin to /dev/null to unblock any blocking reads
-    // This will cause std::getline to fail with EOF
+    // Best-effort unblock stdin - always set EOF bit first
+    std::cin.setstate(std::ios::eofbit);
+
+#ifndef _WIN32
+    // On POSIX, also redirect stdin to /dev/null to unblock any blocking reads
     int devNull = open("/dev/null", O_RDONLY);
     if (devNull >= 0)
     {
       dup2(devNull, fileno(stdin));
       close(devNull);
+    }
+#endif
+
+    // Now join the STDIO thread
+    if (stdioThread.joinable())
+    {
+      stdioThread.join();
     }
   }
   else
@@ -254,6 +247,12 @@ auto runCombinedRunnerExample() -> void
     std::cerr << "STDIO transport closed, stopping HTTP server..." << '\n';
     std::cerr.flush();
     runner.stopHttp();
+
+    // Join the STDIO thread if still joinable
+    if (stdioThread.joinable())
+    {
+      stdioThread.join();
+    }
   }
 
   std::cerr << "CombinedServerRunner example complete." << '\n';
@@ -298,8 +297,8 @@ auto runExplicitCompositionExample() -> void
 auto handleSignal(int /*signal*/) -> void
 {
   // Signal handler must only perform async-signal-safe operations.
-  // Setting an atomic flag is signal-safe; logging is not.
-  g_shutdownRequested.store(true);
+  // Setting a sig_atomic_t flag is signal-safe; logging is not.
+  g_shutdownRequested = 1;
 }
 
 }  // namespace
