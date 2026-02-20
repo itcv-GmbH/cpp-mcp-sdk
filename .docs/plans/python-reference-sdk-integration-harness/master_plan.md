@@ -48,6 +48,7 @@ This plan will deliver a comprehensive, automated integration test harness that 
 - `tests/integration/scripts/cpp_client_to_reference_server.py`
 
 ### Python Integration Test Scripts (To Be Added)
+- `tests/integration/scripts/reference_coverage_gate.py`
 - `tests/integration/scripts/reference_client_to_cpp_server_utilities.py`
 - `tests/integration/scripts/reference_client_to_cpp_server_resources_advanced.py`
 - `tests/integration/scripts/reference_client_to_cpp_server_roots.py`
