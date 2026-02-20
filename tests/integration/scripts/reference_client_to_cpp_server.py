@@ -468,10 +468,9 @@ async def run() -> int:
         await probe_session_uniqueness(endpoint, token)
         await probe_require_session_id(endpoint, token)
 
-        # Existing authenticated flow tests (without sampling/elicitation assertions
-        # since runner-based fixture doesn't support server-initiated requests in same way)
+        # Full authenticated flow with sampling/elicitation callbacks
         await expect_unauthorized_initialize(endpoint)
-        await run_authenticated_flow_simple(endpoint, token)
+        await run_authenticated_flow(endpoint, token)
         return 0
     finally:
         stop_process(process)
