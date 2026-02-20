@@ -344,7 +344,7 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
 
     const std::shared_ptr<Router::InboundState> inboundState = inboundState_;
 
-    // Capture shared_ptr to keep the completion pool alive while handler may be running.
+    // Capture sharedPtr to keep the completion pool alive while handler may be running.
     // The custom deleter ensures that when the last shared_ptr is released, deletion
     // happens on a dedicated thread (not a pool worker thread).
     // Wrap the post in try/catch because copying the lambda captures (e.g., context)
@@ -353,23 +353,25 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
     try
     {
       std::shared_ptr<boost::asio::thread_pool> poolKeepalive = completionPool;
+      // Create shared_ptr to context BEFORE the lambda to avoid copying context (which can throw).
+      // Capturing shared_ptr by value is noexcept, and we mark the handler noexcept.
+      std::shared_ptr<RequestContext> contextPtr = std::make_shared<RequestContext>(context);
       // Construct lambda separately to ensure exception is caught by outer try/catch
-      auto completionHandler = [poolKeepalive, inboundState, context, requestId = localRequestId, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable
+      auto completionHandler = [poolKeepalive, inboundState, contextPtr, requestId = localRequestId, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable noexcept
       {
         // Wrap entire handler in try/catch to prevent any exceptions from escaping.
-        // We removed noexcept from this lambda because the capture/copy path can throw,
-        // but the outer catch-all ensures no exceptions escape to the caller.
+        // The noexcept specifier ensures no exceptions escape to the caller.
         try
         {
           try
           {
             Response response = handlerFuture.get();
-            Router::completeInboundRequest(inboundState, context, requestId);
+            Router::completeInboundRequest(inboundState, *contextPtr, requestId);
             detail::setPromiseValueNoThrow(*responsePromise, std::move(response));
           }
           catch (...)
           {
-            Router::completeInboundRequest(inboundState, context, requestId);
+            Router::completeInboundRequest(inboundState, *contextPtr, requestId);
             detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
           }
         }
@@ -384,7 +386,7 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
     {
       // If posting fails (e.g., lambda construction throws), complete the request
       // with an error rather than letting the exception escape.
-      completeInboundRequest(context, localRequestId);
+      Router::completeInboundRequest(inboundState, context, localRequestId);
       detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Failed to post completion handler."), localRequestId)});
     }
 
