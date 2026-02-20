@@ -54,7 +54,7 @@ This document defines the initial public API surface and module boundaries for t
 
 ## Server Runners
 
-Server runners provide high-level APIs for running MCP servers over various transports with minimal boilerplate. They encapsulate the transport lifecycle and integrate with the `Server` class for protocol handling.
+Server runners provide high-level APIs for running MCP servers over various transports with minimal boilerplate. They encapsulate the transport lifecycle and use a `ServerFactory` to create `mcp::Server` instances.
 
 ### Runner Types
 
@@ -64,6 +64,19 @@ Server runners provide high-level APIs for running MCP servers over various tran
 | `mcp::StreamableHttpServerRunner` | `include/mcp/server/streamable_http_runner.hpp` | HTTP clients, web integrations |
 | `mcp::CombinedServerRunner` | `include/mcp/server/combined_runner.hpp` | Servers supporting multiple transports |
 
+### ServerFactory Contract
+
+All runners use a `ServerFactory` to create `mcp::Server` instances:
+
+```cpp
+using mcp::ServerFactory = std::function<std::shared_ptr<mcp::Server>()>;
+```
+
+The factory is invoked by the runner to create Server instances:
+- `mcp::StdioServerRunner`: creates one Server instance for its lifetime.
+- `mcp::StreamableHttpServerRunner`: creates one Server per session (when `requireSessionId=true`).
+- `mcp::CombinedServerRunner`: creates one Server for STDIO and one per HTTP session.
+
 ### STDIO Runner
 
 The STDIO runner provides a blocking `run()` method that reads JSON-RPC messages from stdin and writes responses to stdout. Log messages are written to stderr by default to avoid polluting the JSON-RPC protocol stream.
@@ -71,8 +84,14 @@ The STDIO runner provides a blocking `run()` method that reads JSON-RPC messages
 ```cpp
 #include <mcp/server/stdio_runner.hpp>
 
-mcp::StdioServerRunner runner;
-runner.server()->registerTool(/* ... */);
+// Create a ServerFactory that produces configured Server instances
+mcp::ServerFactory makeServer = [] {
+  auto server = mcp::Server::create();
+  server->registerTool(/* ... */);
+  return server;
+};
+
+mcp::StdioServerRunner runner(makeServer);
 runner.run();
 ```
 
@@ -81,12 +100,12 @@ Custom streams can be specified:
 runner.run(customInput, customOutput, customError);
 ```
 
-Options can be configured via `StdioServerRunnerOptions`:
+Options can be configured via `mcp::StdioServerRunnerOptions`:
 ```cpp
 mcp::StdioServerRunnerOptions options;
 options.transportOptions.allowStderrLogs = true;
 options.transportOptions.limits.maxJsonRpcMessageSize = 1024 * 1024;
-mcp::StdioServerRunner runner(options);
+mcp::StdioServerRunner runner(makeServer, options);
 ```
 
 ### Streamable HTTP Runner
@@ -96,8 +115,14 @@ The HTTP runner provides `start()`/`stop()` methods for non-blocking operation. 
 ```cpp
 #include <mcp/server/streamable_http_runner.hpp>
 
-mcp::StreamableHttpServerRunner runner;
-runner.server()->registerTool(/* ... */);
+// Create a ServerFactory
+mcp::ServerFactory makeServer = [] {
+  auto server = mcp::Server::create();
+  server->registerTool(/* ... */);
+  return server;
+};
+
+mcp::StreamableHttpServerRunner runner(makeServer);
 runner.start();
 std::cout << "Running on port " << runner.localPort() << std::endl;
 // ... handle requests ...
@@ -116,13 +141,18 @@ This ensures each client receives a unique session ID, enabling proper request r
 The combined runner supports running multiple transports simultaneously:
 
 ```cpp
+mcp::ServerFactory makeServer = [] {
+  auto server = mcp::Server::create();
+  server->registerTool(/* ... */);
+  return server;
+};
+
 mcp::CombinedServerRunnerOptions options;
 options.enableStdio = true;
 options.enableHttp = true;
 options.httpOptions.transportOptions.http.requireSessionId = true;
 
-mcp::CombinedServerRunner runner(options);
-runner.server()->registerTool(/* ... */);
+mcp::CombinedServerRunner runner(makeServer, options);
 runner.start();  // Starts HTTP in background, runs STDIO in foreground
 runner.stop();   // Stops HTTP
 ```
@@ -130,8 +160,8 @@ runner.stop();   // Stops HTTP
 ### Relationship to Transport Primitives
 
 Runners wrap the lower-level transport types:
-- `StdioServerRunner` uses `mcp::transport::StdioTransport::run()` internally.
-- `StreamableHttpServerRunner` owns `mcp::transport::HttpServerRuntime` and delegates to `mcp::transport::http::StreamableHttpServer`.
-- `CombinedServerRunner` orchestrates multiple runners.
+- `mcp::StdioServerRunner` uses `mcp::transport::StdioTransport::run()` internally.
+- `mcp::StreamableHttpServerRunner` owns `mcp::transport::HttpServerRuntime` and delegates to `mcp::transport::http::StreamableHttpServer`.
+- `mcp::CombinedServerRunner` orchestrates multiple runners.
 
 Applications needing direct transport access can use the transport headers directly. Runners provide convenience; transports provide flexibility.

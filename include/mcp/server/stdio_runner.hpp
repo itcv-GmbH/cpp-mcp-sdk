@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <optional>
@@ -12,30 +13,32 @@
 namespace mcp
 {
 
+/// @brief ServerFactory is a session-agnostic factory function that creates new Server instances.
+/// @details Each invocation creates a fresh Server instance with its own Session. This is used by
+/// runners that need to create per-session Server instances.
+using ServerFactory = std::function<std::shared_ptr<Server>()>;
+
 /// Configuration options for the STDIO server runner.
 struct StdioServerRunnerOptions
 {
   /// Options passed through to the underlying stdio transport.
   /// Controls behavior like stderr logging and runtime limits.
   transport::StdioServerOptions transportOptions;
-
-  /// Optional server configuration. If not provided, a default Server
-  /// will be created with no capabilities registered.
-  std::optional<ServerConfiguration> serverConfiguration;
 };
 
 /// Runner for serving MCP over STDIO.
 ///
 /// This runner provides a simple blocking API for running an MCP server
 /// over standard input/output. It handles the transport lifecycle and
-/// delegates to a Server instance for protocol handling.
+/// uses a ServerFactory to create Server instances.
 ///
 /// By default, logs are written to stderr to avoid polluting stdout
 /// which is reserved for JSON-RPC messages.
 ///
 /// Usage:
 /// @code
-///   StdioServerRunner runner;
+///   ServerFactory makeServer = [] { return mcp::Server::create(); };
+///   mcp::StdioServerRunner runner(makeServer);
 ///   runner.run();
 /// @endcode
 ///
@@ -43,17 +46,18 @@ struct StdioServerRunnerOptions
 /// @code
 ///   StdioServerRunnerOptions options;
 ///   options.transportOptions.allowStderrLogs = true;
-///   StdioServerRunner runner(options);
+///   ServerFactory makeServer = [] { return mcp::Server::create(); };
+///   mcp::StdioServerRunner runner(makeServer, options);
 ///   runner.run();
 /// @endcode
 class StdioServerRunner final
 {
 public:
-  /// Constructs a runner with default options.
-  StdioServerRunner();
+  /// Constructs a runner with a ServerFactory and default options.
+  explicit StdioServerRunner(ServerFactory serverFactory);
 
-  /// Constructs a runner with custom options.
-  explicit StdioServerRunner(StdioServerRunnerOptions options);
+  /// Constructs a runner with a ServerFactory and custom options.
+  StdioServerRunner(ServerFactory serverFactory, StdioServerRunnerOptions options);
 
   ~StdioServerRunner();
 
@@ -75,10 +79,6 @@ public:
   /// @param output Stream to write JSON-RPC messages to (default: std::cout)
   /// @param error  Stream to write log messages to (default: std::cerr)
   auto run(std::istream &input, std::ostream &output, std::ostream &error) -> void;
-
-  /// Returns the server instance used by this runner.
-  /// Can be used to register tools, resources, prompts, etc. before calling run().
-  [[nodiscard]] auto server() const -> std::shared_ptr<Server>;
 
   /// Returns the options used by this runner.
   [[nodiscard]] auto options() const -> const StdioServerRunnerOptions &;

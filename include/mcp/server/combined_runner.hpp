@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -9,6 +10,12 @@
 
 namespace mcp
 {
+
+/// @brief ServerFactory is a session-agnostic factory function that creates new Server instances.
+/// @details Each invocation creates a fresh Server instance with its own Session. This is used by
+/// runners that need to create per-session Server instances (e.g., Streamable HTTP server with
+/// requireSessionId=true).
+using ServerFactory = std::function<std::shared_ptr<Server>()>;
 
 /// Flags to control which transports a CombinedServerRunner should enable.
 struct CombinedServerRunnerOptions
@@ -34,36 +41,38 @@ struct CombinedServerRunnerOptions
 /// or both simultaneously. It provides a unified API for managing multiple
 /// transports.
 ///
-/// In STDIO-only mode, a single Server instance is used.
-/// In HTTP-only mode, a single Server instance is used.
-/// In dual-transport mode with session isolation, each transport maintains
-/// its own Server instance to ensure proper session isolation between
-/// STDIO and HTTP clients.
+/// The runner uses a ServerFactory to create Server instances:
+/// - In STDIO-only mode, one Server instance is created via the factory.
+/// - In HTTP-only mode, one Server instance is created per session (when requireSessionId=true).
+/// - In dual-transport mode, STDIO uses one Server instance and HTTP uses one per session.
 ///
 /// Usage (STDIO only):
 /// @code
+///   ServerFactory makeServer = [] { return mcp::Server::create(); };
 ///   CombinedServerRunnerOptions options;
 ///   options.enableStdio = true;
-///   CombinedServerRunner runner(options);
+///   mcp::CombinedServerRunner runner(makeServer, options);
 ///   runner.runStdio();
 /// @endcode
 ///
 /// Usage (HTTP only):
 /// @code
+///   ServerFactory makeServer = [] { return mcp::Server::create(); };
 ///   CombinedServerRunnerOptions options;
 ///   options.enableHttp = true;
 ///   options.httpOptions.transportOptions.http.endpoint.port = 8080;
-///   CombinedServerRunner runner(options);
+///   mcp::CombinedServerRunner runner(makeServer, options);
 ///   runner.startHttp();
 /// @endcode
 ///
 /// Usage (both STDIO and HTTP):
 /// @code
+///   ServerFactory makeServer = [] { return mcp::Server::create(); };
 ///   CombinedServerRunnerOptions options;
 ///   options.enableStdio = true;
 ///   options.enableHttp = true;
 ///   options.httpOptions.transportOptions.http.requireSessionId = true;
-///   CombinedServerRunner runner(options);
+///   mcp::CombinedServerRunner runner(makeServer, options);
 ///   runner.start();  // Starts both transports
 ///   // ... server is handling requests ...
 ///   runner.stop();  // Stops both transports
@@ -71,8 +80,8 @@ struct CombinedServerRunnerOptions
 class CombinedServerRunner final
 {
 public:
-  /// Constructs a runner with the given options.
-  explicit CombinedServerRunner(CombinedServerRunnerOptions options);
+  /// Constructs a runner with a ServerFactory and options.
+  CombinedServerRunner(ServerFactory serverFactory, CombinedServerRunnerOptions options);
 
   ~CombinedServerRunner();
 
@@ -120,10 +129,6 @@ public:
   ///
   /// @returns The port number, or 0 if HTTP is not running.
   [[nodiscard]] auto localPort() const noexcept -> std::uint16_t;
-
-  /// Returns the server instance used by this runner.
-  /// Can be used to register tools, resources, prompts, etc. before calling start().
-  [[nodiscard]] auto server() const -> std::shared_ptr<Server>;
 
   /// Returns the options used by this runner.
   [[nodiscard]] auto options() const -> const CombinedServerRunnerOptions &;

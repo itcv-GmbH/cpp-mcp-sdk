@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -11,23 +12,25 @@
 namespace mcp
 {
 
+/// @brief ServerFactory is a session-agnostic factory function that creates new Server instances.
+/// @details Each invocation creates a fresh Server instance with its own Session. This is used by
+/// runners that need to create per-session Server instances (e.g., Streamable HTTP server with
+/// requireSessionId=true).
+using ServerFactory = std::function<std::shared_ptr<Server>()>;
+
 /// Configuration options for the Streamable HTTP server runner.
 struct StreamableHttpServerRunnerOptions
 {
   /// Options passed through to the underlying Streamable HTTP transport.
   /// Controls endpoint configuration, TLS, authorization, etc.
   transport::http::StreamableHttpServerOptions transportOptions;
-
-  /// Optional server configuration. If not provided, a default Server
-  /// will be created with no capabilities registered.
-  std::optional<ServerConfiguration> serverConfiguration;
 };
 
 /// Runner for serving MCP over Streamable HTTP.
 ///
 /// This runner provides a start/stop API for running an MCP server
 /// over HTTP with SSE streaming support. It owns the HTTP server runtime
-/// and manages the transport lifecycle.
+/// and uses a ServerFactory to create Server instances per session.
 ///
 /// For multi-client safety, use `transportOptions.http.requireSessionId = true`.
 /// This ensures each client gets a unique session ID, enabling proper request
@@ -36,7 +39,8 @@ struct StreamableHttpServerRunnerOptions
 ///
 /// Usage:
 /// @code
-///   StreamableHttpServerRunner runner;
+///   ServerFactory makeServer = [] { return mcp::Server::create(); };
+///   mcp::StreamableHttpServerRunner runner(makeServer);
 ///   runner.start();
 ///   std::cout << "Server running on port " << runner.localPort() << std::endl;
 ///   // ... server is handling requests ...
@@ -49,17 +53,18 @@ struct StreamableHttpServerRunnerOptions
 ///   options.transportOptions.http.endpoint.port = 8080;
 ///   options.transportOptions.http.endpoint.path = "/mcp";
 ///   options.transportOptions.http.requireSessionId = true;  // Multi-client safe
-///   StreamableHttpServerRunner runner(options);
+///   ServerFactory makeServer = [] { return mcp::Server::create(); };
+///   mcp::StreamableHttpServerRunner runner(makeServer, options);
 ///   runner.start();
 /// @endcode
 class StreamableHttpServerRunner final
 {
 public:
-  /// Constructs a runner with default options.
-  StreamableHttpServerRunner();
+  /// Constructs a runner with a ServerFactory and default options.
+  explicit StreamableHttpServerRunner(ServerFactory serverFactory);
 
-  /// Constructs a runner with custom options.
-  explicit StreamableHttpServerRunner(StreamableHttpServerRunnerOptions options);
+  /// Constructs a runner with a ServerFactory and custom options.
+  StreamableHttpServerRunner(ServerFactory serverFactory, StreamableHttpServerRunnerOptions options);
 
   ~StreamableHttpServerRunner();
 
@@ -94,10 +99,6 @@ public:
   ///
   /// @returns The port number, or 0 if the server is not running.
   [[nodiscard]] auto localPort() const noexcept -> std::uint16_t;
-
-  /// Returns the server instance used by this runner.
-  /// Can be used to register tools, resources, prompts, etc. before calling start().
-  [[nodiscard]] auto server() const -> std::shared_ptr<Server>;
 
   /// Returns the options used by this runner.
   [[nodiscard]] auto options() const -> const StreamableHttpServerRunnerOptions &;
