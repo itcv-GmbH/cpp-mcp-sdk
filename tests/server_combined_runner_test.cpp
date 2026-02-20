@@ -229,15 +229,15 @@ TEST_CASE("CombinedServerRunner handles both-enabled mode without hangs", "[serv
     const auto elapsed = std::chrono::steady_clock::now() - startTime;
     if (elapsed > kTimeoutMs)
     {
-      // Force stop - runner stays alive because shared_ptr keeps it alive
-      // for the detached thread. The thread will complete safely.
+      // Force stop the runner to trigger cleanup
       runner->stop();
 
-      // Give the detached thread a moment to complete its cleanup
-      // without blocking indefinitely
-      std::this_thread::sleep_for(std::chrono::milliseconds {50});
+      // Force the input stream to EOF/fail state so getline can exit
+      input.setstate(std::ios::eofbit);
 
-      stdioThread.detach();
+      // Now join the stdio thread (bounded by cleanup attempt)
+      stdioThread.join();
+
       FAIL("Stdio thread did not complete within timeout");
     }
     std::this_thread::sleep_for(std::chrono::milliseconds {10});
