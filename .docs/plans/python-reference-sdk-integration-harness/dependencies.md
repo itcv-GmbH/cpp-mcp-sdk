@@ -16,8 +16,8 @@
 - [x] `task-011`: Implement C++ STDIO Tasks Fixture (Depends on: `task-002`)
 
 ## Phase 3: Python Reference Client To C++ Server Tests (Blocked by Phase 2)
-- [ ] `task-012`: Add Python Client HTTP Coverage Tests (Depends on: `task-004`, `task-005`, `task-006`, `task-007`)
-- [ ] `task-013`: Add Python Client STDIO Coverage Tests (Depends on: `task-008`, `task-009`, `task-010`, `task-011`)
+- [x] `task-012`: Add Python Client HTTP Coverage Tests (Depends on: `task-004`, `task-005`, `task-006`, `task-007`)
+- [x] `task-013`: Add Python Client STDIO Coverage Tests (Depends on: `task-008`, `task-009`, `task-010`, `task-011`)
 
 ## Phase 4: C++ Client To Python Reference Server Tests (Blocked by Phase 1)
 - [ ] `task-014`: Expand Python Reference Server Fixture (Depends on: `task-002`)
