@@ -64,6 +64,7 @@ static auto createMinimalServer() -> std::shared_ptr<mcp::Server>
 static auto verifyPortReleased(std::uint16_t port, std::chrono::milliseconds timeout) -> std::unique_ptr<mcp::transport::HttpServerRuntime>
 {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
+  auto sleepDuration = std::chrono::milliseconds {50};
 
   while (std::chrono::steady_clock::now() < deadline)
   {
@@ -83,10 +84,11 @@ static auto verifyPortReleased(std::uint16_t port, std::chrono::milliseconds tim
     }
     catch (...)
     {
-      // Port still in use, retry
+      // Port still in use, retry with backoff
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds {100});
+    std::this_thread::sleep_for(sleepDuration);
+    sleepDuration = std::min(sleepDuration * 2, std::chrono::milliseconds {500});
   }
 
   // Final attempt - return nullptr if it fails (port still in use)
@@ -197,23 +199,23 @@ TEST_CASE("CombinedServerRunner handles both-enabled mode without hangs", "[serv
   options.stdioOutput = &output;
   options.stdioError = &stderr;
 
-  // Create runner with factory that produces minimal server
-  mcp::CombinedServerRunner runner(createMinimalServer, options);
+  // Create runner as shared_ptr to safely share ownership with stdio thread
+  auto runner = std::make_shared<mcp::CombinedServerRunner>(createMinimalServer, options);
 
   // Start HTTP server first (non-blocking)
-  runner.startHttp();
+  runner->startHttp();
 
   // Verify HTTP is running
-  REQUIRE(runner.isHttpRunning());
-  const std::uint16_t httpPort = runner.localPort();
+  REQUIRE(runner->isHttpRunning());
+  const std::uint16_t httpPort = runner->localPort();
   REQUIRE(httpPort > 0);
 
   // Run stdio in a separate thread to avoid blocking
   std::atomic<bool> stdioCompleted {false};
   std::thread stdioThread(
-    [&runner, &stdioCompleted]()
+    [runner, &stdioCompleted]()
     {
-      runner.runStdio();
+      runner->runStdio();
       stdioCompleted = true;
     });
 
@@ -227,9 +229,14 @@ TEST_CASE("CombinedServerRunner handles both-enabled mode without hangs", "[serv
     const auto elapsed = std::chrono::steady_clock::now() - startTime;
     if (elapsed > kTimeoutMs)
     {
-      // Force stop and fail - avoid unbounded join by detaching the thread
-      // This ensures we don't block forever if stdio is wedged
-      runner.stop();
+      // Force stop - runner stays alive because shared_ptr keeps it alive
+      // for the detached thread. The thread will complete safely.
+      runner->stop();
+
+      // Give the detached thread a moment to complete its cleanup
+      // without blocking indefinitely
+      std::this_thread::sleep_for(std::chrono::milliseconds {50});
+
       stdioThread.detach();
       FAIL("Stdio thread did not complete within timeout");
     }
@@ -247,8 +254,8 @@ TEST_CASE("CombinedServerRunner handles both-enabled mode without hangs", "[serv
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(message));
 
   // Stop HTTP server cleanly
-  runner.stopHttp();
-  REQUIRE_FALSE(runner.isHttpRunning());
+  runner->stopHttp();
+  REQUIRE_FALSE(runner->isHttpRunning());
 }
 
 TEST_CASE("CombinedServerRunner move constructor allows destruction of moved-from object", "[server][combined_runner]")
@@ -343,23 +350,15 @@ TEST_CASE("CombinedServerRunner destructor releases HTTP port without explicit s
   }
 
   // Verify the port is released by successfully binding a new HttpServerRuntime
-  // Uses extended retry logic to handle TIME_WAIT socket state
-  auto testServer = verifyPortReleased(capturedPort, std::chrono::seconds {10});
+  // Uses bounded retry logic to handle TIME_WAIT socket state
+  auto testServer = verifyPortReleased(capturedPort, std::chrono::seconds {30});
 
-  // Check if port was successfully rebound - may fail due to OS socket timing
-  if (testServer != nullptr)
-  {
-    CHECK(testServer->isRunning());
-    CHECK(testServer->localPort() == capturedPort);
-    testServer->stop();
-    CHECK_FALSE(testServer->isRunning());
-  }
-  else
-  {
-    // Port may still be in TIME_WAIT - this is a known OS limitation
-    // The important thing is that destructor cleaned up the HTTP listener
-    WARN("Could not verify port release within timeout - may be OS socket timing");
-  }
+  // Port release must be verified within bounded time - fail if not released
+  REQUIRE(testServer != nullptr);
+  REQUIRE(testServer->isRunning());
+  REQUIRE(testServer->localPort() == capturedPort);
+  testServer->stop();
+  REQUIRE_FALSE(testServer->isRunning());
 }
 
 TEST_CASE("CombinedServerRunner move assignment cleans up overwritten runner's HTTP port", "[server][combined_runner]")
@@ -412,23 +411,15 @@ TEST_CASE("CombinedServerRunner move assignment cleans up overwritten runner's H
   runnerA = mcp::CombinedServerRunner(createMinimalServer, optionsA);
 
   // Verify portB was released - try to bind to it
-  // Uses extended retry logic for TIME_WAIT handling
-  auto testServer = verifyPortReleased(portB, std::chrono::seconds {10});
+  // Uses bounded retry logic for TIME_WAIT handling
+  auto testServer = verifyPortReleased(portB, std::chrono::seconds {30});
 
-  // Check if port was successfully rebound - may fail due to OS socket timing
-  if (testServer != nullptr)
-  {
-    CHECK(testServer->isRunning());
-    CHECK(testServer->localPort() == portB);
-    testServer->stop();
-    CHECK_FALSE(testServer->isRunning());
-  }
-  else
-  {
-    // Port may still be in TIME_WAIT - this is a known OS limitation
-    // The important thing is that move-assignment stopped runnerB's HTTP
-    WARN("Could not verify port release within timeout - may be OS socket timing");
-  }
+  // Port release must be verified within bounded time - fail if not released
+  REQUIRE(testServer != nullptr);
+  REQUIRE(testServer->isRunning());
+  REQUIRE(testServer->localPort() == portB);
+  testServer->stop();
+  REQUIRE_FALSE(testServer->isRunning());
 
   // Clean up runnerB
   runnerB.stopHttp();
