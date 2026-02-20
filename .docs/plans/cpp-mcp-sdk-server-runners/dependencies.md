@@ -17,8 +17,8 @@
 - [x] `task-006`: Add HTTP Runner Unit Tests (Depends on: `task-005`)
 
 ## Phase 5: Examples + Documentation (Blocked by Phases 3-4)
-- [ ] `task-012`: Implement Combined Runner (Start STDIO, HTTP, or Both) (Depends on: `task-003`, `task-005`)
-- [ ] `task-013`: Add Combined Runner Unit Tests (Depends on: `task-012`)
+- [x] `task-012`: Implement Combined Runner (Start STDIO, HTTP, or Both) (Depends on: `task-003`, `task-005`)
+- [x] `task-013`: Add Combined Runner Unit Tests (Depends on: `task-012`)
 - [ ] `task-007`: Add Dual-Transport Example (STDIO + HTTP) (Depends on: `task-012`)
 - [ ] `task-008`: Migrate Existing Examples to Runners (Depends on: `task-007`)
 - [ ] `task-009`: Update Quickstarts + API Overview (Depends on: `task-008`)
