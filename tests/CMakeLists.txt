@@ -436,6 +436,16 @@ target_link_libraries(mcp_sdk_test_server_stdio_runner
 
 add_test(NAME mcp_sdk_server_stdio_runner_test COMMAND mcp_sdk_test_server_stdio_runner)
 
+add_executable(mcp_sdk_test_server_streamable_http_runner server_streamable_http_runner_test.cpp)
+
+target_link_libraries(mcp_sdk_test_server_streamable_http_runner
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_server_streamable_http_runner_test COMMAND mcp_sdk_test_server_streamable_http_runner)
+
 if(MCP_SDK_INTEGRATION_TESTS)
     add_subdirectory(integration)
 endif()
