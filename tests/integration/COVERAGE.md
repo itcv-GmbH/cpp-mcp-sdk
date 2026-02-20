@@ -74,3 +74,10 @@ All protocol items must be mapped to at least one test.
 - `reference_client_to_cpp_stdio_server_resources_advanced`: resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, notifications/resources/list_changed, notifications/resources/updated
 - `reference_client_to_cpp_stdio_server_roots`: initialize, tools/list, tools/call (Note: C++ fixture has a pre-existing startup crash issue)
 - `reference_client_to_cpp_stdio_server_tasks`: initialize, tools/list, tools/call, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status
+
+### C++ Client to Python Reference Server Tests
+
+- `cpp_client_to_reference_server_utilities`: initialize, ping, completion/complete (Note: logging/setLevel not implemented as JSON-RPC method in reference server)
+- `cpp_client_to_reference_server_resources_advanced`: initialize, resources/templates/list (Note: resources/subscribe/unsubscribe not implemented as JSON-RPC methods in reference server)
+- `cpp_client_to_reference_server_roots`: initialize, roots/list, notifications/roots/list_changed
+- `cpp_client_to_reference_server_tasks`: initialize (Note: tasks protocol methods partially implemented in reference server)
