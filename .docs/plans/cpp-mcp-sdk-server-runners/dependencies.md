@@ -14,7 +14,7 @@
 
 ## Phase 4: Streamable HTTP Runner (Blocked by Phase 2)
 - [x] `task-005`: Implement Streamable HTTP Server Runner (Per-Session Factory + Runtime) (Depends on: `task-014`)
-- [ ] `task-006`: Add HTTP Runner Unit Tests (Depends on: `task-005`)
+- [x] `task-006`: Add HTTP Runner Unit Tests (Depends on: `task-005`)
 
 ## Phase 5: Examples + Documentation (Blocked by Phases 3-4)
 - [ ] `task-012`: Implement Combined Runner (Start STDIO, HTTP, or Both) (Depends on: `task-003`, `task-005`)
