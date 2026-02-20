@@ -9,6 +9,7 @@ target_link_libraries(mcp_sdk_example_minimal
 
 add_subdirectory(stdio_server)
 add_subdirectory(bidirectional_sampling_elicitation)
+add_subdirectory(dual_transport_server)
 
 if(MCP_SDK_ENABLE_TLS AND MCP_SDK_ENABLE_AUTH)
     add_subdirectory(http_server_auth)

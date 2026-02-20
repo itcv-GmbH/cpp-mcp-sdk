@@ -1,0 +1,271 @@
+#include <chrono>
+#include <csignal>
+#include <cstdint>
+#include <exception>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/lifecycle/session.hpp>
+#include <mcp/server/combined_runner.hpp>
+#include <mcp/server/prompts.hpp>
+#include <mcp/server/resources.hpp>
+#include <mcp/server/server.hpp>
+#include <mcp/server/stdio_runner.hpp>
+#include <mcp/server/streamable_http_runner.hpp>
+#include <mcp/server/tools.hpp>
+
+namespace
+{
+
+constexpr std::int64_t kDelayedEchoMilliseconds = 300;
+constexpr const char *kHttpPath = "/mcp";
+constexpr const char *kHttpBind = "127.0.0.1";
+constexpr std::uint16_t kHttpPort = 8080;
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::atomic<bool> g_shutdownRequested {false};
+
+auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
+{
+  mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
+  content["type"] = "text";
+  content["text"] = text;
+  return content;
+}
+
+auto makeServer() -> std::shared_ptr<mcp::Server>
+{
+  mcp::ToolsCapability toolsCapability;
+  toolsCapability.listChanged = true;
+
+  mcp::ResourcesCapability resourcesCapability;
+  resourcesCapability.listChanged = true;
+
+  mcp::PromptsCapability promptsCapability;
+  promptsCapability.listChanged = true;
+
+  mcp::TasksCapability tasksCapability;
+  tasksCapability.toolsCall = true;
+  tasksCapability.list = true;
+  tasksCapability.cancel = true;
+
+  mcp::ServerConfiguration configuration;
+  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
+  configuration.serverInfo = mcp::Implementation("example-dual-transport-server", "1.0.0");
+  configuration.instructions = "Use tools for generated output and read resources for static context.";
+
+  const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+
+  // Register echo tool
+  mcp::ToolDefinition echoTool;
+  echoTool.name = "echo";
+  echoTool.description = "Echo text from arguments.text";
+  echoTool.execution = mcp::jsonrpc::JsonValue::object();
+  (*echoTool.execution)["taskSupport"] = "optional";
+  echoTool.inputSchema = mcp::jsonrpc::JsonValue::object();
+  echoTool.inputSchema["type"] = "object";
+  echoTool.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
+  echoTool.inputSchema["properties"]["text"] = mcp::jsonrpc::JsonValue::object();
+  echoTool.inputSchema["properties"]["text"]["type"] = "string";
+  echoTool.inputSchema["required"] = mcp::jsonrpc::JsonValue::array();
+  echoTool.inputSchema["required"].push_back("text");
+
+  server->registerTool(std::move(echoTool),
+                       [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                       {
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         result.content.push_back(makeTextContent("echo: " + context.arguments["text"].as<std::string>()));
+                         return result;
+                       });
+
+  // Register delayed echo tool
+  mcp::ToolDefinition delayedTool;
+  delayedTool.name = "delayed_echo";
+  delayedTool.description = "Sleep briefly, then echo arguments.text";
+  delayedTool.execution = mcp::jsonrpc::JsonValue::object();
+  (*delayedTool.execution)["taskSupport"] = "optional";
+  delayedTool.inputSchema = mcp::jsonrpc::JsonValue::object();
+  delayedTool.inputSchema["type"] = "object";
+  delayedTool.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
+  delayedTool.inputSchema["properties"]["text"] = mcp::jsonrpc::JsonValue::object();
+  delayedTool.inputSchema["properties"]["text"]["type"] = "string";
+  delayedTool.inputSchema["required"] = mcp::jsonrpc::JsonValue::array();
+  delayedTool.inputSchema["required"].push_back("text");
+
+  server->registerTool(std::move(delayedTool),
+                       [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                       {
+                         std::this_thread::sleep_for(std::chrono::milliseconds(kDelayedEchoMilliseconds));
+
+                         mcp::CallToolResult result;
+                         result.content = mcp::jsonrpc::JsonValue::array();
+                         result.content.push_back(makeTextContent("delayed: " + context.arguments["text"].as<std::string>()));
+                         return result;
+                       });
+
+  // Register about resource
+  mcp::ResourceDefinition resource;
+  resource.uri = "resource://server/about";
+  resource.name = "about";
+  resource.description = "Server metadata";
+  resource.mimeType = "text/plain";
+
+  server->registerResource(
+    std::move(resource),
+    [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+    {
+      return {
+        mcp::ResourceContent::text("resource://server/about", "Example dual-transport server with tools/resources/prompts support.", std::string("text/plain")),
+      };
+    });
+
+  // Register explain-topic prompt
+  mcp::PromptDefinition prompt;
+  prompt.name = "explain-topic";
+  prompt.description = "Generate a one-line explanatory prompt";
+
+  mcp::PromptArgumentDefinition topicArgument;
+  topicArgument.name = "topic";
+  topicArgument.required = true;
+  prompt.arguments.push_back(std::move(topicArgument));
+
+  server->registerPrompt(std::move(prompt),
+                         [](const mcp::PromptGetContext &context) -> mcp::PromptGetResult
+                         {
+                           mcp::PromptGetResult result;
+                           result.description = "Single user message prompt";
+
+                           mcp::PromptMessage message;
+                           message.role = "user";
+                           message.content = mcp::jsonrpc::JsonValue::object();
+                           message.content["type"] = "text";
+                           message.content["text"] = "Explain this topic in one paragraph: " + context.arguments["topic"].as<std::string>();
+                           result.messages.push_back(std::move(message));
+                           return result;
+                         });
+
+  return server;
+}
+
+auto runCombinedRunnerExample() -> void
+{
+  std::cerr << "=== CombinedServerRunner Example ===" << '\n';
+
+  // Server factory - creates a fresh Server instance per call
+  mcp::ServerFactory serverFactory = []()
+  {
+    // Each session gets its own Server instance
+    return makeServer();
+  };
+
+  // Configure combined runner options
+  mcp::CombinedServerRunnerOptions options;
+  options.enableStdio = true;
+  options.enableHttp = true;
+
+  // Configure HTTP transport
+  options.httpOptions.transportOptions.http.endpoint.bindAddress = kHttpBind;
+  options.httpOptions.transportOptions.http.endpoint.port = kHttpPort;
+  options.httpOptions.transportOptions.http.endpoint.path = kHttpPath;
+  options.httpOptions.transportOptions.http.requireSessionId = true;  // Multi-client isolation
+
+  // Create and run the combined runner
+  mcp::CombinedServerRunner runner(serverFactory, options);
+
+  // Start HTTP in background (non-blocking)
+  runner.startHttp();
+  std::cerr << "HTTP server started on " << kHttpBind << ":" << runner.localPort() << kHttpPath << '\n';
+  std::cerr.flush();
+
+  // Run STDIO in foreground (blocking) - this will block until stdin closes
+  std::cerr << "STDIO transport ready, waiting for input..." << '\n';
+  std::cerr.flush();
+
+  runner.runStdio();
+
+  // Stop HTTP on exit
+  std::cerr << "STDIO transport closed, stopping HTTP server..." << '\n';
+  runner.stopHttp();
+  std::cerr << "CombinedServerRunner example complete." << '\n';
+}
+
+auto runExplicitCompositionExample() -> void
+{
+  std::cerr << "=== Explicit Composition Example (StdioServerRunner + StreamableHttpServerRunner) ===" << '\n';
+
+  // Shared server factory
+  mcp::ServerFactory serverFactory = []() { return makeServer(); };
+
+  // Create STDIO runner
+  mcp::StdioServerRunnerOptions stdioOptions;
+  mcp::StdioServerRunner stdioRunner(serverFactory, stdioOptions);
+
+  // Create HTTP runner
+  mcp::StreamableHttpServerRunnerOptions httpOptions;
+  httpOptions.transportOptions.http.endpoint.bindAddress = kHttpBind;
+  httpOptions.transportOptions.http.endpoint.port = kHttpPort;
+  httpOptions.transportOptions.http.endpoint.path = kHttpPath;
+  httpOptions.transportOptions.http.requireSessionId = true;  // Multi-client isolation
+  mcp::StreamableHttpServerRunner httpRunner(serverFactory, httpOptions);
+
+  // Start HTTP in background
+  httpRunner.start();
+  std::cerr << "HTTP server started on " << kHttpBind << ":" << httpRunner.localPort() << kHttpPath << '\n';
+  std::cerr.flush();
+
+  // Run STDIO in foreground
+  std::cerr << "STDIO transport ready, waiting for input..." << '\n';
+  std::cerr.flush();
+
+  stdioRunner.run();
+
+  // Stop HTTP on exit
+  std::cerr << "STDIO transport closed, stopping HTTP server..." << '\n';
+  httpRunner.stop();
+  std::cerr << "Explicit composition example complete." << '\n';
+}
+
+auto handleSignal(int signal) -> void
+{
+  if (signal == SIGINT)
+  {
+    std::cerr << "\nReceived SIGINT, initiating graceful shutdown..." << '\n';
+    g_shutdownRequested.store(true);
+  }
+}
+
+}  // namespace
+
+// NOLINTNEXTLINE(bugprone-exception-escape)
+auto main() -> int
+{
+  // Set up signal handler for SIGINT
+  static_cast<void>(std::signal(SIGINT, handleSignal));
+
+  // Use the combined runner for the main example
+  // This demonstrates:
+  // - Shared ServerFactory building an mcp::Server with tools/resources/prompts
+  // - Starting both transports via CombinedServerRunner
+  // - HTTP configured with requireSessionId=true
+  // - HTTP runs in background, STDIO runs in foreground (blocking)
+  // - HTTP stopped on exit
+  // - Graceful shutdown on SIGINT
+  try
+  {
+    runCombinedRunnerExample();
+  }
+  catch (const std::exception &error)
+  {
+    std::cerr << "CombinedServerRunner example failed: " << error.what() << '\n';
+    return 1;
+  }
+
+  return 0;
+}
