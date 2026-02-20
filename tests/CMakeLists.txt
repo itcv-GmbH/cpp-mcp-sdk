@@ -426,6 +426,16 @@ target_link_libraries(mcp_sdk_test_detail_url
 
 add_test(NAME mcp_sdk_detail_url_test COMMAND mcp_sdk_test_detail_url)
 
+add_executable(mcp_sdk_test_server_stdio_runner server_stdio_runner_test.cpp)
+
+target_link_libraries(mcp_sdk_test_server_stdio_runner
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_server_stdio_runner_test COMMAND mcp_sdk_test_server_stdio_runner)
+
 if(MCP_SDK_INTEGRATION_TESTS)
     add_subdirectory(integration)
 endif()
