@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
-#include <future>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -13,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include <fcntl.h>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/combined_runner.hpp>
@@ -22,11 +22,7 @@
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/server/tools.hpp>
-
-#ifndef _WIN32
-#  include <fcntl.h>
-#  include <unistd.h>
-#endif
+#include <unistd.h>
 
 namespace
 {
@@ -36,13 +32,16 @@ constexpr const char *kHttpPath = "/mcp";
 constexpr const char *kHttpBind = "127.0.0.1";
 constexpr std::uint16_t kHttpPort = 8080;
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-static volatile std::sig_atomic_t g_shutdownRequested = 0;
+constexpr std::int64_t kPollingIntervalMs = 50;
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace, cppcoreguidelines-avoid-non-const-global-variables)
+volatile std::sig_atomic_t gShutdownRequested = 0;
 
 // Completion signal for STDIO thread - set to true when STDIO transport ends
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-static std::atomic_bool g_stdioDone {false};
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace, cppcoreguidelines-avoid-non-const-global-variables)
+std::atomic_bool gStdioDone {false};
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
 {
   mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
@@ -51,6 +50,7 @@ auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
   return content;
 }
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 auto makeServer() -> std::shared_ptr<mcp::Server>
 {
   mcp::ToolsCapability toolsCapability;
@@ -166,12 +166,13 @@ auto makeServer() -> std::shared_ptr<mcp::Server>
   return server;
 }
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 auto runCombinedRunnerExample() -> void
 {
   std::cerr << "=== CombinedServerRunner Example ===" << '\n';
 
   // Server factory - creates a fresh Server instance per call
-  mcp::ServerFactory serverFactory = []()
+  const mcp::ServerFactory serverFactory = []() -> std::shared_ptr<mcp::Server>
   {
     // Each session gets its own Server instance
     return makeServer();
@@ -204,25 +205,25 @@ auto runCombinedRunnerExample() -> void
 
   // Start STDIO in a thread and wrap to set completion flag when done
   std::thread stdioThread(
-    [stdioRunnerPtr]()
+    [stdioRunnerPtr]() -> void
     {
       stdioRunnerPtr->run();
-      g_stdioDone = true;
+      gStdioDone = true;
     });
 
   // Main control loop - check for shutdown signal or STDIO completion
-  while (g_shutdownRequested == 0)
+  while (gShutdownRequested == 0)
   {
     // Check if the STDIO thread has finished naturally
-    if (g_stdioDone)
+    if (gStdioDone)
     {
       break;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::this_thread::sleep_for(std::chrono::milliseconds(kPollingIntervalMs));
   }
 
   // Check what caused us to exit the loop
-  if (g_shutdownRequested != 0)
+  if (gShutdownRequested != 0)
   {
     // SIGINT received - perform best-effort shutdown
     std::cerr << "\nReceived SIGINT, initiating graceful shutdown..." << '\n';
@@ -239,12 +240,14 @@ auto runCombinedRunnerExample() -> void
 
 #ifndef _WIN32
     // On POSIX, also redirect stdin to /dev/null to unblock any blocking reads
-    int devNull = open("/dev/null", O_RDONLY);
+    // NOLINTBEGIN(misc-include-cleaner,cppcoreguidelines-pro-type-vararg,hicpp-vararg,android-cloexec-open)
+    const int devNull = open("/dev/null", O_RDONLY | O_CLOEXEC);
     if (devNull >= 0)
     {
       dup2(devNull, fileno(stdin));
       close(devNull);
     }
+    // NOLINTEND(misc-include-cleaner,cppcoreguidelines-pro-type-vararg,hicpp-vararg,android-cloexec-open)
 #endif
 
     // Now join the STDIO thread
@@ -270,15 +273,16 @@ auto runCombinedRunnerExample() -> void
   std::cerr << "CombinedServerRunner example complete." << '\n';
 }
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 auto runExplicitCompositionExample() -> void
 {
   std::cerr << "=== Explicit Composition Example (StdioServerRunner + StreamableHttpServerRunner) ===" << '\n';
 
   // Shared server factory
-  mcp::ServerFactory serverFactory = []() { return makeServer(); };
+  const mcp::ServerFactory serverFactory = []() -> std::shared_ptr<mcp::Server> { return makeServer(); };
 
   // Create STDIO runner
-  mcp::StdioServerRunnerOptions stdioOptions;
+  const mcp::StdioServerRunnerOptions stdioOptions;
   mcp::StdioServerRunner stdioRunner(serverFactory, stdioOptions);
 
   // Create HTTP runner
@@ -306,11 +310,12 @@ auto runExplicitCompositionExample() -> void
   std::cerr << "Explicit composition example complete." << '\n';
 }
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 auto handleSignal(int /*signal*/) -> void
 {
   // Signal handler must only perform async-signal-safe operations.
   // Setting a sig_atomic_t flag is signal-safe; logging is not.
-  g_shutdownRequested = 1;
+  gShutdownRequested = 1;
 }
 
 }  // namespace

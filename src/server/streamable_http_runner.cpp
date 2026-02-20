@@ -1,4 +1,4 @@
-#include <algorithm>
+#include <algorithm>  // NOLINT(misc-include-cleaner)
 #include <atomic>
 #include <cstdint>
 #include <exception>
@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/server/server.hpp>
@@ -81,6 +82,7 @@ struct StreamableHttpServerRunner::Impl
       sessionServers[*sessionId] = newServer;
       return newServer;
     }
+    // NOLINTNEXTLINE(llvm-else-after-return,readability-else-after-return)
     else
     {
       // Use single server instance
@@ -148,6 +150,7 @@ struct StreamableHttpServerRunner::Impl
     }
   }
 
+  // NOLINTNEXTLINE(readability-function-cognitive-complexity)
   auto handleRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> transport::http::StreamableRequestResult
   {
     transport::http::StreamableRequestResult result;
@@ -213,6 +216,7 @@ struct StreamableHttpServerRunner::Impl
             [this, sessionId = *routingSessionId](const jsonrpc::RequestContext &msgContext, const jsonrpc::Message &message) -> void
             {
               // Use the session ID from the message context if available, otherwise use the stored session ID
+              // NOLINTNEXTLINE(misc-const-correctness)
               std::optional<std::string> targetSessionId = msgContext.sessionId.has_value() ? msgContext.sessionId : sessionId;
               if (!streamableServer.enqueueServerMessage(message, targetSessionId))
               {
@@ -262,6 +266,7 @@ struct StreamableHttpServerRunner::Impl
           sessionServers[*routingSessionId] = server;
           return result;
         }
+        // NOLINTNEXTLINE(llvm-else-after-return,readability-else-after-return)
         else
         {
           // Existing session - get the server
@@ -306,7 +311,7 @@ struct StreamableHttpServerRunner::Impl
             });
 
           singleServer->start();
-          singleServerStarted_ = true;
+          singleServerStarted = true;
         }
 
         server = singleServer;
@@ -427,7 +432,7 @@ struct StreamableHttpServerRunner::Impl
     }
   }
 
-  bool singleServerStarted_ = false;
+  bool singleServerStarted = false;
 };
 
 StreamableHttpServerRunner::StreamableHttpServerRunner(ServerFactory serverFactory)

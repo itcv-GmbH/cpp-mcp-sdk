@@ -42,9 +42,11 @@ static void deleteThreadPoolNoexcept(boost::asio::thread_pool *pool) noexcept
 {
   try
   {
-    std::thread deletionThread([pool]() { delete pool; });
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    std::thread deletionThread([pool]() -> void { delete pool; });
     deletionThread.detach();
   }
+  // NOLINTNEXTLINE(bugprone-empty-catch)
   catch (...)
   {
     // Thread creation failed - leak the pool to avoid std::terminate.
@@ -157,7 +159,8 @@ Router::Router(RouterOptions options)
   // runs on a non-pool thread (a detached thread) to avoid crashes when
   // pool destructor runs on its own worker thread.
   // The deleter is marked noexcept to ensure std::shared_ptr's destructor won't throw.
-  auto rawPool = new boost::asio::thread_pool(detail::kInboundCompletionWorkerCount);
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto *rawPool = new boost::asio::thread_pool(detail::kInboundCompletionWorkerCount);
   inboundState_->completionPool = std::shared_ptr<boost::asio::thread_pool>(rawPool, &detail::deleteThreadPoolNoexcept);
 }
 
@@ -352,12 +355,13 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
     const RequestId localRequestId = request.id;
     try
     {
-      std::shared_ptr<boost::asio::thread_pool> poolKeepalive = completionPool;
+      const std::shared_ptr<boost::asio::thread_pool> &poolKeepalive = completionPool;
       // Create shared_ptr to context BEFORE the lambda to avoid copying context (which can throw).
       // Capturing shared_ptr by value is noexcept, and we mark the handler noexcept.
-      std::shared_ptr<RequestContext> contextPtr = std::make_shared<RequestContext>(context);
+      const std::shared_ptr<RequestContext> contextPtr = std::make_shared<RequestContext>(context);
       // Construct lambda separately to ensure exception is caught by outer try/catch
-      auto completionHandler = [poolKeepalive, inboundState, contextPtr, requestId = localRequestId, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable noexcept
+      auto completionHandler =
+        [poolKeepalive, inboundState, contextPtr, requestId = localRequestId, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable noexcept -> void
       {
         // Wrap entire handler in try/catch to prevent any exceptions from escaping.
         // The noexcept specifier ensures no exceptions escape to the caller.
@@ -375,6 +379,7 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
             detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
           }
         }
+        // NOLINTNEXTLINE(bugprone-empty-catch, bugprone-exception-escape)
         catch (...)
         {
           // Suppress any exceptions - must not escape the handler

@@ -1385,7 +1385,7 @@ Client::Client(std::shared_ptr<Session> session)
         const jsonrpc::JsonValue taskParams = effectiveParams;
         const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
 
-        std::function<void()> taskWorker =
+        const std::function<void()> taskWorker =
           // NOLINTNEXTLINE(bugprone-exception-escape) - Exception handling is intentional
           [taskReceiver, taskId, taskHandler, taskContext, taskParams]() mutable -> void
         {
@@ -1524,7 +1524,7 @@ Client::Client(std::shared_ptr<Session> session)
             weakClient.reset();
           }
 
-          std::function<void()> taskWorker =
+          const std::function<void()> taskWorker =
             // NOLINTNEXTLINE(bugprone-exception-escape) - Exception handling is intentional
             [weakClient, taskReceiver, taskContext, internalRequest, taskId]() mutable -> void
           {

@@ -26,7 +26,7 @@ struct ServerConfiguration
   std::optional<Implementation> serverInfo;
   std::optional<std::string> instructions;
   std::shared_ptr<util::TaskStore> taskStore;
-  std::optional<std::int64_t> defaultTaskPollInterval = std::int64_t {1000};
+  std::optional<std::int64_t> defaultTaskPollInterval = util::kDefaultTaskPollIntervalMs;
   bool emitTaskStatusNotifications = false;
 };
 
