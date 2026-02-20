@@ -1,9 +1,18 @@
 # Quickstart: MCP Server
 
-This quickstart covers two runnable server paths in this repository:
+This quickstart covers runnable server paths in this repository using the runner-based API:
 
-- stdio server: `examples/stdio_server/`
-- Streamable HTTP + auth server: `examples/http_server_auth/`
+- stdio server: `examples/stdio_server/` — uses `mcp::StdioServerRunner`
+- Streamable HTTP + auth server: `examples/http_server_auth/` — uses `mcp::StreamableHttpServerRunner`
+- dual transport server: `examples/dual_transport_server/` — uses `mcp::CombinedServerRunner`
+
+## Runner Overview
+
+The SDK provides three high-level runners that handle transport lifecycle and session management:
+
+- **STDIO Runner** (`mcp::StdioServerRunner`): Guarantees no logs to stdout (logs go to stderr). Creates one `Server` instance for the runner's lifetime.
+- **HTTP Runner** (`mcp::StreamableHttpServerRunner`): Provides `start()`/`stop()` methods and creates one `mcp::Server` per `MCP-Session-Id` via a `ServerFactory`. Supports multi-client isolation when `requireSessionId=true`.
+- **Combined Runner** (`mcp::CombinedServerRunner`): Supports starting STDIO, HTTP, or both in a single process. Shares a `ServerFactory` across transports.
 
 ## Prerequisites
 
@@ -17,12 +26,14 @@ Use the same options and presets used by the example READMEs:
 
 ```bash
 cmake --preset vcpkg-unix-release -DMCP_SDK_BUILD_EXAMPLES=ON
-cmake --build build/vcpkg-unix-release --target mcp_sdk_example_stdio_server mcp_sdk_example_http_server_auth
+cmake --build build/vcpkg-unix-release --target mcp_sdk_example_stdio_server mcp_sdk_example_http_server_auth mcp_sdk_example_dual_transport_server
 ```
 
 `MCP_SDK_BUILD_EXAMPLES` defaults to `ON`, but keeping it explicit in quickstart commands avoids confusion in custom builds.
 
 ## Run a stdio server
+
+The stdio server example uses `mcp::StdioServerRunner`, which guarantees no logs go to stdout (they're written to stderr). The runner creates one `Server` instance and calls `start()` before processing messages.
 
 Start the example:
 
@@ -43,6 +54,8 @@ printf '%s\n' \
 ```
 
 ## Run an HTTPS Streamable HTTP server with bearer auth
+
+The HTTP server example uses `mcp::StreamableHttpServerRunner`, which provides `start()`/`stop()` methods and creates one `mcp::Server` per `MCP-Session-Id` via a `ServerFactory` (when `requireSessionId=true`).
 
 Generate local certificates:
 
@@ -81,11 +94,14 @@ headers = {
 }
 
 context = ssl._create_unverified_context()
+protocol_version = "2025-11-25"
 
-def post(payload, session_id=None):
+def post(payload, session_id=None, include_protocol_version=False):
     request_headers = dict(headers)
     if session_id:
         request_headers["MCP-Session-Id"] = session_id
+    if include_protocol_version:
+        request_headers["MCP-Protocol-Version"] = protocol_version
     request = urllib.request.Request(
         base_url,
         data=json.dumps(payload).encode("utf-8"),
@@ -95,12 +111,13 @@ def post(payload, session_id=None):
     with urllib.request.urlopen(request, context=context) as response:
         return response.getheader("MCP-Session-Id"), response.status, response.read().decode("utf-8")
 
+# Initialize: response includes MCP-Session-Id header
 session_id, status, initialize_body = post({
     "jsonrpc": "2.0",
     "id": 1,
     "method": "initialize",
     "params": {
-        "protocolVersion": "2025-11-25",
+        "protocolVersion": protocol_version,
         "capabilities": {},
         "clientInfo": {"name": "manual-client", "version": "0.1.0"},
     },
@@ -109,10 +126,11 @@ print("initialize status:", status)
 print("session id:", session_id)
 print("initialize body:", initialize_body)
 
-_, status, _ = post({"jsonrpc": "2.0", "method": "notifications/initialized"}, session_id)
+# Subsequent requests include both MCP-Session-Id and MCP-Protocol-Version
+_, status, _ = post({"jsonrpc": "2.0", "method": "notifications/initialized"}, session_id, include_protocol_version=True)
 print("notifications/initialized status:", status)
 
-_, status, tools_body = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, session_id)
+_, status, tools_body = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, session_id, include_protocol_version=True)
 print("tools/list status:", status)
 print("tools/list body:", tools_body)
 PY
@@ -122,6 +140,25 @@ Demo bearer tokens in this example:
 
 - `dev-token-read` (`mcp:read`)
 - `dev-token-write` (`mcp:read mcp:write`)
+
+## Run a dual transport server (STDIO + HTTP)
+
+The dual transport example uses `mcp::CombinedServerRunner` to run both STDIO and HTTP transports in a single process. Both transports share a `ServerFactory` that creates fresh `mcp::Server` instances per session.
+
+Start the example:
+
+```bash
+./build/vcpkg-unix-release/examples/dual_transport_server/mcp_sdk_example_dual_transport_server
+```
+
+The server starts:
+- HTTP server on `127.0.0.1:8080/mcp` (background thread)
+- STDIO transport reading from stdin (foreground, blocking)
+
+The example demonstrates:
+- Shared `ServerFactory` across transports
+- Per-session server isolation for HTTP (when `requireSessionId=true`)
+- Graceful shutdown on SIGINT
 
 ## Legacy 2024-11-05 HTTP+SSE server compatibility (optional)
 

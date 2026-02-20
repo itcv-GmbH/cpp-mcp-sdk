@@ -47,7 +47,8 @@ The SDK provides runners for different transport types. The following rules defi
 
 - Uses exactly one `Server` instance for all requests.
 - Treats `RequestContext.sessionId` as `std::nullopt` (the header is ignored).
-- Calls `mcp::Server::start()` once during runner initialization.
+- Server instance is created and started on first accepted "initialize" request (not during runner initialization).
+- Does not provide per-session isolation; all clients share the same Server instance.
 - Calls `mcp::Server::stop()` when the runner is stopped or destroyed.
 
 ### Combined Runner
@@ -151,7 +152,7 @@ Options can be configured via `mcp::StdioServerRunnerOptions`:
 ```cpp
 mcp::StdioServerRunnerOptions options;
 options.transportOptions.allowStderrLogs = true;
-options.transportOptions.limits.maxJsonRpcMessageSize = 1024 * 1024;
+options.transportOptions.limits.maxMessageSizeBytes = 1024 * 1024;
 mcp::StdioServerRunner runner(makeServer, options);
 ```
 
