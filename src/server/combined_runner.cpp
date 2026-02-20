@@ -1,4 +1,3 @@
-#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -48,8 +47,6 @@ struct CombinedServerRunner::Impl
 
   std::unique_ptr<StdioServerRunner> stdioRunner;
   std::unique_ptr<StreamableHttpServerRunner> httpRunner;
-
-  std::atomic<bool> httpRunning {false};
 };
 
 CombinedServerRunner::CombinedServerRunner(ServerFactory serverFactory, CombinedServerRunnerOptions options)
@@ -59,12 +56,12 @@ CombinedServerRunner::CombinedServerRunner(ServerFactory serverFactory, Combined
 
 CombinedServerRunner::~CombinedServerRunner()
 {
-  // Ensure HTTP is stopped if it was running
-  if (impl_->httpRunning.load())
+  // Ensure HTTP is stopped if it was running - must be noexcept-safe
+  if (impl_ && impl_->httpRunner && impl_->httpRunner->isRunning())
   {
     try
     {
-      stop();
+      impl_->httpRunner->stop();
     }
     catch (...)
     {
@@ -80,10 +77,18 @@ auto CombinedServerRunner::operator=(CombinedServerRunner &&other) noexcept -> C
 {
   if (this != &other)
   {
-    // Ensure HTTP is stopped before moving
-    if (impl_->httpRunning.load())
+    // Stop HTTP if running before moving - must be noexcept-safe
+    if (impl_ && impl_->httpRunner && impl_->httpRunner->isRunning())
     {
-      stop();
+      try
+      {
+        impl_->httpRunner->stop();
+      }
+      catch (...)
+      {
+        // Suppress exceptions - must not throw
+        ::detail::suppressException();
+      }
     }
     impl_ = std::move(other.impl_);
   }
@@ -92,6 +97,11 @@ auto CombinedServerRunner::operator=(CombinedServerRunner &&other) noexcept -> C
 
 auto CombinedServerRunner::start() -> void
 {
+  if (!impl_)
+  {
+    return;
+  }
+
   // Start HTTP in background if enabled
   if (impl_->options.enableHttp)
   {
@@ -107,8 +117,13 @@ auto CombinedServerRunner::start() -> void
 
 auto CombinedServerRunner::stop() -> void
 {
-  // Stop HTTP if running
-  if (impl_->options.enableHttp && impl_->httpRunning.load())
+  if (!impl_)
+  {
+    return;
+  }
+
+  // Stop HTTP if running - derive from underlying runner state
+  if (impl_->options.enableHttp && impl_->httpRunner && impl_->httpRunner->isRunning())
   {
     stopHttp();
   }
@@ -127,11 +142,19 @@ auto CombinedServerRunner::runStdio() -> void
   }
 
   // Run STDIO - this blocks until EOF
-  impl_->stdioRunner->run();
+  // Use custom streams if provided in options
+  if (impl_->options.stdioInput != nullptr && impl_->options.stdioOutput != nullptr && impl_->options.stdioError != nullptr)
+  {
+    impl_->stdioRunner->run(*impl_->options.stdioInput, *impl_->options.stdioOutput, *impl_->options.stdioError);
+  }
+  else
+  {
+    impl_->stdioRunner->run();
+  }
 
   // After STDIO exits (EOF), stop HTTP if it's running
   // This matches the documented behavior: "on STDIO EOF it must stop HTTP before returning"
-  if (impl_->options.enableHttp && impl_->httpRunning.load())
+  if (impl_->options.enableHttp && impl_->httpRunner && impl_->httpRunner->isRunning())
   {
     stopHttp();
   }
@@ -139,6 +162,11 @@ auto CombinedServerRunner::runStdio() -> void
 
 auto CombinedServerRunner::startHttp() -> void
 {
+  if (!impl_)
+  {
+    return;
+  }
+
   if (!impl_->options.enableHttp)
   {
     throw std::runtime_error("HTTP transport is not enabled");
@@ -150,31 +178,35 @@ auto CombinedServerRunner::startHttp() -> void
   }
 
   impl_->httpRunner->start();
-  impl_->httpRunning.store(true);
 }
 
 auto CombinedServerRunner::stopHttp() -> void
 {
+  if (!impl_)
+  {
+    return;
+  }
+
   if (impl_->httpRunner == nullptr)
   {
     return;
   }
 
-  if (impl_->httpRunning.load())
+  // Derive running state from underlying runner
+  if (impl_->httpRunner->isRunning())
   {
     impl_->httpRunner->stop();
-    impl_->httpRunning.store(false);
   }
 }
 
 auto CombinedServerRunner::isHttpRunning() const noexcept -> bool
 {
-  return impl_->httpRunning.load();
+  return impl_ && impl_->httpRunner && impl_->httpRunner->isRunning();
 }
 
 auto CombinedServerRunner::localPort() const noexcept -> std::uint16_t
 {
-  if (impl_->httpRunner == nullptr || !impl_->httpRunning.load())
+  if (!impl_ || impl_->httpRunner == nullptr || !impl_->httpRunner->isRunning())
   {
     return 0;
   }
@@ -183,16 +215,29 @@ auto CombinedServerRunner::localPort() const noexcept -> std::uint16_t
 
 auto CombinedServerRunner::options() const -> const CombinedServerRunnerOptions &
 {
+  static const CombinedServerRunnerOptions defaultOptions;
+  if (!impl_)
+  {
+    return defaultOptions;
+  }
   return impl_->options;
 }
 
 auto CombinedServerRunner::stdioRunner() -> StdioServerRunner *
 {
+  if (!impl_)
+  {
+    return nullptr;
+  }
   return impl_->stdioRunner.get();
 }
 
 auto CombinedServerRunner::httpRunner() -> StreamableHttpServerRunner *
 {
+  if (!impl_)
+  {
+    return nullptr;
+  }
   return impl_->httpRunner.get();
 }
 

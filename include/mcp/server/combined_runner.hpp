@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <iosfwd>
 #include <memory>
 #include <optional>
 
@@ -33,6 +34,21 @@ struct CombinedServerRunnerOptions
 
   /// Whether to enable Streamable HTTP transport.
   bool enableHttp = false;
+
+  /// Custom input stream for STDIO transport (default: nullptr, uses std::cin).
+  /// Only used if enableStdio is true.
+  /// @note The caller is responsible for ensuring the stream outlives the runner.
+  std::istream *stdioInput = nullptr;
+
+  /// Custom output stream for STDIO transport (default: nullptr, uses std::cout).
+  /// Only used if enableStdio is true.
+  /// @note The caller is responsible for ensuring the stream outlives the runner.
+  std::ostream *stdioOutput = nullptr;
+
+  /// Custom error stream for STDIO transport (default: nullptr, uses std::cerr).
+  /// Only used if enableStdio is true.
+  /// @note The caller is responsible for ensuring the stream outlives the runner.
+  std::ostream *stdioError = nullptr;
 };
 
 /// Combined runner for serving MCP over multiple transports.
