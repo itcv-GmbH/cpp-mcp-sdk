@@ -26,6 +26,14 @@ namespace
 constexpr std::chrono::seconds kOutboundRequestTimeout {10};
 constexpr std::chrono::seconds kSessionStateWaitTimeout {15};
 
+// Helper to create a future with a ready response
+auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::future<mcp::jsonrpc::Response>
+{
+  std::promise<mcp::jsonrpc::Response> promise;
+  promise.set_value(std::move(response));
+  return promise.get_future();
+}
+
 struct OutboundAssertionsState
 {
   std::atomic<bool> started {false};
@@ -80,6 +88,9 @@ auto runOutboundAssertions(mcp::Server &server, const mcp::jsonrpc::RequestConte
     throw std::runtime_error("ping did not return a success response");
   }
 
+  // The Python client will have received the notification from logging/setLevel
+  // (when it calls the tool that triggers logging)
+
   std::cerr << "cpp stdio integration server outbound ping assertions passed" << '\n';
 }
 
@@ -117,6 +128,44 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
         std::scoped_lock lock(serverRegistry->mutex);
         serverRegistry->servers.push_back(server);
       }
+
+      // Override the logging/setLevel handler to emit a notification after setting the level
+      server->registerRequestHandler(
+        "logging/setLevel",
+        [&server](const mcp::jsonrpc::RequestContext &ctx, const mcp::jsonrpc::Request &req) -> std::future<mcp::jsonrpc::Response>
+        {
+          // First, handle the setLevel normally - extract level from params
+          if (!req.params.has_value() || !req.params->is_object())
+          {
+            return makeReadyResponseFuture(mcp::jsonrpc::makeErrorResponse(mcp::jsonrpc::makeInvalidParamsError(std::nullopt, "logging/setLevel requires params object"), req.id));
+          }
+
+          const auto &params = *req.params;
+          if (!params.contains("level") || !params["level"].is_string())
+          {
+            return makeReadyResponseFuture(
+              mcp::jsonrpc::makeErrorResponse(mcp::jsonrpc::makeInvalidParamsError(std::nullopt, "logging/setLevel requires string params.level"), req.id));
+          }
+
+          std::string level = params["level"].as<std::string>();
+
+          // Emit a log message notification
+          mcp::jsonrpc::Notification notification;
+          notification.method = "notifications/message";
+          notification.params = mcp::jsonrpc::JsonValue::object();
+          (*notification.params)["level"] = level;
+          (*notification.params)["logger"] = "cpp-stdio-utilities-server";
+          (*notification.params)["data"] = "Log level set to " + level;
+
+          // Send notification to client
+          server->sendNotification(ctx, std::move(notification));
+
+          // Return success response
+          mcp::jsonrpc::SuccessResponse response;
+          response.id = req.id;
+          response.result = mcp::jsonrpc::JsonValue::object();
+          return makeReadyResponseFuture(std::move(response));
+        });
 
       // Set up completion handler for completion/complete requests
       server->setCompletionHandler(
