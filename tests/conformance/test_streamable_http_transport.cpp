@@ -101,16 +101,22 @@ auto makeSuccessResponseBody(std::int64_t id) -> std::string
   return mcp::jsonrpc::serializeMessage(mcp::jsonrpc::Message {response});
 }
 
+auto makeInitializeResponseBody(std::int64_t id) -> mcp::jsonrpc::SuccessResponse
+{
+  mcp::jsonrpc::SuccessResponse response;
+  response.id = id;
+  response.result = mcp::jsonrpc::JsonValue::object();
+  response.result["protocolVersion"] = std::string(mcp::kLatestProtocolVersion);
+  response.result["capabilities"] = mcp::jsonrpc::JsonValue::object();
+  response.result["serverInfo"] = mcp::jsonrpc::JsonValue::object();
+  response.result["serverInfo"]["name"] = "conformance-server";
+  response.result["serverInfo"]["version"] = "1.0.0";
+  return response;
+}
+
 auto makeInitializeHttpResponse(std::int64_t id, std::optional<std::string_view> sessionId = std::nullopt) -> mcp_http::ServerResponse
 {
-  mcp::jsonrpc::SuccessResponse responseBody;
-  responseBody.id = id;
-  responseBody.result = mcp::jsonrpc::JsonValue::object();
-  responseBody.result["protocolVersion"] = std::string(mcp::kLatestProtocolVersion);
-  responseBody.result["capabilities"] = mcp::jsonrpc::JsonValue::object();
-  responseBody.result["serverInfo"] = mcp::jsonrpc::JsonValue::object();
-  responseBody.result["serverInfo"]["name"] = "conformance-server";
-  responseBody.result["serverInfo"]["version"] = "1.0.0";
+  const mcp::jsonrpc::SuccessResponse responseBody = makeInitializeResponseBody(id);
 
   mcp_http::ServerResponse response;
   response.statusCode = 200;
@@ -559,15 +565,7 @@ TEST_CASE("Streamable HTTP session issuance and multi-session routing", "[confor
 
       if (request.method == "initialize")
       {
-        mcp::jsonrpc::SuccessResponse response;
-        response.id = request.id;
-        response.result = mcp::jsonrpc::JsonValue::object();
-        response.result["protocolVersion"] = std::string(mcp::kLatestProtocolVersion);
-        response.result["capabilities"] = mcp::jsonrpc::JsonValue::object();
-        response.result["serverInfo"] = mcp::jsonrpc::JsonValue::object();
-        response.result["serverInfo"]["name"] = "conformance-server";
-        response.result["serverInfo"]["version"] = "1.0.0";
-        result.response = response;
+        result.response = makeInitializeResponseBody(std::get<std::int64_t>(request.id));
       }
       else
       {
@@ -634,7 +632,10 @@ TEST_CASE("Streamable HTTP session issuance and multi-session routing", "[confor
   const mcp_http::ServerResponse deleteResponse = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kDelete, "/mcp", std::nullopt, *sessionIdA));
   REQUIRE(deleteResponse.statusCode == 204);
 
-  // Step 6: After termination, requests with session A should return HTTP 404
+  // Step 6: After termination, requests with session A should return HTTP 404 (both GET and POST)
+  const mcp_http::ServerResponse terminatedGetResponse = server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kGet, "/mcp", std::nullopt, *sessionIdA));
+  REQUIRE(terminatedGetResponse.statusCode == 404);
+
   const mcp_http::ServerResponse terminatedNotification =
     server.handleRequest(makeHeaderedRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeNotificationBody("notifications/initialized"), *sessionIdA));
   REQUIRE(terminatedNotification.statusCode == 404);
