@@ -1,6 +1,7 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <utility>
 
 #include <mcp/detail/inbound_loop.hpp>
 
@@ -50,6 +51,7 @@ private:
         body_();
       }
     }
+    // NOLINTNEXTLINE(bugprone-empty-catch)
     catch (...)
     {
       // Exception containment: Prevent exceptions from escaping the thread boundary.
