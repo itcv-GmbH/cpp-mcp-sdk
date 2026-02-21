@@ -163,6 +163,16 @@ target_link_libraries(mcp_sdk_test_client
 
 add_test(NAME mcp_sdk_client_test COMMAND mcp_sdk_test_client)
 
+add_executable(mcp_sdk_test_client_http_listen client_http_listen_test.cpp)
+
+target_link_libraries(mcp_sdk_test_client_http_listen
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_client_http_listen_test COMMAND mcp_sdk_test_client_http_listen)
+
 add_executable(mcp_sdk_test_server server_test.cpp)
 
 target_link_libraries(mcp_sdk_test_server
