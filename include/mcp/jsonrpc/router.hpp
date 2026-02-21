@@ -54,10 +54,11 @@ namespace mcp::jsonrpc
  * state mutex.
  *
  * @par Callback Threading Rules:
- * - RequestHandler: Serial invocation per request, threading policy determines thread
- * - NotificationHandler: Serial invocation per notification, threading policy determines thread
+ * Note: Callbacks are invoked on the router/I/O thread. They must be fast and non-blocking.
+ * - RequestHandler: Serial invocation per request, router/I/O thread
+ * - NotificationHandler: Serial invocation per notification, router/I/O thread
  * - OutboundMessageSender: Serial invocation per message, threading determined by caller
- * - ProgressCallback: Serial invocation per progress token
+ * - ProgressCallback: Serial invocation per progress token, router/I/O thread
  */
 
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;

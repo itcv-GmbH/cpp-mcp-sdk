@@ -66,19 +66,22 @@ namespace mcp
  * 3. Configuration methods may be called at any time.
  *
  * @par Callback Threading Rules:
- * All user-provided callbacks are invoked according to the threading policy configured in
- * SessionOptions::threading:
- * - HandlerThreadingPolicy::kIoThread: Callbacks are invoked on the transport I/O thread.
- *   Callbacks must be fast and non-blocking.
- * - HandlerThreadingPolicy::kExecutor: Callbacks are dispatched to the configured Executor.
- *   If no executor is provided, callbacks are invoked on an internal boost::asio::thread_pool.
+ * Note: SessionOptions::threading is defined but not currently utilized by the runtime.
+ * Actual callback threading behavior:
+ *
+ * - Handler callbacks (RootsProvider, SamplingCreateMessageHandler, FormElicitationHandler,
+ *   UrlElicitationHandler, UrlElicitationCompletionHandler): Invoked directly on the router/I/O
+ *   thread. These callbacks must be fast and non-blocking.
+ * - ResponseCallback (used with sendRequestAsync): Dispatched to an internal single-threaded
+ *   boost::asio::thread_pool to avoid blocking the I/O thread.
  *
  * Callback types and their threading:
- * - RootsProvider - Serial invocation, threading policy determines thread
- * - SamplingCreateMessageHandler - Serial invocation, threading policy determines thread
- * - FormElicitationHandler - Serial invocation, threading policy determines thread
- * - UrlElicitationHandler - Serial invocation, threading policy determines thread
- * - UrlElicitationCompletionHandler - Serial invocation, threading policy determines thread
+ * - RootsProvider - Serial invocation, router/I/O thread
+ * - SamplingCreateMessageHandler - Serial invocation, router/I/O thread
+ * - FormElicitationHandler - Serial invocation, router/I/O thread
+ * - UrlElicitationHandler - Serial invocation, router/I/O thread
+ * - UrlElicitationCompletionHandler - Serial invocation, router/I/O thread
+ * - ResponseCallback (async) - Serial invocation, internal callback dispatch thread pool
  */
 
 inline constexpr std::size_t kDefaultMaxPaginationPages = 1024U;

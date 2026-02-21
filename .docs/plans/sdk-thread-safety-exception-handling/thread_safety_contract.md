@@ -35,7 +35,8 @@ For each covered type, the contract specifies:
 
 - Every callback type exposed by the SDK declares whether the SDK invokes callbacks serially or concurrently.
 - Every callback type exposed by the SDK declares whether the SDK invokes the callback on an I/O thread, an internal worker thread, or an application-provided executor.
-- The `mcp::SessionOptions.threading` configuration defines the default callback threading behavior for session and client handler callbacks.
+
+**Note on Threading Policy**: The `SessionOptions::threading` field and `HandlerThreadingPolicy` enum are currently defined in the API but are not utilized by the runtime implementation. Callback threading behavior is fixed as documented below and does not currently respect the threading policy configuration.
 
 ### Lifecycle Rules
 
@@ -103,12 +104,12 @@ The `Client` class provides thread-safe access to all its public methods. Intern
 - `Client::negotiatedServerCapabilities()`
 - `Client::supportedProtocolVersions()`
 
-#### Lifecycle Methods (idempotent, thread-safe):
+#### Lifecycle Methods (thread-safe):
 
 - `Client::attachTransport()` - Thread-safe, but must not be called after `start()`
 - `Client::connectStdio()` - Thread-safe, but must not be called after `start()`
 - `Client::connectHttp()` - Thread-safe, but must not be called after `start()`
-- `Client::start()` - Thread-safe, idempotent
+- `Client::start()` - Thread-safe, idempotent (delegates to `Session::start()`)
 - `Client::stop()` - Thread-safe, idempotent
 
 #### Concurrency Rules:
@@ -119,17 +120,18 @@ The `Client` class provides thread-safe access to all its public methods. Intern
 
 #### Callback Threading Rules:
 
-All user-provided callbacks are invoked according to the threading policy configured in `SessionOptions::threading`:
+**Current Implementation Behavior** (Note: `SessionOptions::threading` is not currently utilized):
 
-- **HandlerThreadingPolicy::kIoThread**: Callbacks are invoked on the transport I/O thread. Callbacks must be fast and non-blocking.
-- **HandlerThreadingPolicy::kExecutor**: Callbacks are dispatched to the configured `Executor`. If no executor is provided, callbacks are invoked on an internal `boost::asio::thread_pool`.
+- **Handler callbacks** (`RootsProvider`, `SamplingCreateMessageHandler`, `FormElicitationHandler`, `UrlElicitationHandler`, `UrlElicitationCompletionHandler`): Invoked directly on the router thread (I/O thread). These callbacks must be fast and non-blocking to avoid stalling message processing.
+- **Async response callbacks** (`ResponseCallback` used with `sendRequestAsync`): Dispatched to an internal `boost::asio::thread_pool` (single-threaded) to avoid blocking the I/O thread.
 
-Callback types:
-- `RootsProvider` - Serial invocation, threading policy determines thread
-- `SamplingCreateMessageHandler` - Serial invocation, threading policy determines thread
-- `FormElicitationHandler` - Serial invocation, threading policy determines thread
-- `UrlElicitationHandler` - Serial invocation, threading policy determines thread
-- `UrlElicitationCompletionHandler` - Serial invocation, threading policy determines thread
+Callback types and their actual threading:
+- `RootsProvider` - Serial invocation, router/I/O thread
+- `SamplingCreateMessageHandler` - Serial invocation, router/I/O thread
+- `FormElicitationHandler` - Serial invocation, router/I/O thread
+- `UrlElicitationHandler` - Serial invocation, router/I/O thread
+- `UrlElicitationCompletionHandler` - Serial invocation, router/I/O thread
+- `ResponseCallback` (async) - Serial invocation, internal callback dispatch thread pool
 
 ### 2. `mcp::Session`
 
@@ -150,7 +152,7 @@ The `Session` class provides thread-safe access to all its public methods. Inter
 - `Session::state()`
 - `Session::negotiatedProtocolVersion()`
 - `Session::supportedProtocolVersions()`
-- `Session::negotiatedParameters()`
+- `Session::negotiatedParameters()` - **NOT thread-safe for concurrent mutation**. Returns a reference to internal state; the reference becomes invalid if the session is modified concurrently. External synchronization required if used concurrently with operations that may mutate session state.
 - `Session::setRole()`
 - `Session::role()`
 - `Session::handleInitializeRequest()`
@@ -162,9 +164,9 @@ The `Session` class provides thread-safe access to all its public methods. Inter
 - `Session::canSendNotification()`
 - `Session::checkCapability()`
 
-#### Lifecycle Methods (idempotent, thread-safe):
+#### Lifecycle Methods (thread-safe):
 
-- `Session::start()` - Thread-safe, idempotent
+- `Session::start()` - Thread-safe. **Not idempotent** - throws `LifecycleError` if called when state is not `kCreated`
 - `Session::stop()` - Thread-safe, idempotent
 
 #### Concurrency Rules:
@@ -398,29 +400,106 @@ The combined server runner provides internal synchronization for lifecycle manag
 3. Individual transport methods (`runStdio`, `startHttp`, `stopHttp`) may be called independently.
 4. When both transports are enabled, STDIO runs blocking while HTTP is non-blocking.
 
+### 12. `mcp::transport::StdioTransport`
+
+**Classification:** Thread-compatible (instance methods deprecated); static methods are thread-safe
+
+The `StdioTransport` class provides both deprecated instance-based methods (which throw) and static utility methods for STDIO transport operations.
+
+#### Static Thread-Safe Methods:
+
+- `StdioTransport::run()` - Blocking, runs until EOF; thread-safe but only one invocation should be active per process for the same streams
+- `StdioTransport::attach()` - Blocking, runs until EOF; thread-safe
+- `StdioTransport::routeIncomingLine()` - Thread-safe
+- `StdioTransport::spawnSubprocess()` - Thread-safe
+
+#### Deprecated Instance Methods (throw when called):
+
+- `StdioTransport::StdioTransport()` - Deprecated, throws
+- `StdioTransport::attach()` - Deprecated, throws
+- `StdioTransport::start()` - Deprecated, throws
+- `StdioTransport::stop()` - Deprecated, throws
+- `StdioTransport::isRunning()` - Deprecated
+- `StdioTransport::send()` - Deprecated, throws
+
+#### Concurrency Rules:
+
+1. For static `StdioTransport::run()`, only one invocation should be active per process for the same streams.
+2. The deprecated instance methods are non-functional and will throw when called.
+
+### 13. `mcp::transport::StdioSubprocess`
+
+**Classification:** Thread-compatible
+
+The `StdioSubprocess` class manages a spawned subprocess with stdin/stdout communication. Designed for single-threaded or externally synchronized use.
+
+#### Thread-Compatible Methods (external synchronization required for concurrent mutation):
+
+- `StdioSubprocess::writeLine()` - Must not be called concurrently
+- `StdioSubprocess::readLine()` - Must not be called concurrently
+- `StdioSubprocess::closeStdin()` - Must not be called concurrently
+- `StdioSubprocess::shutdown()` - Must not be called concurrently
+
+#### Thread-Safe Query Methods:
+
+- `StdioSubprocess::valid()` - Thread-safe
+- `StdioSubprocess::isRunning()` - Thread-safe
+- `StdioSubprocess::exitCode()` - Thread-safe
+- `StdioSubprocess::capturedStderr()` - Thread-safe
+- `StdioSubprocess::waitForExit()` - Thread-safe
+
+#### Concurrency Rules:
+
+1. Methods that modify state (`writeLine()`, `readLine()`, `closeStdin()`, `shutdown()`) must not be called concurrently.
+2. External synchronization is required if the instance is accessed from multiple threads.
+3. Query methods may be called concurrently with each other but not during mutation.
+
+### 14. `mcp::transport::http::SharedHeaderState`
+
+**Classification:** Thread-safe
+
+The `SharedHeaderState` class provides thread-safe access to HTTP header state that may be shared between multiple components (e.g., HTTP client and its header state).
+
+#### Thread-Safe Methods (concurrent invocation allowed):
+
+- `SharedHeaderState::captureFromInitializeResponse()` - Thread-safe
+- `SharedHeaderState::clear()` - Thread-safe
+- `SharedHeaderState::sessionId()` - Thread-safe
+- `SharedHeaderState::replayOnSubsequentRequests()` - Thread-safe
+- `SharedHeaderState::negotiatedProtocolVersion()` - Thread-safe
+- `SharedHeaderState::replayToRequestHeaders()` - Thread-safe
+
+#### Concurrency Rules:
+
+1. All methods provide internal synchronization via `mutex_`.
+2. Safe to share between threads and components.
+3. Header replay operations are atomic under the internal lock.
+
 ## Callback Invocation Threading Summary
 
-| Callback Type | Threading Policy | Invocation Pattern | Notes |
-|---------------|------------------|-------------------|-------|
-| `jsonrpc::RequestHandler` | Configurable | Serial per request | Configured via `SessionOptions::threading` |
-| `jsonrpc::NotificationHandler` | Configurable | Serial per notification | Configured via `SessionOptions::threading` |
-| `jsonrpc::OutboundMessageSender` | Configurable | Serial per message | Set on Router, threading determined by caller |
-| `jsonrpc::ProgressCallback` | Configurable | Serial per progress token | Invoked during request processing |
-| `ResponseCallback` | Configurable | Serial per response | Used for async request handling |
-| `RootsProvider` | Configurable | Serial | Client-side callback |
-| `SamplingCreateMessageHandler` | Configurable | Serial | Client-side callback |
-| `FormElicitationHandler` | Configurable | Serial | Client-side callback |
-| `UrlElicitationHandler` | Configurable | Serial | Client-side callback |
-| `UrlElicitationCompletionHandler` | Configurable | Serial | Client-side callback |
-| `http::StreamableRequestHandler` | I/O thread | Serial per request | HTTP server handler |
-| `http::StreamableNotificationHandler` | I/O thread | Serial per notification | HTTP server handler |
-| `http::StreamableResponseHandler` | I/O thread | Serial per response | HTTP server handler |
-| `http::HttpRequestHandler` | I/O thread | Serial per request | HTTP runtime handler |
+| Callback Type | Threading | Invocation Pattern | Notes |
+|---------------|-----------|-------------------|-------|
+| `jsonrpc::RequestHandler` | Router/I/O thread | Serial per request | Invoked directly on router thread |
+| `jsonrpc::NotificationHandler` | Router/I/O thread | Serial per notification | Invoked directly on router thread |
+| `jsonrpc::OutboundMessageSender` | Caller thread | Serial per message | Threading determined by caller context |
+| `jsonrpc::ProgressCallback` | Router/I/O thread | Serial per progress token | Invoked during request processing |
+| `ResponseCallback` | Callback dispatch thread pool | Serial per response | Posted to internal thread pool via `sendRequestAsync` |
+| `RootsProvider` | Router/I/O thread | Serial | Client-side handler, invoked directly |
+| `SamplingCreateMessageHandler` | Router/I/O thread | Serial | Client-side handler, invoked directly |
+| `FormElicitationHandler` | Router/I/O thread | Serial | Client-side handler, invoked directly |
+| `UrlElicitationHandler` | Router/I/O thread | Serial | Client-side handler, invoked directly |
+| `UrlElicitationCompletionHandler` | Router/I/O thread | Serial | Client-side handler, invoked directly |
+| `http::StreamableRequestHandler` | HTTP server I/O thread | Serial per request | HTTP server handler |
+| `http::StreamableNotificationHandler` | HTTP server I/O thread | Serial per notification | HTTP server handler |
+| `http::StreamableResponseHandler` | HTTP server I/O thread | Serial per response | HTTP server handler |
+| `http::HttpRequestHandler` | HTTP server I/O thread | Serial per request | HTTP runtime handler |
 | `ServerFactory` | Caller thread | Per-invocation | Creates Server instances |
+
+**Note**: The `SessionOptions::threading` configuration field is defined but not currently utilized by the runtime implementation. The threading behavior documented above reflects the actual implementation.
 
 ## HandlerThreadingPolicy Configuration
 
-The `HandlerThreadingPolicy` enum controls how callbacks are dispatched:
+The `HandlerThreadingPolicy` enum is defined in the API for future use:
 
 ```cpp
 enum class HandlerThreadingPolicy : std::uint8_t
@@ -430,26 +509,28 @@ enum class HandlerThreadingPolicy : std::uint8_t
 };
 ```
 
-### kIoThread Policy
+**Note**: This enum is part of the `SessionOptions::threading` configuration structure, but the runtime implementation does not currently utilize this policy. Callback threading behavior is fixed as documented in the Callback Threading Rules sections above.
 
-- Callbacks are invoked directly on the transport I/O thread
-- Callbacks must be fast and non-blocking to avoid stalling the transport
-- No additional threading overhead
+### Future Behavior (when implemented)
 
-### kExecutor Policy
-
-- Callbacks are dispatched to the configured `Executor`
-- If no executor is provided, an internal `boost::asio::thread_pool` is used
-- Allows callbacks to perform blocking operations without stalling I/O
+- **kIoThread**: Callbacks would be invoked directly on the transport I/O thread
+- **kExecutor**: Callbacks would be dispatched to a configured `Executor`
 
 ## Lifecycle Rules Summary
 
 ### Start/Stop Idempotency
 
-All runtime and transport types provide idempotent `start()` and `stop()` methods:
+Lifecycle method idempotency varies by type:
 
-- **Idempotent**: Multiple calls have the same effect as a single call
-- **No-op on invalid state**: Calling `start()` when already started is a no-op; calling `stop()` when not started is a no-op
+- **Idempotent `start()`**: `Client::start()`, `HttpServerRuntime::start()`, `StreamableHttpServerRunner::start()`, `CombinedServerRunner::start()`, `StdioServerRunner::startAsync()`
+  - Multiple calls have the same effect as a single call
+  
+- **Non-idempotent `start()`**: `Session::start()`
+  - Throws `LifecycleError` if called when state is not `kCreated`
+  - Must only be called once per session instance
+
+- **Idempotent `stop()`**: All `stop()` methods are idempotent
+  - Calling `stop()` when not started is a no-op
 
 ### Destructor Guarantees
 

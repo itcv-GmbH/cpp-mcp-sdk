@@ -32,15 +32,19 @@ namespace mcp
  * - registerRequestHandler(), registerNotificationHandler()
  * - enforceOutboundRequestLifecycle(), sendRequest(), sendRequestAsync(), sendNotification()
  * - attachTransport()
- * - state(), negotiatedProtocolVersion(), supportedProtocolVersions(), negotiatedParameters()
+ * - state(), negotiatedProtocolVersion(), supportedProtocolVersions()
+ * - negotiatedParameters() - Returns reference to internal state; NOT thread-safe for
+ *   concurrent mutation. External synchronization required if used concurrently with
+ *   operations that may mutate session state.
  * - setRole(), role()
  * - handleInitializeRequest(), handleInitializeResponse(), handleInitializedNotification()
  * - configureServerInitialization()
  * - canHandleRequest(), canSendRequest(), canSendNotification()
  * - checkCapability()
  *
- * @par Lifecycle Methods (idempotent, thread-safe):
- * - start() - Thread-safe, idempotent
+ * @par Lifecycle Methods (thread-safe):
+ * - start() - Thread-safe. Not idempotent - throws LifecycleError if called when state
+ *   is not kCreated. Must only be called once per session instance.
  * - stop() - Thread-safe, idempotent
  *
  * @par Concurrency Rules:
