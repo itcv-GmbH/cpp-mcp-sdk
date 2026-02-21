@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -404,8 +405,7 @@ struct StreamableHttpClient::Impl
 
   auto applyCommonRequestHeaders(HeaderList &headers, bool isInitializeRequest) const -> void
   {
-    options.sessionState.replayToRequestHeaders(headers);
-    options.protocolVersionState.replayToRequestHeaders(headers, isInitializeRequest);
+    options.headerState->replayToRequestHeaders(headers, isInitializeRequest);
     applyAuthorizationHeader(headers);
   }
 
@@ -503,9 +503,13 @@ struct StreamableHttpClient::Impl
 
     const auto sessionHeader = getHeader(response.headers, kHeaderMcpSessionId);
     const std::optional<std::string_view> sessionView = sessionHeader.has_value() ? std::optional<std::string_view>(*sessionHeader) : std::nullopt;
-    if (!options.sessionState.captureFromInitializeResponse(sessionView))
+
+    const auto protocolVersionHeader = getHeader(response.headers, kHeaderMcpProtocolVersion);
+    const std::string_view protocolVersion = protocolVersionHeader.has_value() ? std::string_view(*protocolVersionHeader) : std::string_view {};
+
+    if (!options.headerState->captureFromInitializeResponse(sessionView, protocolVersion))
     {
-      throw std::runtime_error("Initialize response contained an invalid MCP-Session-Id.");
+      throw std::runtime_error("Initialize response contained an invalid MCP-Session-Id or MCP-Protocol-Version.");
     }
   }
 
@@ -514,6 +518,10 @@ struct StreamableHttpClient::Impl
     if (options.waitBeforeReconnect)
     {
       options.waitBeforeReconnect(retryMilliseconds);
+    }
+    else
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(retryMilliseconds));
     }
   }
 
