@@ -1,18 +1,21 @@
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <mcp/client/client.hpp>
 #include <mcp/client/roots.hpp>
+#include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/http.hpp>
@@ -31,7 +34,9 @@ constexpr std::string_view kClientInfoVersion = "1.0.0";
 constexpr int kServerStartupDelayMs = 100;
 constexpr int kResponseWaitMs = 1000;
 
-auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
+constexpr std::int64_t kRootsListRequestId = 100;
+
+auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();
   content["type"] = "text";
@@ -168,7 +173,7 @@ auto main() -> int
     // Initialize - this triggers the handshake and sets up GET SSE listen
     std::cout << "[Client] Initializing connection..." << '\n';
     auto initFuture = client->initialize();
-    mcp::jsonrpc::Response initResponse = initFuture.get();
+    const mcp::jsonrpc::Response initResponse = initFuture.get();
 
     if (std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initResponse))
     {
@@ -189,7 +194,7 @@ auto main() -> int
     std::cout << "\n=== Sending Server-Initiated Request ===" << '\n';
 
     mcp::jsonrpc::Request rootsListRequest;
-    rootsListRequest.id = mcp::jsonrpc::RequestId {std::int64_t {100}};
+    rootsListRequest.id = mcp::jsonrpc::RequestId {kRootsListRequestId};
     rootsListRequest.method = "roots/list";
     rootsListRequest.params = mcp::jsonrpc::JsonValue::object();
 
