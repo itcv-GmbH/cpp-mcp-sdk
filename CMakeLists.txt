@@ -59,6 +59,7 @@ set(MCP_SDK_SOURCES
     src/transport/http_runtime.cpp
     src/transport/http_server.cpp
     src/transport/stdio.cpp
+    src/transport/streamable_http_client_transport.cpp
     src/util/tasks.cpp
     src/version.cpp
 )

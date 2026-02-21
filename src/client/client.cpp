@@ -35,6 +35,7 @@
 #include <mcp/server/tools.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
+#include <mcp/transport/streamable_http_client_transport.hpp>
 #include <mcp/transport/transport.hpp>
 #include <mcp/util/tasks.hpp>
 #include <mcp/version.hpp>
@@ -956,75 +957,6 @@ static auto isFileUri(std::string_view uri) -> bool
   return uri.size() >= kFileUriPrefix.size() && uri.compare(0, kFileUriPrefix.size(), kFileUriPrefix) == 0;
 }
 
-class StreamableHttpClientTransport final : public transport::Transport
-{
-public:
-  StreamableHttpClientTransport(transport::http::StreamableHttpClientOptions options,
-                                transport::http::StreamableHttpClient::RequestExecutor requestExecutor,
-                                std::function<void(const jsonrpc::Message &)> inboundMessageHandler)
-    : client_(std::move(options), std::move(requestExecutor))
-    , inboundMessageHandler_(std::move(inboundMessageHandler))
-  {
-  }
-
-  auto attach(std::weak_ptr<Session> session) -> void override { static_cast<void>(session); }
-
-  auto start() -> void override
-  {
-    const std::scoped_lock lock(mutex_);
-    running_ = true;
-  }
-
-  auto stop() -> void override
-  {
-    const std::scoped_lock lock(mutex_);
-    running_ = false;
-  }
-
-  auto isRunning() const noexcept -> bool override
-  {
-    const std::scoped_lock lock(mutex_);
-    return running_;
-  }
-
-  auto send(jsonrpc::Message message) -> void override
-  {
-    std::function<void(const jsonrpc::Message &)> inboundMessageHandler;
-    {
-      const std::scoped_lock lock(mutex_);
-
-      if (!running_)
-      {
-        throw std::runtime_error("HTTP transport must be running before send().");
-      }
-
-      inboundMessageHandler = inboundMessageHandler_;
-    }
-
-    const auto sendResult = client_.send(message);
-    if (inboundMessageHandler == nullptr)
-    {
-      return;
-    }
-
-    for (const auto &inboundMessage : sendResult.messages)
-    {
-      inboundMessageHandler(inboundMessage);
-    }
-
-    if (sendResult.response.has_value())
-    {
-      std::visit([&inboundMessageHandler](const auto &typedResponse) -> void { inboundMessageHandler(jsonrpc::Message {typedResponse}); }, *sendResult.response);
-    }
-  }
-
-private:
-  mutable std::mutex mutex_;
-  bool running_ = false;
-  transport::http::StreamableHttpClient client_;
-  std::function<void(const jsonrpc::Message &)> inboundMessageHandler_;
-};
-
 class SubprocessStdioClientTransport final : public transport::Transport
 {
 public:
@@ -1858,19 +1790,19 @@ auto Client::connectHttp(const transport::HttpClientOptions &options) -> void
 
 auto Client::connectHttp(transport::http::StreamableHttpClientOptions options, transport::http::StreamableHttpClient::RequestExecutor requestExecutor) -> void
 {
-  auto transport = std::make_shared<StreamableHttpClientTransport>(std::move(options),
-                                                                   std::move(requestExecutor),
-                                                                   [this](const jsonrpc::Message &inboundMessage) -> void
-                                                                   {
-                                                                     try
-                                                                     {
-                                                                       handleMessage(jsonrpc::RequestContext {}, inboundMessage);
-                                                                     }
-                                                                     catch (const std::exception &error)
-                                                                     {
-                                                                       static_cast<void>(error);
-                                                                     }
-                                                                   });
+  auto transport = transport::makeStreamableHttpClientTransport(std::move(options),
+                                                                std::move(requestExecutor),
+                                                                [this](const jsonrpc::Message &inboundMessage) -> void
+                                                                {
+                                                                  try
+                                                                  {
+                                                                    handleMessage(jsonrpc::RequestContext {}, inboundMessage);
+                                                                  }
+                                                                  catch (const std::exception &error)
+                                                                  {
+                                                                    static_cast<void>(error);
+                                                                  }
+                                                                });
 
   attachTransport(std::move(transport));
 }
