@@ -12,6 +12,32 @@ class Session;
 namespace transport
 {
 
+/**
+ * @brief Thread Safety
+ *
+ * @par Thread-Safety Classification: Thread-compatible
+ *
+ * The Transport base class defines the interface. Concrete implementations determine
+ * their own thread-safety classification.
+ *
+ * @par Interface Methods:
+ * - attach() - Called during setup phase, before start()
+ * - start() - Called once during lifecycle
+ * - stop() - Called during teardown
+ * - isRunning() - Query method
+ * - send() - Called during operation
+ *
+ * @par Concurrency Rules:
+ * 1. attach() must complete before start() is called.
+ * 2. start() must complete before send() is called.
+ * 3. isRunning() may be called at any time.
+ * 4. stop() must be called after start() and before destruction.
+ *
+ * @par Implementation Note:
+ * Concrete implementations may provide stronger thread-safety guarantees.
+ * Refer to the specific implementation's documentation for details.
+ */
+
 class Transport
 {
 public:

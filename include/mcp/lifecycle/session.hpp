@@ -19,6 +19,44 @@
 namespace mcp
 {
 
+/**
+ * @brief Thread Safety
+ *
+ * @par Thread-Safety Classification: Thread-safe
+ *
+ * The Session class provides thread-safe access to all its public methods.
+ * Internal synchronization is provided via mutex_.
+ *
+ * @par Thread-Safe Methods (concurrent invocation allowed):
+ * - Session()
+ * - registerRequestHandler(), registerNotificationHandler()
+ * - enforceOutboundRequestLifecycle(), sendRequest(), sendRequestAsync(), sendNotification()
+ * - attachTransport()
+ * - state(), negotiatedProtocolVersion(), supportedProtocolVersions(), negotiatedParameters()
+ * - setRole(), role()
+ * - handleInitializeRequest(), handleInitializeResponse(), handleInitializedNotification()
+ * - configureServerInitialization()
+ * - canHandleRequest(), canSendRequest(), canSendNotification()
+ * - checkCapability()
+ *
+ * @par Lifecycle Methods (idempotent, thread-safe):
+ * - start() - Thread-safe, idempotent
+ * - stop() - Thread-safe, idempotent
+ *
+ * @par Concurrency Rules:
+ * 1. attachTransport() must be called before start() or while holding external synchronization.
+ * 2. Handler registration may be called at any time, but handlers set after the session
+ *    enters kOperating state may miss early messages.
+ * 3. State transitions are atomic and thread-safe.
+ *
+ * @par Session State Threading:
+ * The SessionState enum tracks the lifecycle state:
+ * - kCreated -> kInitializing -> kInitialized -> kOperating
+ * - -> kStopping -> kStopped
+ *
+ * State transitions are performed atomically under mutex_. All state queries are atomic.
+ */
+
 namespace transport
 {
 class Transport;

@@ -31,6 +31,56 @@
 namespace mcp
 {
 
+/**
+ * @brief Thread Safety
+ *
+ * @par Thread-Safety Classification: Thread-safe
+ *
+ * The Client class provides thread-safe access to all its public methods.
+ * Internal synchronization is provided via mutex_.
+ *
+ * @par Thread-Safe Methods (concurrent invocation allowed):
+ * - All query methods: session(), initializeConfiguration(), negotiatedProtocolVersion(),
+ *   negotiatedParameters(), negotiatedClientCapabilities(), negotiatedServerCapabilities(),
+ *   supportedProtocolVersions()
+ * - All request methods: initialize(), listTools(), callTool(), listResources(),
+ *   readResource(), listResourceTemplates(), listPrompts(), getPrompt()
+ * - All handler configuration methods: setRootsProvider(), clearRootsProvider(),
+ *   setSamplingCreateMessageHandler(), clearSamplingCreateMessageHandler(),
+ *   setFormElicitationHandler(), clearFormElicitationHandler(),
+ *   setUrlElicitationHandler(), clearUrlElicitationHandler(),
+ *   setUrlElicitationCompletionHandler(), clearUrlElicitationCompletionHandler()
+ * - All messaging methods: sendRequest(), sendRequestAsync(), sendNotification(),
+ *   registerRequestHandler(), registerNotificationHandler()
+ *
+ * @par Lifecycle Methods (idempotent, thread-safe):
+ * - attachTransport(), connectStdio(), connectHttp() - Thread-safe, but must not be called after start()
+ * - start() - Thread-safe, idempotent
+ * - stop() - Thread-safe, idempotent
+ *
+ * @par Concurrency Rules:
+ * 1. Transport attachment methods (attachTransport, connectStdio, connectHttp) must be called
+ *    before start() or while holding the same external synchronization as start().
+ * 2. Handler registration methods may be called at any time, but handlers set after start()
+ *    may miss early messages.
+ * 3. Configuration methods may be called at any time.
+ *
+ * @par Callback Threading Rules:
+ * All user-provided callbacks are invoked according to the threading policy configured in
+ * SessionOptions::threading:
+ * - HandlerThreadingPolicy::kIoThread: Callbacks are invoked on the transport I/O thread.
+ *   Callbacks must be fast and non-blocking.
+ * - HandlerThreadingPolicy::kExecutor: Callbacks are dispatched to the configured Executor.
+ *   If no executor is provided, callbacks are invoked on an internal boost::asio::thread_pool.
+ *
+ * Callback types and their threading:
+ * - RootsProvider - Serial invocation, threading policy determines thread
+ * - SamplingCreateMessageHandler - Serial invocation, threading policy determines thread
+ * - FormElicitationHandler - Serial invocation, threading policy determines thread
+ * - UrlElicitationHandler - Serial invocation, threading policy determines thread
+ * - UrlElicitationCompletionHandler - Serial invocation, threading policy determines thread
+ */
+
 inline constexpr std::size_t kDefaultMaxPaginationPages = 1024U;
 
 struct ClientInitializeConfiguration
