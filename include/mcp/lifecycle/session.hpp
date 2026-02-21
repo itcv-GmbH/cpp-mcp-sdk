@@ -18,6 +18,53 @@
 
 namespace mcp
 {
+/**
+ * @brief Session lifecycle management.
+ *
+ * @section Exceptions
+ *
+ * @subsection Exception Types
+ * - LifecycleError: Thrown on invalid session state transitions or operations in wrong state
+ *   Inherits from std::runtime_error
+ * - CapabilityError: Thrown when a capability check fails
+ *   Inherits from std::runtime_error
+ *
+ * @subsection Construction
+ * - Session(SessionOptions) does not throw
+ *
+ * @subsection Destruction
+ * - ~Session() is implicitly noexcept (default destructor)
+ *
+ * @subsection Lifecycle Operations (throwing)
+ * - attachTransport() throws std::runtime_error on transport error
+ * - start() throws std::runtime_error on startup failure
+ * - stop() is noexcept - safe shutdown, never throws
+ *
+ * @subsection Request Operations (throwing)
+ * - sendRequest() throws LifecycleError if session is not in kOperating state
+ * - enforceOutboundRequestLifecycle() throws LifecycleError for invalid state
+ * - sendRequestAsync() - exceptions in callback are contained
+ * - sendNotification() may throw LifecycleError for invalid state
+ *
+ * @subsection Handler Registration (noexcept)
+ * - registerRequestHandler(), registerNotificationHandler() do not throw
+ *
+ * @subsection State Accessors (noexcept)
+ * - state() noexcept
+ * - negotiatedProtocolVersion() noexcept
+ * - supportedProtocolVersions() returns const ref, no allocations
+ * - negotiatedParameters() returns const optional ref
+ * - role() noexcept
+ *
+ * @subsection Capability Checking
+ * - checkCapability() noexcept
+ * - canHandleRequest(), canSendRequest(), canSendNotification() noexcept
+ *
+ * @subsection Initialize Handling (throwing)
+ * - handleInitializeRequest() may throw on protocol violation
+ * - handleInitializeResponse() may throw on invalid response
+ * - configureServerInitialization() noexcept
+ */
 
 /**
  * @brief Thread Safety

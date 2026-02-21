@@ -21,7 +21,9 @@ namespace mcp::jsonrpc
 {
 
 /**
- * @brief Thread Safety
+ * @brief JSON-RPC message routing and dispatch.
+ *
+ * @section Thread Safety
  *
  * @par Thread-Safety Classification: Thread-safe
  *
@@ -59,8 +61,37 @@ namespace mcp::jsonrpc
  * - NotificationHandler: Serial invocation per notification, router/I/O thread
  * - OutboundMessageSender: Serial invocation per message, threading determined by caller
  * - ProgressCallback: Serial invocation per progress token, router/I/O thread
+ *
+ * @section Exceptions
+ *
+ * The Router class provides the following exception guarantees:
+ *
+ * @subsection Construction and Destruction
+ * - Router(RouterOptions) does not throw
+ * - ~Router() is noexcept and never throws
+ *
+ * @subsection Handler Registration (noexcept)
+ * - registerRequestHandler(), registerNotificationHandler(), unregisterHandler() do not throw
+ *
+ * @subsection Dispatch Operations
+ * - dispatchRequest() may propagate exceptions from user-provided RequestHandler callbacks.
+ *   The SDK catches these and converts them to JSON-RPC error responses with correlation ID preserved.
+ * - dispatchNotification() never propagates exceptions; handler exceptions are caught and suppressed
+ * - dispatchResponse() returns bool, exceptions are contained internally
+ *
+ * @subsection Request Operations
+ * - sendRequest() may throw std::runtime_error on transport or serialization failure
+ * - sendNotification() does not throw; exceptions are caught and suppressed
+ *
+ * @subsection Progress Operations
+ * - emitProgress() returns bool, does not throw; callback exceptions are caught and suppressed
+ *
+ * @subsection Exception Containment Guarantees
+ * All SDK-created thread_pool work contains exceptions. No exceptions escape:
+ * - Timeout handler threads
+ * - Inbound completion threads
+ * - Router destructor cleanup
  */
-
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;
 using OutboundMessageSender = std::function<void(const RequestContext &, Message)>;

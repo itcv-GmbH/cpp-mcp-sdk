@@ -17,7 +17,9 @@ namespace mcp::transport
 {
 
 /**
- * @brief Thread Safety
+ * @brief STDIO transport implementation for MCP SDK.
+ *
+ * @section Thread Safety
  *
  * This header defines STDIO transport types with the following thread-safety classifications:
  *
@@ -42,8 +44,53 @@ namespace mcp::transport
  *    for the same streams.
  * 2. For StdioSubprocess, external synchronization is required if accessed from multiple
  *    threads concurrently.
+ *
+ * @section Exceptions
+ *
+ * @subsection StdioSubprocess
+ * - Constructor: Does not throw
+ * - Destructor: noexcept, safe cleanup of subprocess resources
+ * - Move operations: noexcept
+ * - valid(): noexcept
+ * - writeLine(): Throws std::runtime_error on write failure or broken pipe
+ * - readLine(): Returns bool success, may throw std::runtime_error on I/O error
+ * - closeStdin(): noexcept
+ * - waitForExit(): Returns bool, does not throw (uses timeout)
+ * - shutdown(): noexcept, returns bool success/failure
+ * - isRunning(): Returns bool, does not throw
+ * - exitCode(): Returns std::optional<int>, does not throw
+ * - capturedStderr(): Returns std::string, does not throw
+ *
+ * @subsection StdioTransport (Static Methods)
+ * - run(): Throws std::runtime_error on I/O error or protocol error
+ * - attach(): Throws std::runtime_error on attach failure
+ * - routeIncomingLine(): Returns bool success, exceptions from router are contained
+ * - spawnSubprocess(): Throws std::runtime_error on subprocess spawn failure
+ *
+ * @subsection Deprecated Instance Methods
+ * The following instance methods are deprecated and throw when called:
+ * - StdioTransport(StdioServerOptions) constructor: throws std::runtime_error
+ * - StdioTransport(const StdioClientOptions&) constructor: throws std::runtime_error
+ * - attach(std::weak_ptr<Session>): throws std::runtime_error
+ * - start(): throws std::runtime_error
+ * - stop(): throws std::runtime_error
+ * - isRunning(): const noexcept: Returns false (deprecated marker)
+ * - send(): throws std::runtime_error
+ *
+ * Users should migrate to:
+ * - For servers: Use static StdioTransport::run()
+ * - For clients: Use mcp::Client::connectStdio() or StdioTransport::spawnSubprocess()
+ *
+ * @subsection Exception Containment
+ * The static run() and attach() methods contain exceptions from:
+ * - User-provided router handlers (converted to error responses or logged)
+ * - Message parsing errors (logged, loop continues)
+ * - Subprocess I/O errors (terminates loop gracefully)
+ *
+ * @subsection Thread Safety Notes
+ * - StdioSubprocess: Not thread-safe; external synchronization required
+ * - Static transport methods: Thread-safe for distinct router instances
  */
-
 inline constexpr std::int64_t kDefaultStdioShutdownTimeoutMilliseconds = 1500;
 
 struct StdioServerOptions

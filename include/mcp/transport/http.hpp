@@ -24,6 +24,62 @@
 
 namespace mcp::transport
 {
+/**
+ * @brief HTTP transport implementation for MCP SDK.
+ *
+ * @section Exceptions
+ *
+ * @subsection StreamableHttpServer
+ * - Constructor: Does not throw
+ * - Destructor: noexcept, safe shutdown
+ * - Move operations: noexcept
+ * - setRequestHandler(), setNotificationHandler(), setResponseHandler(): noexcept
+ * - upsertSession(), setSessionState(): noexcept
+ * - handleRequest(): Returns ServerResponse, does not throw; errors encoded in response
+ * - enqueueServerMessage(): Returns bool success, does not throw
+ *
+ * @subsection StreamableHttpClient
+ * - Constructor: May throw std::invalid_argument for invalid options
+ * - Destructor: noexcept, safe cleanup
+ * - Move operations: noexcept
+ * - send(): Throws std::runtime_error on HTTP error or serialization failure
+ * - openListenStream(): Throws std::runtime_error on connection failure
+ * - pollListenStream(): Returns StreamableHttpListenResult, does not throw
+ * - hasActiveListenStream(): noexcept
+ * - terminateSession(): Returns bool, noexcept
+ *
+ * @subsection HttpServerRuntime
+ * - Constructor: Does not throw
+ * - Destructor: noexcept
+ * - Move operations: noexcept
+ * - setRequestHandler(): noexcept
+ * - start(): Throws std::runtime_error on server startup failure
+ * - stop(): noexcept
+ * - isRunning(): noexcept
+ * - localPort(): noexcept
+ *
+ * @subsection HttpClientRuntime
+ * - Constructor: Does not throw
+ * - Destructor: noexcept
+ * - Move operations: noexcept
+ * - execute(): Throws std::runtime_error on HTTP request failure
+ *
+ * @subsection Header Operations (noexcept)
+ * - setHeader(), getHeader(): Inline helpers, do not throw
+ * - isValidSessionId(), isValidProtocolVersion(): noexcept
+ * - isSupportedProtocolVersion(): noexcept
+ *
+ * @subsection State Classes
+ * - SessionHeaderState, ProtocolVersionHeaderState, SharedHeaderState:
+ *   - clear(): noexcept
+ *   - Accessor methods: noexcept or simple returns
+ *   - captureFromInitializeResponse(), setNegotiatedProtocolVersion(): Return bool success
+ *
+ * @subsection Request Validation (noexcept)
+ * - rejectRequest(): Returns RequestValidationResult
+ * - validateServerRequest(): Returns RequestValidationResult, does not throw
+ *   (errors encoded in result.accepted/reject fields)
+ */
 
 /**
  * @brief Thread Safety

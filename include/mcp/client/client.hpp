@@ -32,7 +32,9 @@ namespace mcp
 {
 
 /**
- * @brief Thread Safety
+ * @brief Client component for MCP SDK.
+ *
+ * @section Thread Safety
  *
  * @par Thread-Safety Classification: Thread-safe
  *
@@ -82,8 +84,41 @@ namespace mcp
  * - UrlElicitationHandler - Serial invocation, router/I/O thread
  * - UrlElicitationCompletionHandler - Serial invocation, router/I/O thread
  * - ResponseCallback (async) - Serial invocation, internal callback dispatch thread pool
+ *
+ * @section Exceptions
+ *
+ * The Client class provides the following exception guarantees:
+ *
+ * @subsection Construction
+ * - Client(std::shared_ptr<Session>) throws std::invalid_argument if session is null
+ * - create() returns shared_ptr (no exceptions on failure, returns nullptr on bad_alloc)
+ *
+ * @subsection Destruction
+ * - ~Client() is noexcept and never throws
+ *
+ * @subsection Connection Methods (throwing)
+ * - attachTransport() throws std::runtime_error on transport error
+ * - connectStdio() throws std::invalid_argument (bad options) or std::runtime_error (spawn failure)
+ * - connectHttp() throws std::invalid_argument (bad options) or std::runtime_error (connection failure)
+ *
+ * @subsection Operation Methods (throwing)
+ * - initialize() throws std::runtime_error on session or protocol failure
+ * - listTools(), callTool(), listResources(), readResource(), etc. throw CapabilityError if
+ *   server capability is missing, or std::runtime_error on request failure
+ * - forEachPage(), collectAllPages() throw std::runtime_error on pagination cycle or limit exceeded
+ *
+ * @subsection Operation Methods (noexcept)
+ * - session() noexcept
+ * - negotiatedProtocolVersion() noexcept
+ * - negotiatedClientCapabilities(), negotiatedServerCapabilities() - simple accessors
+ *
+ * @subsection Callback Exception Containment
+ * The Client automatically contains exceptions from user-provided callbacks:
+ * - RootsProvider exceptions are caught and converted to JSON-RPC error responses
+ * - SamplingCreateMessageHandler exceptions are caught and converted to JSON-RPC error responses
+ * - FormElicitationHandler and UrlElicitationHandler exceptions are caught and converted
+ *   to JSON-RPC error responses
  */
-
 inline constexpr std::size_t kDefaultMaxPaginationPages = 1024U;
 
 struct ClientInitializeConfiguration

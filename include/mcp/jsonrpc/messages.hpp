@@ -13,7 +13,38 @@
 
 namespace mcp::jsonrpc
 {
-
+/**
+ * @brief JSON-RPC message types and parsing utilities.
+ *
+ * @section Exceptions
+ *
+ * @subsection Exception Types
+ * - MessageValidationError: Thrown when parsing fails due to malformed JSON-RPC messages
+ *   Inherits from std::runtime_error
+ *
+ * @subsection Parsing Operations (throwing)
+ * - parseMessage(std::string_view) throws MessageValidationError on:
+ *   - Invalid JSON syntax
+ *   - Missing required JSON-RPC fields (jsonrpc, method for requests)
+ *   - Type mismatches in message structure
+ * - parseMessageJson(const JsonValue&) throws MessageValidationError for invalid structure
+ *
+ * @subsection Serialization Operations
+ * - toJson(const Message&) returns JsonValue, does not throw under normal conditions
+ * - serializeMessage() throws std::runtime_error on serialization failure (rare)
+ *
+ * @subsection Error Factory Functions (noexcept)
+ * All make*Error() and make*ErrorResponse() functions return by value and do not throw:
+ * - makeJsonRpcError(), makeParseError(), makeInvalidRequestError()
+ * - makeMethodNotFoundError(), makeInvalidParamsError(), makeInternalError()
+ * - makeUrlElicitationRequiredError(), makeErrorResponse(), makeUnknownIdErrorResponse()
+ *
+ * @subsection JSON-RPC Error vs C++ Exception
+ * Protocol-level errors (method not found, invalid params) are represented as ErrorResponse
+ * objects, not C++ exceptions. C++ exceptions indicate:
+ * - Parse failures (malformed JSON)
+ * - System errors (memory exhaustion)
+ */
 using RequestId = std::variant<std::int64_t, std::string>;
 using JsonValue = jsoncons::json;
 
