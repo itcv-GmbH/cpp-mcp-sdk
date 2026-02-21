@@ -4,7 +4,7 @@
 
 - The SDK will support server-initiated JSON-RPC requests and notifications over Streamable HTTP by opening an SSE stream via HTTP GET to the MCP endpoint.
 - The HTTP client transport used by `mcp::Client` will run a background listen loop that will:
-  - open a GET SSE stream after the HTTP session is established via `initialize`
+  - open a GET SSE stream after the client has completed `initialize` and has sent `notifications/initialized`
   - poll the stream using `Last-Event-ID` resumption
   - respect SSE `retry` guidance by delaying reconnect attempts
   - dispatch inbound JSON-RPC messages into `mcp::Client::handleMessage`.
@@ -43,7 +43,7 @@
 - This plan will not add HTTP connection pooling.
 - This plan will not add a new transport interface beyond Streamable HTTP and stdio.
 - This plan will not change server-side Streamable HTTP behavior except where tests require adjustments.
-- This plan will not implement automatic session re-initialization on HTTP 404. The SDK will expose the failure signal, and the application will be responsible for re-initializing.
+- This plan will not implement automatic session re-initialization on HTTP 404. The SDK will clear HTTP session header state on HTTP 404 and will require callers to perform a new `initialize` lifecycle before further HTTP requests will succeed.
 
 ## Risks / Unknowns
 
@@ -58,3 +58,11 @@
 - The implementation will extract the nested `StreamableHttpClientTransport` from `src/client/client.cpp` into `src/transport/` and will introduce a dedicated header to define its construction and lifecycle.
 - The implementation will introduce shared ownership for HTTP session and protocol header state so that multiple HTTP channels will operate with a single consistent view of `MCP-Session-Id` and `MCP-Protocol-Version`.
 - The implementation will introduce a unified transport inbound loop abstraction that will be used by both stdio and Streamable HTTP client transports for consistent start, stop, join, and error containment behavior.
+
+## MCP 2025-11-25 Transport Alignment (Must Satisfy)
+
+- The implementation will open the server-initiated listen channel via HTTP GET to the MCP endpoint and will send `Accept: text/event-stream`.
+- The implementation will treat HTTP 405 for GET listen as a supported configuration and will continue operating with POST-only behavior.
+- The implementation will persist the most recent SSE event ID and will send it as `Last-Event-ID` on subsequent GET polling requests.
+- The implementation will respect SSE `retry` values by delaying reconnect attempts, with delay bounded by configured runtime limits.
+- The implementation will include `MCP-Session-Id` and `MCP-Protocol-Version` headers on GET listen requests after initialization.

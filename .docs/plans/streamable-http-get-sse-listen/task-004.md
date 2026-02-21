@@ -16,7 +16,7 @@
 
 ## Output / Definition of Done
 
-* `StreamableHttpClientTransport` will start a background GET listen loop after a successful `initialize` request.
+* `StreamableHttpClientTransport` will start a background GET listen loop after the client has sent `notifications/initialized` over HTTP.
 * The listen loop will dispatch inbound JSON-RPC messages to the transport's inbound message handler.
 * The listen loop will terminate cleanly on `Client::stop()` and on transport destruction.
 * The implementation will handle HTTP 405 from GET by disabling server-initiated listening without failing POST functionality.
@@ -27,7 +27,7 @@
    - a background thread
    - an atomic running flag for the listen loop
    - a state flag indicating whether GET listening is enabled by configuration
-2. Update `StreamableHttpClientTransport::send` to detect a successful `initialize` request completion and to start the listen loop by calling `client_.openListenStream()`.
+2. Update `StreamableHttpClientTransport::send` to detect an outbound `notifications/initialized` notification and to start the listen loop by calling `client_.openListenStream()`.
 3. Implement the background loop to repeatedly:
    - call `client_.pollListenStream()` while the stream is open
    - dispatch every returned message via the inbound message handler

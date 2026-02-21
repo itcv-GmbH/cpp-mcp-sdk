@@ -18,7 +18,7 @@ The SDK must demonstrate that server-initiated JSON-RPC requests delivered over 
 
 * A new test will assert the following flow:
   - client initializes over Streamable HTTP
-  - client opens and polls GET listen stream
+  - client sends `notifications/initialized` and opens and polls GET listen stream
   - server enqueues a `roots/list` request message for the session
   - client receives the request, calls the configured roots provider, and posts a valid JSON-RPC response
   - server receives the response and validates the `roots/list` result schema

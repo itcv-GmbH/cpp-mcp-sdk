@@ -9,9 +9,10 @@
 ## Phase 2: Transport Correctness (Blocked by Phase 1)
 - [ ] `task-002`: Implement Default SSE Retry Waiting (Depends on: `task-001`)
 - [ ] `task-003`: Make StreamableHttpClient Thread-Safe (Depends on: `task-002`, `task-008`)
+- [ ] `task-010`: Implement Session Expiration Handling For HTTP 404 (Depends on: `task-003`, `task-008`)
 
 ## Phase 3: Client Integration (Blocked by Phase 2)
-- [ ] `task-004`: Integrate GET Listen Loop Into StreamableHttpClientTransport (Depends on: `task-003`, `task-009`)
+- [ ] `task-004`: Integrate GET Listen Loop Into StreamableHttpClientTransport (Depends on: `task-010`, `task-009`)
 
 ## Phase 4: Tests And Examples (Blocked by Phase 3)
 - [ ] `task-005`: Add End-to-End Test For Server-Initiated Requests Over HTTP (Depends on: `task-004`)
