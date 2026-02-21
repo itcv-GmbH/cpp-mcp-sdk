@@ -66,3 +66,7 @@
 - The implementation will persist the most recent SSE event ID and will send it as `Last-Event-ID` on subsequent GET polling requests.
 - The implementation will respect SSE `retry` values by delaying reconnect attempts, with delay bounded by configured runtime limits.
 - The implementation will include `MCP-Session-Id` and `MCP-Protocol-Version` headers on GET listen requests after initialization.
+
+## SDK Consistency Gates (Must Satisfy)
+
+- The implementation will comply with the SDK thread-safety and exception contracts defined in `.docs/plans/sdk-thread-safety-exception-handling/thread_safety_contract.md` and `.docs/plans/sdk-thread-safety-exception-handling/exception_contract.md`.
