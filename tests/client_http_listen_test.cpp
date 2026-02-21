@@ -1,5 +1,7 @@
 #include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -15,6 +17,7 @@
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/transport/http.hpp>
+#include <mcp/transport/streamable_http_client_transport.hpp>
 #include <mcp/version.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
@@ -186,6 +189,44 @@ TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over
 
   // Clean up
   client->stop();
+}
+
+TEST_CASE("Streamable HTTP transport supports repeated start-stop listen cycles", "[client][http][listen][lifecycle]")
+{
+  mcp_http::StreamableHttpClientOptions options = makeHttpClientOptions();
+  options.enableGetListen = true;
+
+  auto transport = mcp::transport::makeStreamableHttpClientTransport(
+    std::move(options),
+    [](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+    {
+      mcp_http::ServerResponse response;
+      if (request.method == mcp_http::ServerRequestMethod::kPost)
+      {
+        response.statusCode = 202;
+        return response;
+      }
+
+      response.statusCode = 405;
+      return response;
+    },
+    [](const mcp::jsonrpc::Message &) -> void {});
+
+  constexpr auto kStopTimeout = std::chrono::milliseconds {500};
+  constexpr std::size_t kCycles = 3;
+
+  for (std::size_t cycle = 0; cycle < kCycles; ++cycle)
+  {
+    transport->start();
+
+    mcp::jsonrpc::Notification initialized;
+    initialized.method = "notifications/initialized";
+    transport->send(mcp::jsonrpc::Message {initialized});
+
+    auto stopFuture = std::async(std::launch::async, [&transport]() -> void { transport->stop(); });
+    REQUIRE(stopFuture.wait_for(kStopTimeout) == std::future_status::ready);
+    stopFuture.get();
+  }
 }
 
 // NOLINTEND(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,

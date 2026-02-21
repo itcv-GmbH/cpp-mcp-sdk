@@ -25,6 +25,7 @@
 namespace mcp::transport::http
 {
 constexpr std::uint16_t kStatusOk = 200;
+constexpr std::uint16_t kStatusMultipleChoices = 300;
 constexpr std::uint16_t kStatusAccepted = 202;
 constexpr std::uint16_t kStatusBadRequest = 400;
 constexpr std::uint16_t kStatusNotFound = 404;
@@ -528,6 +529,12 @@ struct StreamableHttpClient::Impl
     }
   }
 
+  auto executeRequestSerialized(const ServerRequest &request) const -> ServerResponse
+  {
+    const std::scoped_lock lock(requestExecutorMutex);
+    return requestExecutor(request);
+  }
+
   auto waitForReconnect(std::uint32_t retryMilliseconds) const -> void
   {
     if (options.waitBeforeReconnect)
@@ -670,7 +677,7 @@ struct StreamableHttpClient::Impl
     state.ssePath = resolveLegacyPath(options.legacyFallbackSsePath, kLegacyDefaultSsePath);
     state.retryMilliseconds = options.defaultRetryMilliseconds;
 
-    const ServerResponse eventsResponse = requestExecutor(makeLegacyGetRequest(state));
+    const ServerResponse eventsResponse = executeRequestSerialized(makeLegacyGetRequest(state));
     ParsedLegacySsePayload parsed = parseLegacySseResponse(eventsResponse, state);
     if (!parsed.firstEventWasEndpoint)
     {
@@ -708,7 +715,7 @@ struct StreamableHttpClient::Impl
       }
 
       waitForReconnect(streamState.retryMilliseconds);
-      const ServerResponse resumed = requestExecutor(makeGetRequest(streamState.lastEventId));
+      const ServerResponse resumed = executeRequestSerialized(makeGetRequest(streamState.lastEventId));
       result.statusCode = resumed.statusCode;
 
       ParsedSsePayload parsed = parseSseResponse(resumed, requestId, streamState);
@@ -739,7 +746,7 @@ struct StreamableHttpClient::Impl
         waitForReconnect(state.retryMilliseconds);
       }
 
-      const ServerResponse eventsResponse = requestExecutor(makeLegacyGetRequest(state));
+      const ServerResponse eventsResponse = executeRequestSerialized(makeLegacyGetRequest(state));
       result.statusCode = eventsResponse.statusCode;
 
       ParsedLegacySsePayload parsed = parseLegacySseResponse(eventsResponse, state);
@@ -780,7 +787,7 @@ struct StreamableHttpClient::Impl
       return result;
     }
 
-    const ServerResponse response = requestExecutor(makeLegacyPostRequest(message, legacy.postPath));
+    const ServerResponse response = executeRequestSerialized(makeLegacyPostRequest(message, legacy.postPath));
     captureSessionFromInitializeResponse(message, response);
     result.statusCode = response.statusCode;
 
@@ -870,7 +877,7 @@ struct StreamableHttpClient::Impl
       return sendLegacy(message);
     }
 
-    const ServerResponse response = requestExecutor(makePostRequest(message));
+    const ServerResponse response = executeRequestSerialized(makePostRequest(message));
 
     if (shouldAttemptLegacyFallback(message, response))
     {
@@ -976,7 +983,7 @@ struct StreamableHttpClient::Impl
 
     SseState streamState;
     streamState.retryMilliseconds = options.defaultRetryMilliseconds;
-    const ServerResponse response = requestExecutor(makeGetRequest(std::nullopt));
+    const ServerResponse response = executeRequestSerialized(makeGetRequest(std::nullopt));
     result.statusCode = response.statusCode;
 
     // Handle HTTP 404 - session has been terminated by server
@@ -1036,7 +1043,7 @@ struct StreamableHttpClient::Impl
     lock.unlock();
 
     waitForReconnect(retryMilliseconds);
-    const ServerResponse response = requestExecutor(makeGetRequest(lastEventId));
+    const ServerResponse response = executeRequestSerialized(makeGetRequest(lastEventId));
 
     lock.lock();
 
@@ -1081,7 +1088,7 @@ struct StreamableHttpClient::Impl
       return true;  // No active session to terminate
     }
 
-    const ServerResponse response = requestExecutor(makeDeleteRequest());
+    const ServerResponse response = executeRequestSerialized(makeDeleteRequest());
 
     // Handle HTTP 405 Method Not Allowed - server doesn't support DELETE
     if (response.statusCode == kStatusMethodNotAllowed)
@@ -1090,7 +1097,7 @@ struct StreamableHttpClient::Impl
     }
 
     // Any other 2xx response indicates successful termination
-    if (response.statusCode >= kStatusOk && response.statusCode < kStatusMethodNotAllowed)
+    if (response.statusCode >= kStatusOk && response.statusCode < kStatusMultipleChoices)
     {
       options.headerState->clear();
       listenState.reset();
@@ -1102,6 +1109,7 @@ struct StreamableHttpClient::Impl
   }
 
   StreamableHttpClientOptions options;
+  mutable std::mutex requestExecutorMutex;
   RequestExecutor requestExecutor;
   bool legacyFallbackEnabled = false;
   std::optional<ParsedHttpEndpointUrl> parsedBaseEndpoint;

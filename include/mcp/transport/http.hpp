@@ -277,7 +277,7 @@ public:
     protocolVersionState_.clear();
   }
 
-  [[nodiscard]] auto sessionId() const noexcept -> std::optional<std::string>
+  [[nodiscard]] auto sessionId() const -> std::optional<std::string>
   {
     const std::scoped_lock lock(mutex_);
     return sessionState_.sessionId();
@@ -289,7 +289,7 @@ public:
     return sessionState_.replayOnSubsequentRequests();
   }
 
-  [[nodiscard]] auto negotiatedProtocolVersion() const noexcept -> std::optional<std::string>
+  [[nodiscard]] auto negotiatedProtocolVersion() const -> std::optional<std::string>
   {
     const std::scoped_lock lock(mutex_);
     return protocolVersionState_.negotiatedProtocolVersion();
