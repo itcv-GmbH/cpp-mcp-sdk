@@ -66,8 +66,8 @@ namespace mcp::transport
  *
  * @subsection Header Operations
  * - setHeader(), getHeader(): Inline helpers; may throw on memory allocation
- * - isValidSessionId(), isValidProtocolVersion(): noexcept in practice
- * - isSupportedProtocolVersion(): noexcept in practice
+ * - isValidSessionId(), isValidProtocolVersion(): noexcept
+ * - isSupportedProtocolVersion(): noexcept
  *
  * @subsection State Classes
  * - SessionHeaderState, ProtocolVersionHeaderState, SharedHeaderState:

@@ -55,6 +55,7 @@ The SDK uses the following exception types as part of its public contract:
 | `~Client()` | Destructor declared noexcept |
 | `session()` noexcept | Simple accessor |
 | `negotiatedProtocolVersion()` noexcept | Simple accessor |
+| `getProtocolVersion()` noexcept | Simple accessor |
 
 ### 2. Router (`mcp::jsonrpc::Router`)
 
@@ -63,17 +64,21 @@ The SDK uses the following exception types as part of its public contract:
 |--------|-----------------|-----------|
 | Constructor | None | - |
 | `registerRequestHandler()`, `registerNotificationHandler()` | None | Handlers are stored as-is |
-| `dispatchRequest()` | Handler exceptions propagated | User handler exceptions escape here |
+| `dispatchRequest()` | None | Handler exceptions are caught and converted to JSON-RPC -32603 error responses |
 | `sendRequest()` | `std::runtime_error` | Transport or serialization failure |
 
-#### Non-Throwing Methods (Behavior)
+#### Noexcept Methods (Actual Declarations)
 | Method | Notes |
 |--------|-------|
 | `~Router()` | Destructor declared noexcept |
-| `dispatchNotification()` | Returns void; exceptions are suppressed (implementation detail) |
-| `dispatchResponse()` | Returns bool; exceptions are suppressed (implementation detail) |
-| `sendNotification()` | Returns void; exceptions suppressed |
-| `emitProgress()` | Returns bool; callback exceptions suppressed |
+
+#### Methods Without Noexcept Guarantee
+| Method | Notes |
+|--------|-------|
+| `dispatchNotification()` | Invokes callbacks without containment; exceptions propagate to caller |
+| `dispatchResponse()` | Returns bool; does not throw directly |
+| `sendNotification()` | Returns void; does not throw directly |
+| `emitProgress()` | Returns bool; does not throw directly |
 
 ### 3. Session (`mcp::Session`)
 
@@ -92,7 +97,7 @@ The SDK uses the following exception types as part of its public contract:
 | `state()` noexcept | Simple state accessor |
 | `negotiatedProtocolVersion()` noexcept | Simple accessor |
 | `role()` noexcept | Simple accessor |
-| `supportedProtocolVersions()` | Returns const ref, noexcept in practice |
+| `supportedProtocolVersions()` | Returns const ref |
 
 ### 4. Messages (`mcp::jsonrpc`)
 
@@ -106,8 +111,8 @@ The SDK uses the following exception types as part of its public contract:
 #### Non-Throwing Methods
 | Method | Notes |
 |--------|-------|
-| `toJson()` | Returns JsonValue, noexcept in practice |
-| Error factory functions | Return by value, noexcept in practice |
+| `toJson()` | Returns JsonValue |
+| Error factory functions | Return by value |
 
 ### 5. InboundLoop (`mcp::detail::InboundLoop`)
 
@@ -117,15 +122,19 @@ The SDK uses the following exception types as part of its public contract:
 | Constructor | `std::bad_alloc` | Memory allocation failure |
 | `start()` | `std::runtime_error` | Thread creation failure |
 
-#### Non-Throwing Methods
+#### Noexcept Methods (Actual Declarations)
 | Method | Notes |
 |--------|-------|
 | `~InboundLoop()` | Destructor (implicitly noexcept) |
-| `stop()` | Sets atomic flag, noexcept in practice |
-| `join()` | Thread join with exception suppression |
 | `isRunning()` noexcept | Atomic load |
 
-**Important:** The loop body function passed to `InboundLoop` should not throw. Current implementation catches exceptions from the loop body to prevent thread termination.
+#### Non-Throwing Methods
+| Method | Notes |
+|--------|-------|
+| `stop()` | Sets atomic flag |
+| `join()` | Thread join with exception suppression |
+
+**Important:** The loop body function passed to `InboundLoop` may have exceptions caught by the current implementation, but this is not a guaranteed contract. Wrap your loop body in try-catch for reliable error handling.
 
 ### 6. HTTP Transport (`mcp::transport`)
 
@@ -158,14 +167,18 @@ The SDK uses the following exception types as part of its public contract:
 | `StdioSubprocess::writeLine()` | `std::runtime_error` | Write failure |
 | `StdioSubprocess::readLine()` | `std::runtime_error` | I/O error |
 
-#### Non-Throwing Methods
+#### Noexcept Methods (Actual Declarations)
 | Method | Notes |
 |--------|-------|
 | `~StdioSubprocess()` | Destructor |
 | `StdioSubprocess::closeStdin()` noexcept | Safe close |
 | `StdioSubprocess::valid()` noexcept | State check |
-| `StdioSubprocess::exitCode()` | Returns optional, noexcept in practice |
 | `StdioSubprocess::shutdown()` noexcept | Returns bool success/failure |
+
+#### Non-Throwing Methods
+| Method | Notes |
+|--------|-------|
+| `StdioSubprocess::exitCode()` | Returns optional |
 
 ## Protocol Error Mapping
 
@@ -177,7 +190,7 @@ The SDK uses the following exception types as part of its public contract:
 | Valid JSON-RPC with unknown method | **JSON-RPC Response** (`ErrorResponse` with code -32601) | Handler returns error response |
 | Valid JSON-RPC with invalid params | **JSON-RPC Response** (`ErrorResponse` with code -32602) | Handler returns error response |
 | Transport connection failure | **C++ Exception** (`std::runtime_error`) | `connectHttp()` fails |
-| Handler throws exception | **JSON-RPC Response** (`ErrorResponse` with code -32603) | Exception caught, converted to response |
+| Handler throws exception | **JSON-RPC Response** (`ErrorResponse` with code -32603) via returned future | Exception caught and converted to error response |
 | Server returns error response | **JSON-RPC Response** (`ErrorResponse`) | Normal protocol behavior |
 
 ### JSON-RPC Error Codes
@@ -214,34 +227,33 @@ The SDK handles exceptions from user-provided callbacks as follows:
 ```cpp
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;
 ```
-- **Behavior:** Handler exceptions may propagate through the returned future
-- **SDK Response:** If a handler throws, the exception may be caught and converted to an ErrorResponse with JSON-RPC error code -32603 (Internal Error)
+- **Behavior:** Handler exceptions are caught by the SDK and converted to JSON-RPC error responses with code -32603 (Internal Error). The error response is delivered through the returned future, not by propagating the original exception.
 
 #### Notification Handlers
 ```cpp
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;
 ```
-- **Behavior:** Current implementation catches exceptions internally and continues dispatch
-- **User Responsibility:** Do not rely on SDK containment; wrap your handler in try-catch
+- **Behavior:** Callbacks are invoked without containment. Exceptions propagate to the caller of `dispatchNotification()`.
+- **User Responsibility:** Wrap your handler in try-catch; do not rely on SDK containment.
 
 #### Progress Callbacks
 ```cpp
 using ProgressCallback = std::function<void(const RequestContext &, const ProgressUpdate &)>;
 ```
-- **Behavior:** Current implementation catches exceptions internally and continues
-- **User Responsibility:** Do not rely on SDK containment; wrap your callback in try-catch
+- **Behavior:** Callbacks are invoked without containment. Exceptions propagate to the caller.
+- **User Responsibility:** Wrap your callback in try-catch; do not rely on SDK containment.
 
 #### Transport Callbacks
-- **Inbound message handlers:** Current implementation catches exceptions; malformed messages may be dropped
-- **User Responsibility:** Do not rely on SDK containment for error reporting
+- **Inbound message handlers:** Behavior varies by transport. Some implementations catch exceptions, others propagate them.
+- **User Responsibility:** Do not rely on SDK containment for error reporting.
 
 ## Background Execution Context Rules
 
 ### Thread Pool Work
 
 Work posted to `boost::asio::thread_pool` by the SDK:
-- Current implementation catches exceptions to prevent thread termination
-- **User Responsibility:** Do not rely on SDK containment; handle exceptions in your posted work
+- The SDK may catch exceptions in some posted work to prevent thread termination, but this is not a guaranteed contract for all posted work.
+- **User Responsibility:** Do not rely on SDK containment; handle exceptions in your posted work.
 
 ```cpp
 // RECOMMENDED: Wrap your posted work in try-catch
@@ -257,13 +269,13 @@ boost::asio::post(pool, []() {
 ### InboundLoop Threads
 
 The `InboundLoop` class provides a unified abstraction for transport reader threads:
-- **Loop body:** Current implementation catches exceptions from the loop body function to prevent thread termination, but users should write loop bodies that handle their own exceptions
-- **Clean shutdown:** `stop()` and `join()` provide safe shutdown
-- **Thread safety:** `isRunning()` is safe to call from any thread
+- **Loop body:** Current implementation may catch exceptions from the loop body function, but this is not a guaranteed contract. Write loop bodies that handle their own exceptions.
+- **Clean shutdown:** `stop()` and `join()` provide safe shutdown.
+- **Thread safety:** `isRunning()` is safe to call from any thread.
 
 ### Destructor Rules
 
-SDK destructors provide basic cleanup:
+SDK destructors:
 - **Client::~Client()** - Declared noexcept
 - **Router::~Router()** - Declared noexcept
 - **Session::~Session()** - Implicitly noexcept (default destructor)
@@ -273,7 +285,7 @@ SDK destructors provide basic cleanup:
 - **HttpServerRuntime::~HttpServerRuntime()** - Standard destructor
 - **StdioSubprocess::~StdioSubprocess()** - Standard destructor
 
-**Rule:** Destructors should not throw. Cleanup failures are handled internally or ignored.
+All SDK destructors are noexcept. Cleanup failures are handled internally or ignored.
 
 ## Exception Safety Guarantees
 

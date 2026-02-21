@@ -74,20 +74,21 @@ namespace mcp::jsonrpc
  * - registerRequestHandler(), registerNotificationHandler(), unregisterHandler() do not throw
  *
  * @subsection Dispatch Operations
- * - dispatchRequest() may propagate exceptions from user-provided RequestHandler callbacks
- * - dispatchNotification() returns void; current implementation catches callback exceptions
- * - dispatchResponse() returns bool; current implementation catches callback exceptions
+ * - dispatchRequest() catches exceptions from user-provided RequestHandler callbacks and
+ *   converts them to JSON-RPC error responses with code -32603 (Internal Error)
+ * - dispatchNotification() returns void; callback exceptions propagate to caller
+ * - dispatchResponse() returns bool; does not throw directly
  *
  * @subsection Request Operations
  * - sendRequest() may throw std::runtime_error on transport or serialization failure
- * - sendNotification() returns void; current implementation catches callback exceptions
+ * - sendNotification() returns void; does not throw directly
  *
  * @subsection Progress Operations
- * - emitProgress() returns bool; current implementation catches callback exceptions
+ * - emitProgress() returns bool; does not throw directly
  *
  * @subsection Background Thread Behavior
- * Work posted to internal thread pools catches exceptions, but this is an implementation
- * detail, not a guaranteed contract. Wrap your posted work in try-catch.
+ * Work posted to internal thread pools may have exceptions caught in some cases, but
+ * this is not a guaranteed contract. Wrap your posted work in try-catch.
  */
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;

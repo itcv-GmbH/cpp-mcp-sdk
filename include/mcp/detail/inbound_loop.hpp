@@ -27,8 +27,8 @@ namespace mcp::detail
  *
  * @subsection Loop Body Behavior
  * The LoopBody function is invoked in a background thread. The current implementation
- * catches exceptions from the loop body to prevent thread termination, but this is an
- * implementation detail. Users should write loop bodies that handle their own exceptions.
+ * may catch exceptions from the loop body, but this is not a guaranteed contract.
+ * Write loop bodies that handle their own exceptions.
  *
  * Recommended pattern for loop body:
  * @code
