@@ -109,7 +109,7 @@ The `Client` class provides thread-safe access to all its public methods. Intern
 - `Client::attachTransport()` - Thread-safe, but must not be called after `start()`
 - `Client::connectStdio()` - Thread-safe, but must not be called after `start()`
 - `Client::connectHttp()` - Thread-safe, but must not be called after `start()`
-- `Client::start()` - Thread-safe, idempotent (delegates to `Session::start()`)
+- `Client::start()` - Thread-safe, NOT idempotent (delegates to `Session::start()`, throws `LifecycleError` if state != kCreated)
 - `Client::stop()` - Thread-safe, idempotent
 
 #### Concurrency Rules:
@@ -208,7 +208,7 @@ The `Router` class provides thread-safe access to all its public methods. Intern
 
 1. Handler registration methods may be called at any time, but handlers set after routing begins may miss early messages.
 2. `setOutboundMessageSender()` must be called before dispatching messages.
-3. Progress callbacks are invoked according to the threading policy configured by the owner (Session/Client).
+3. Progress callbacks are invoked directly on the router/I/O thread.
 
 #### Internal Lock Ordering:
 
@@ -522,10 +522,10 @@ enum class HandlerThreadingPolicy : std::uint8_t
 
 Lifecycle method idempotency varies by type:
 
-- **Idempotent `start()`**: `Client::start()`, `HttpServerRuntime::start()`, `StreamableHttpServerRunner::start()`, `CombinedServerRunner::start()`, `StdioServerRunner::startAsync()`
+- **Idempotent `start()`**: `HttpServerRuntime::start()`, `StreamableHttpServerRunner::start()`, `CombinedServerRunner::start()`, `StdioServerRunner::startAsync()`
   - Multiple calls have the same effect as a single call
   
-- **Non-idempotent `start()`**: `Session::start()`
+- **Non-idempotent `start()`**: `Session::start()`, `Client::start()`
   - Throws `LifecycleError` if called when state is not `kCreated`
   - Must only be called once per session instance
 

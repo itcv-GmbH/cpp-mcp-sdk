@@ -55,7 +55,7 @@ namespace mcp
  *
  * @par Lifecycle Methods (idempotent, thread-safe):
  * - attachTransport(), connectStdio(), connectHttp() - Thread-safe, but must not be called after start()
- * - start() - Thread-safe, idempotent
+ * - start() - Thread-safe, NOT idempotent (throws LifecycleError if called when not in kCreated state)
  * - stop() - Thread-safe, idempotent
  *
  * @par Concurrency Rules:

@@ -40,8 +40,8 @@ namespace mcp::jsonrpc
  * 1. Handler registration methods may be called at any time, but handlers set after
  *    routing begins may miss early messages.
  * 2. setOutboundMessageSender() must be called before dispatching messages.
- * 3. Progress callbacks are invoked according to the threading policy configured by
- *    the owner (Session/Client).
+ * 3. Progress callbacks are invoked directly on the router/I/O thread. They must be
+ *    fast and non-blocking.
  *
  * @par Internal Lock Ordering:
  * The Router maintains two separate mutex domains:
