@@ -47,6 +47,7 @@ set(MCP_SDK_SOURCES
     src/auth_loopback_receiver.cpp
     src/auth_protected_resource_metadata.cpp
     src/client/client.cpp
+    src/detail/inbound_loop.cpp
     src/lifecycle/session.cpp
     src/detail/initialize_codec.cpp
     src/security/crypto_random.cpp

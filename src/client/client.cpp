@@ -25,6 +25,7 @@
 #include <mcp/client/elicitation.hpp>
 #include <mcp/client/roots.hpp>
 #include <mcp/client/sampling.hpp>
+#include <mcp/detail/inbound_loop.hpp>
 #include <mcp/detail/initialize_codec.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
@@ -1004,26 +1005,26 @@ public:
     }
 
     running_.store(true);
-    readerThread_ = std::thread([this]() -> void { readerLoop(); });
+    readerLoop_ = std::make_unique<detail::InboundLoop>([this]() -> void { readerLoop(); });
+    readerLoop_->start();
   }
 
   auto stop() -> void override
   {
-    bool shouldJoin = false;
     {
       const std::scoped_lock lock(mutex_);
       running_.store(false);
-      shouldJoin = readerThread_.joinable();
+    }
+
+    if (readerLoop_)
+    {
+      readerLoop_->stop();
+      readerLoop_->join();
     }
 
     if (subprocess_.valid())
     {
       static_cast<void>(subprocess_.shutdown());
-    }
-
-    if (shouldJoin && readerThread_.joinable())
-    {
-      readerThread_.join();
     }
   }
 
@@ -1101,7 +1102,7 @@ private:
   transport::StdioClientOptions options_;
   std::weak_ptr<Session> attachedSession_;
   transport::StdioSubprocess subprocess_;
-  std::thread readerThread_;
+  std::unique_ptr<detail::InboundLoop> readerLoop_;
   std::function<void(const jsonrpc::Message &)> inboundMessageHandler_;
 };
 
