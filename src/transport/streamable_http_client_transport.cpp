@@ -1,10 +1,13 @@
 #include <atomic>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include <mcp/detail/inbound_loop.hpp>
 #include <mcp/jsonrpc/messages.hpp>
@@ -15,15 +18,15 @@
 namespace mcp::transport
 {
 
-namespace
-{
-
 static constexpr std::string_view kInitializedNotificationMethod = "notifications/initialized";
 
-auto isInitializedNotification(const jsonrpc::Message &message) -> bool
+static auto isInitializedNotification(const jsonrpc::Message &message) -> bool
 {
   return std::holds_alternative<jsonrpc::Notification>(message) && std::get<jsonrpc::Notification>(message).method == kInitializedNotificationMethod;
 }
+
+namespace
+{
 
 class StreamableHttpClientTransport final : public Transport
 {
@@ -37,6 +40,11 @@ public:
     , enableGetListen_(options_.enableGetListen)
   {
   }
+
+  StreamableHttpClientTransport(const StreamableHttpClientTransport &) = delete;
+  auto operator=(const StreamableHttpClientTransport &) -> StreamableHttpClientTransport & = delete;
+  StreamableHttpClientTransport(StreamableHttpClientTransport &&) = delete;
+  auto operator=(StreamableHttpClientTransport &&) -> StreamableHttpClientTransport & = delete;
 
   ~StreamableHttpClientTransport() override { stop(); }
 
@@ -68,9 +76,13 @@ public:
       {
         client_.terminateSession();
       }
+      catch (const std::exception &)
+      {
+        listenLoopRunning_.store(false);
+      }
       catch (...)
       {
-        // Ignore errors during session termination - we're stopping anyway
+        listenLoopRunning_.store(false);
       }
     }
 

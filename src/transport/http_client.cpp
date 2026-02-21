@@ -1075,7 +1075,7 @@ struct StreamableHttpClient::Impl
 
   auto terminateSession() -> bool
   {
-    std::unique_lock lock(mutex);
+    const std::unique_lock lock(mutex);
 
     if (legacyState.has_value())
     {

@@ -14,7 +14,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -1110,7 +1109,7 @@ auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 {
   // NOLINTNEXTLINE(modernize-return-braced-init-list)
   return std::shared_ptr<Client>(new Client(std::make_shared<Session>(std::move(options))),
-                                 [](Client *client) -> void
+                                 [](Client *client) noexcept -> void
                                  {
                                    if (!client)
                                    {
@@ -1127,7 +1126,16 @@ auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 
                                    if (calledFromManagedWorker)
                                    {
-                                     deferClientDeletion(client);
+                                     try
+                                     {
+                                       deferClientDeletion(client);
+                                     }
+                                     catch (...)
+                                     {
+                                       // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) - Fallback cleanup when async scheduling fails
+                                       delete client;
+                                     }
+
                                      return;
                                    }
 
