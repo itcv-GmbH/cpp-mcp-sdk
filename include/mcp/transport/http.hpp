@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -246,6 +247,64 @@ public:
 
 private:
   std::optional<std::string> negotiatedProtocolVersion_;
+};
+
+class SharedHeaderState final
+{
+public:
+  auto captureFromInitializeResponse(std::optional<std::string_view> sessionHeader, std::string_view protocolVersion) -> bool
+  {
+    const std::scoped_lock lock(mutex_);
+
+    if (!sessionState_.captureFromInitializeResponse(sessionHeader))
+    {
+      return false;
+    }
+
+    if (!protocolVersion.empty())
+    {
+      protocolVersionState_.setNegotiatedProtocolVersion(protocolVersion);
+    }
+
+    return true;
+  }
+
+  auto clear() noexcept -> void
+  {
+    const std::scoped_lock lock(mutex_);
+    sessionState_.clear();
+    protocolVersionState_.clear();
+  }
+
+  [[nodiscard]] auto sessionId() const noexcept -> std::optional<std::string>
+  {
+    const std::scoped_lock lock(mutex_);
+    return sessionState_.sessionId();
+  }
+
+  [[nodiscard]] auto replayOnSubsequentRequests() const noexcept -> bool
+  {
+    const std::scoped_lock lock(mutex_);
+    return sessionState_.replayOnSubsequentRequests();
+  }
+
+  [[nodiscard]] auto negotiatedProtocolVersion() const noexcept -> std::optional<std::string>
+  {
+    const std::scoped_lock lock(mutex_);
+    return protocolVersionState_.negotiatedProtocolVersion();
+  }
+
+  auto replayToRequestHeaders(HeaderList &headers, bool isInitializeRequest = false) const -> void
+  {
+    const std::scoped_lock lock(mutex_);
+    sessionState_.replayToRequestHeaders(headers);
+    protocolVersionState_.replayToRequestHeaders(headers, isInitializeRequest);
+  }
+
+private:
+  mutable std::mutex mutex_;
+  SessionHeaderState sessionState_;
+  ProtocolVersionHeaderState protocolVersionState_;
 };
 
 enum class RequestKind : std::uint8_t
@@ -517,13 +576,20 @@ struct StreamableHttpClientOptions
   std::optional<std::string> bearerToken;
   ClientTlsConfiguration tls;
   security::RuntimeLimits limits;
-  SessionHeaderState sessionState;
-  ProtocolVersionHeaderState protocolVersionState;
+  std::shared_ptr<SharedHeaderState> headerState = std::make_shared<SharedHeaderState>();
   std::optional<bool> enableLegacyHttpSseFallback;
   std::string legacyFallbackPostPath = "/rpc";
   std::string legacyFallbackSsePath = "/events";
   std::uint32_t defaultRetryMilliseconds = detail::kDefaultRetryMilliseconds;
   std::function<void(std::uint32_t)> waitBeforeReconnect;
+
+  // Enable GET SSE listen behavior for server-initiated messages.
+  // When enabled, the client will use HTTP GET requests to listen for server messages
+  // via SSE (Server-Sent Events), as specified in MCP 2025-11-25 transport spec section
+  // "Listening for Messages from the Server". If the server returns HTTP 405 (Method Not
+  // Allowed) for GET requests, this is treated as a supported configuration and the client
+  // will fall back to POST-based message retrieval.
+  bool enableGetListen = true;
 };
 
 class StreamableHttpClient
@@ -557,11 +623,18 @@ struct HttpClientOptions
   std::optional<std::string> bearerToken;
   http::ClientTlsConfiguration tls;
   security::RuntimeLimits limits;
-  http::SessionHeaderState sessionState;
-  http::ProtocolVersionHeaderState protocolVersionState;
+  std::shared_ptr<http::SharedHeaderState> headerState = std::make_shared<http::SharedHeaderState>();
   std::optional<bool> enableLegacyHttpSseFallback;
   std::string legacyFallbackPostPath = "/rpc";
   std::string legacyFallbackSsePath = "/events";
+
+  // Enable GET SSE listen behavior for server-initiated messages.
+  // When enabled, the client will use HTTP GET requests to listen for server messages
+  // via SSE (Server-Sent Events), as specified in MCP 2025-11-25 transport spec section
+  // "Listening for Messages from the Server". If the server returns HTTP 405 (Method Not
+  // Allowed) for GET requests, this is treated as a supported configuration and the client
+  // will fall back to POST-based message retrieval.
+  bool enableGetListen = true;
 };
 
 using HttpRequestHandler = std::function<http::ServerResponse(const http::ServerRequest &)>;

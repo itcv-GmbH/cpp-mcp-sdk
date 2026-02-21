@@ -1772,6 +1772,7 @@ auto Client::connectStdio(const transport::StdioClientOptions &options) -> void
 
 auto Client::connectHttp(const transport::HttpClientOptions &options) -> void
 {
+  auto sharedHeaderState = options.headerState;
   auto runtime = std::make_shared<transport::HttpClientRuntime>(options);
 
   transport::http::StreamableHttpClientOptions streamableOptions;
@@ -1779,11 +1780,11 @@ auto Client::connectHttp(const transport::HttpClientOptions &options) -> void
   streamableOptions.bearerToken = options.bearerToken;
   streamableOptions.tls = options.tls;
   streamableOptions.limits = options.limits;
-  streamableOptions.sessionState = options.sessionState;
-  streamableOptions.protocolVersionState = options.protocolVersionState;
+  streamableOptions.headerState = std::move(sharedHeaderState);
   streamableOptions.enableLegacyHttpSseFallback = options.enableLegacyHttpSseFallback;
   streamableOptions.legacyFallbackPostPath = options.legacyFallbackPostPath;
   streamableOptions.legacyFallbackSsePath = options.legacyFallbackSsePath;
+  streamableOptions.enableGetListen = options.enableGetListen;
 
   connectHttp(std::move(streamableOptions), [runtime](const transport::http::ServerRequest &request) -> transport::http::ServerResponse { return runtime->execute(request); });
 }
