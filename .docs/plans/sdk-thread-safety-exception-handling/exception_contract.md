@@ -325,7 +325,7 @@ session.registerNotificationHandler("my/notification",
         try {
             // Your implementation
         } catch (...) {
-            // Log or handle explicitly - exceptions are suppressed by SDK
+            // Log or handle explicitly - exceptions propagate to caller
         }
     });
 ```

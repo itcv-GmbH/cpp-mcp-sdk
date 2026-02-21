@@ -207,7 +207,7 @@ inline auto getHeader(const HeaderList &headers, std::string_view name) -> std::
   return existing->value;
 }
 
-inline auto isValidSessionId(std::string_view sessionId) -> bool
+inline auto isValidSessionId(std::string_view sessionId) noexcept -> bool
 {
   if (sessionId.empty())
   {
@@ -223,7 +223,7 @@ inline auto isValidSessionId(std::string_view sessionId) -> bool
                      });
 }
 
-inline auto isValidProtocolVersion(std::string_view version) -> bool
+inline auto isValidProtocolVersion(std::string_view version) noexcept -> bool
 {
   if (version.size() != detail::kProtocolVersionLength || version[detail::kProtocolVersionFirstDash] != '-' || version[detail::kProtocolVersionSecondDash] != '-')
   {
@@ -246,7 +246,7 @@ inline auto isValidProtocolVersion(std::string_view version) -> bool
   return true;
 }
 
-inline auto isSupportedProtocolVersion(std::string_view version, const std::vector<std::string> &supportedVersions) -> bool
+inline auto isSupportedProtocolVersion(std::string_view version, const std::vector<std::string> &supportedVersions) noexcept -> bool
 {
   if (supportedVersions.empty())
   {
