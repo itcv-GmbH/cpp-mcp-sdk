@@ -74,6 +74,9 @@ public:
       }
     }
 
+    // Reset the listen loop started flag to allow restart on subsequent start/stop cycles
+    listenLoopStarted_ = false;
+
     const std::scoped_lock lock(mutex_);
     running_ = false;
   }
@@ -123,7 +126,7 @@ public:
     }
 
     // Start the listen loop after sending notifications/initialized
-    if (shouldStartListenLoop && enableGetListen_)
+    if (shouldStartListenLoop)
     {
       startListenLoop();
     }
@@ -132,6 +135,9 @@ public:
 private:
   auto startListenLoop() -> void
   {
+    // Set flag BEFORE starting the loop to ensure proper synchronization
+    listenLoopRunning_.store(true);
+
     // Create the InboundLoop with the listen loop body
     auto loopBody = [this]() -> void { runListenLoop(); };
     inboundLoop_ = std::make_unique<detail::InboundLoop>(std::move(loopBody));
