@@ -10,22 +10,24 @@ Multiple SDK components catch and suppress exceptions without surfacing failures
 * `.docs/plans/sdk-thread-safety-exception-handling/thread_safety_contract.md`
 * `.docs/plans/sdk-thread-safety-exception-handling/exception_contract.md`
 * `src/client/client.cpp` (stdio subprocess reader thread, async pools)
+* `src/detail/inbound_loop.cpp` (transport inbound loop containment)
 * `src/transport/http_runtime.cpp` (server thread)
 * `src/jsonrpc/router.cpp` (thread pool completion and timeout logic)
 * `src/server/stdio_runner.cpp` (exception conversion patterns)
+* `src/transport/streamable_http_client_transport.cpp` (GET listen loop)
 
 ## Output / Definition of Done
 
 * A new public or internal error reporting interface will exist in a dedicated header.
 * Client and server configuration types will accept an error reporting callback.
 * All background loops will report exceptions through this callback.
-* The callback invocation path will be `noexcept` and will never terminate the process.
+* Every callback invocation site will contain exceptions and will never terminate the process.
 
 ## Step-by-Step Instructions
 
 1. Create a dedicated error reporting header under `include/mcp/` that defines:
-   - an error event type containing a component identifier and a message
-   - an error callback type that is `noexcept`
+    - an error event type containing a component identifier and a message
+    - an error callback type that is treated as potentially throwing and is invoked only from catch-all boundaries
 2. Update configuration types for:
    - `mcp::Client`
    - server runners

@@ -12,12 +12,15 @@ Transports and runners create background loops and interact with I/O resources. 
 * `include/mcp/transport/transport.hpp`
 * `include/mcp/transport/stdio.hpp`
 * `include/mcp/transport/http.hpp`
+* `include/mcp/transport/streamable_http_client_transport.hpp`
 * `include/mcp/server/stdio_runner.hpp`
 * `include/mcp/server/streamable_http_runner.hpp`
 * `src/client/client.cpp` (stdio client transport)
 * `src/transport/stdio.cpp`
 * `src/transport/http_client.cpp`
 * `src/transport/http_runtime.cpp`
+* `src/transport/http_server.cpp`
+* `src/transport/streamable_http_client_transport.cpp`
 * `src/server/stdio_runner.cpp`
 * `src/server/streamable_http_runner.cpp`
 

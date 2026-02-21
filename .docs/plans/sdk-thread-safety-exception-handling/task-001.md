@@ -17,24 +17,25 @@ The SDK contains multiple concurrency mechanisms (std::thread, atomics, mutexes,
 
 ## Output / Definition of Done
 
-* `.docs/plans/sdk-thread-safety-exception-handling/thread_safety_contract.md` will exist.
+* `.docs/plans/sdk-thread-safety-exception-handling/thread_safety_contract.md` will be updated and will define the required scope, classifications, and minimum covered type set.
 * The contract document will define:
-  - thread-safety classification for each public type
-  - allowed concurrent entrypoints
-  - lock ordering rules for internal mutexes
-  - lifecycle rules for `start()` and `stop()`
-* Public headers listed in Inputs will contain an explicit "Thread Safety" section that matches the contract.
+  - thread-safety classification for every covered type in the contract scope
+  - method-level concurrency rules for every covered type in the contract scope
+  - callback invocation threading rules for every covered callback type
+  - lock ordering rules for internal mutexes that are held across module boundaries
+  - lifecycle rules for `start()` and `stop()` on covered runtime and transport types
+* Public headers listed in Inputs will contain an explicit "Thread Safety" section that matches the contract for that header's types.
 
 ## Step-by-Step Instructions
 
-1. Create `.docs/plans/sdk-thread-safety-exception-handling/thread_safety_contract.md`.
-2. Enumerate the public types that participate in concurrency:
+1. Update `.docs/plans/sdk-thread-safety-exception-handling/thread_safety_contract.md`.
+2. Enumerate the public types that participate in concurrency and are required to be covered by the contract:
    - `mcp::Client`
    - `mcp::Session`
    - `mcp::jsonrpc::Router`
    - `mcp::transport::Transport` and concrete transports
    - server runners and HTTP runtime types
-3. For each type, specify the thread-safety classification and list entrypoints that are required to be safe under concurrent invocation.
+3. For each covered type, specify the thread-safety classification and list entrypoints that are required to be safe under concurrent invocation.
 4. Define a single lock ordering rule set for shared locks across the SDK.
 5. Update each listed public header to include a "Thread Safety" section that matches the contract document.
 

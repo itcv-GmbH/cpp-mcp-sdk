@@ -17,6 +17,7 @@ The JSON-RPC router is responsible for concurrent in-flight request tracking, ti
 
 * `include/mcp/jsonrpc/router.hpp` will document the router thread-safety guarantees.
 * `src/jsonrpc/router.cpp` will enforce the no-throw rules for background worker contexts.
+* `src/jsonrpc/router.cpp` will contain exceptions thrown by user-provided callbacks (request handlers, notification handlers, and progress callbacks) and will report failures via the unified error reporting mechanism.
 * A unit test will validate correct response routing with concurrent `sendRequest` calls.
 * A unit test will validate that router shutdown completes without throwing.
 

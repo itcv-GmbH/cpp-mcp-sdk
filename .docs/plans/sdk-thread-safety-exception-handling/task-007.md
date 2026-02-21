@@ -21,6 +21,7 @@
   - which callbacks are invoked on which threads
   - which entrypoints will throw
 * Provider callback exception handling will be consistent and will not leak exception objects across thread boundaries.
+* Client and session background execution failures will be reported via the unified error reporting mechanism.
 * Client stop and destruction behavior will be deterministic and will not deadlock.
 
 ## Step-by-Step Instructions
@@ -30,8 +31,8 @@
 3. Ensure handler exceptions are converted to JSON-RPC error responses where the protocol defines a response.
 4. Ensure background loop exceptions are reported via the unified error reporting mechanism.
 5. Add tests that validate:
-   - server-initiated request handling does not deadlock while the client is stopping
-   - provider exceptions result in deterministic error responses
+    - server-initiated request handling does not deadlock while the client is stopping
+    - provider exceptions result in deterministic error responses
 
 ## Verification
 
