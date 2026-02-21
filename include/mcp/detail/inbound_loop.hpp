@@ -13,31 +13,22 @@ namespace mcp::detail
  *
  * @section Exceptions
  *
- * @subsection Thread Safety
- * - Exception containment: Loop body exceptions are caught and suppressed; they never escape
- *   the thread. This prevents std::terminate from uncaught exceptions in background threads.
- * - Clean shutdown: stop() signals termination, join() waits for thread
- * - Thread-safe state: isRunning() is safe to call from any thread
- * - Idempotent: Multiple start/stop calls are safe
- *
  * @subsection Construction
  * - InboundLoop(LoopBody) may throw std::bad_alloc on memory allocation failure
  *
  * @subsection Destruction
- * - ~InboundLoop() is implicitly noexcept. It automatically calls stop() and join().
+ * - ~InboundLoop() default destructor
  *
  * @subsection Lifecycle Operations
- * - start() may throw std::runtime_error if thread creation fails (rare, system limit)
- * - stop() noexcept - safe to call from any thread, sets atomic flag
- * - join() noexcept - waits for thread completion, safe to call multiple times
+ * - start() may throw std::runtime_error if thread creation fails
+ * - stop() sets atomic flag
+ * - join() waits for thread completion
  * - isRunning() noexcept - atomic state check
  *
- * @subsection Loop Body Requirements
- * The LoopBody function passed to the constructor MUST NOT throw exceptions that escape.
- * While the InboundLoop catches all exceptions from the loop body, throwing exceptions
- * from the loop body will:
- * - Trigger exception handling overhead
- * - Potentially terminate the loop unexpectedly
+ * @subsection Loop Body Behavior
+ * The LoopBody function is invoked in a background thread. The current implementation
+ * catches exceptions from the loop body to prevent thread termination, but this is an
+ * implementation detail. Users should write loop bodies that handle their own exceptions.
  *
  * Recommended pattern for loop body:
  * @code
@@ -50,10 +41,9 @@ namespace mcp::detail
  * });
  * @endcode
  *
- * @subsection Exception Guarantees
- * - Basic guarantee for all operations
- * - Noexcept guarantee for stop(), join(), isRunning(), and destructor
- * - Loop body exceptions are caught and suppressed (do not propagate)
+ * @subsection Thread Safety
+ * - stop(), join(), isRunning() are safe to call from any thread
+ * - Multiple start/stop calls are handled safely
  */
 class InboundLoop
 {

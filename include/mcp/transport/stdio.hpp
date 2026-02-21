@@ -49,22 +49,22 @@ namespace mcp::transport
  *
  * @subsection StdioSubprocess
  * - Constructor: Does not throw
- * - Destructor: noexcept, safe cleanup of subprocess resources
+ * - Destructor: Standard destructor behavior
  * - Move operations: noexcept
- * - valid(): noexcept
+ * - valid() noexcept
  * - writeLine(): Throws std::runtime_error on write failure or broken pipe
  * - readLine(): Returns bool success, may throw std::runtime_error on I/O error
- * - closeStdin(): noexcept
- * - waitForExit(): Returns bool, does not throw (uses timeout)
- * - shutdown(): noexcept, returns bool success/failure
- * - isRunning(): Returns bool, does not throw
- * - exitCode(): Returns std::optional<int>, does not throw
- * - capturedStderr(): Returns std::string, does not throw
+ * - closeStdin() noexcept
+ * - waitForExit(): Returns bool
+ * - shutdown() noexcept: Returns bool success/failure
+ * - isRunning(): Returns bool
+ * - exitCode() const: Returns std::optional<int>
+ * - capturedStderr() const: Returns std::string
  *
  * @subsection StdioTransport (Static Methods)
  * - run(): Throws std::runtime_error on I/O error or protocol error
  * - attach(): Throws std::runtime_error on attach failure
- * - routeIncomingLine(): Returns bool success, exceptions from router are contained
+ * - routeIncomingLine(): Returns bool success
  * - spawnSubprocess(): Throws std::runtime_error on subprocess spawn failure
  *
  * @subsection Deprecated Instance Methods
@@ -74,18 +74,18 @@ namespace mcp::transport
  * - attach(std::weak_ptr<Session>): throws std::runtime_error
  * - start(): throws std::runtime_error
  * - stop(): throws std::runtime_error
- * - isRunning(): const noexcept: Returns false (deprecated marker)
+ * - isRunning() const noexcept: Returns false (deprecated marker)
  * - send(): throws std::runtime_error
  *
  * Users should migrate to:
  * - For servers: Use static StdioTransport::run()
  * - For clients: Use mcp::Client::connectStdio() or StdioTransport::spawnSubprocess()
  *
- * @subsection Exception Containment
- * The static run() and attach() methods contain exceptions from:
- * - User-provided router handlers (converted to error responses or logged)
+ * @subsection Exception Behavior
+ * The static run() and attach() methods handle exceptions from:
+ * - User-provided router handlers (suppressed, may be logged)
  * - Message parsing errors (logged, loop continues)
- * - Subprocess I/O errors (terminates loop gracefully)
+ * - Subprocess I/O errors (terminates loop)
  *
  * @subsection Thread Safety Notes
  * - StdioSubprocess: Not thread-safe; external synchronization required

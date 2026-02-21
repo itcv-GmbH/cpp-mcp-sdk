@@ -31,54 +31,53 @@ namespace mcp::transport
  *
  * @subsection StreamableHttpServer
  * - Constructor: Does not throw
- * - Destructor: noexcept, safe shutdown
+ * - Destructor: Standard destructor behavior
  * - Move operations: noexcept
- * - setRequestHandler(), setNotificationHandler(), setResponseHandler(): noexcept
- * - upsertSession(), setSessionState(): noexcept
- * - handleRequest(): Returns ServerResponse, does not throw; errors encoded in response
- * - enqueueServerMessage(): Returns bool success, does not throw
+ * - setRequestHandler(), setNotificationHandler(), setResponseHandler(): Do not throw
+ * - upsertSession(), setSessionState(): Do not throw
+ * - handleRequest(): Returns ServerResponse; errors encoded in response
+ * - enqueueServerMessage(): Returns bool success
  *
  * @subsection StreamableHttpClient
  * - Constructor: May throw std::invalid_argument for invalid options
- * - Destructor: noexcept, safe cleanup
+ * - Destructor: Standard destructor behavior
  * - Move operations: noexcept
  * - send(): Throws std::runtime_error on HTTP error or serialization failure
  * - openListenStream(): Throws std::runtime_error on connection failure
- * - pollListenStream(): Returns StreamableHttpListenResult, does not throw
- * - hasActiveListenStream(): noexcept
- * - terminateSession(): Returns bool, noexcept
+ * - pollListenStream(): Returns StreamableHttpListenResult
+ * - hasActiveListenStream() noexcept
+ * - terminateSession(): Returns bool
  *
  * @subsection HttpServerRuntime
  * - Constructor: Does not throw
- * - Destructor: noexcept
+ * - Destructor: Standard destructor behavior
  * - Move operations: noexcept
- * - setRequestHandler(): noexcept
+ * - setRequestHandler(): Does not throw
  * - start(): Throws std::runtime_error on server startup failure
- * - stop(): noexcept
- * - isRunning(): noexcept
- * - localPort(): noexcept
+ * - stop() noexcept
+ * - isRunning() const noexcept
+ * - localPort() const noexcept
  *
  * @subsection HttpClientRuntime
  * - Constructor: Does not throw
- * - Destructor: noexcept
+ * - Destructor: Standard destructor behavior
  * - Move operations: noexcept
- * - execute(): Throws std::runtime_error on HTTP request failure
+ * - execute() const: Throws std::runtime_error on HTTP request failure
  *
- * @subsection Header Operations (noexcept)
- * - setHeader(), getHeader(): Inline helpers, do not throw
- * - isValidSessionId(), isValidProtocolVersion(): noexcept
- * - isSupportedProtocolVersion(): noexcept
+ * @subsection Header Operations
+ * - setHeader(), getHeader(): Inline helpers; may throw on memory allocation
+ * - isValidSessionId(), isValidProtocolVersion(): noexcept in practice
+ * - isSupportedProtocolVersion(): noexcept in practice
  *
  * @subsection State Classes
  * - SessionHeaderState, ProtocolVersionHeaderState, SharedHeaderState:
- *   - clear(): noexcept
+ *   - clear() noexcept
  *   - Accessor methods: noexcept or simple returns
  *   - captureFromInitializeResponse(), setNegotiatedProtocolVersion(): Return bool success
  *
- * @subsection Request Validation (noexcept)
+ * @subsection Request Validation
  * - rejectRequest(): Returns RequestValidationResult
- * - validateServerRequest(): Returns RequestValidationResult, does not throw
- *   (errors encoded in result.accepted/reject fields)
+ * - validateServerRequest(): Returns RequestValidationResult; errors encoded in result
  */
 
 /**

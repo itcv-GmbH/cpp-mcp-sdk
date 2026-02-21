@@ -30,11 +30,11 @@ namespace mcp::jsonrpc
  * - parseMessageJson(const JsonValue&) throws MessageValidationError for invalid structure
  *
  * @subsection Serialization Operations
- * - toJson(const Message&) returns JsonValue, does not throw under normal conditions
+ * - toJson(const Message&) returns JsonValue
  * - serializeMessage() throws std::runtime_error on serialization failure (rare)
  *
- * @subsection Error Factory Functions (noexcept)
- * All make*Error() and make*ErrorResponse() functions return by value and do not throw:
+ * @subsection Error Factory Functions
+ * All make*Error() and make*ErrorResponse() functions return by value:
  * - makeJsonRpcError(), makeParseError(), makeInvalidRequestError()
  * - makeMethodNotFoundError(), makeInvalidParamsError(), makeInternalError()
  * - makeUrlElicitationRequiredError(), makeErrorResponse(), makeUnknownIdErrorResponse()

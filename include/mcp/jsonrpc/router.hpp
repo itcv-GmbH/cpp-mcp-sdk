@@ -64,33 +64,30 @@ namespace mcp::jsonrpc
  *
  * @section Exceptions
  *
- * The Router class provides the following exception guarantees:
+ * The Router class provides the following exception behavior:
  *
  * @subsection Construction and Destruction
  * - Router(RouterOptions) does not throw
- * - ~Router() is noexcept and never throws
+ * - ~Router() is declared noexcept
  *
- * @subsection Handler Registration (noexcept)
+ * @subsection Handler Registration
  * - registerRequestHandler(), registerNotificationHandler(), unregisterHandler() do not throw
  *
  * @subsection Dispatch Operations
- * - dispatchRequest() may propagate exceptions from user-provided RequestHandler callbacks.
- *   The SDK catches these and converts them to JSON-RPC error responses with correlation ID preserved.
- * - dispatchNotification() never propagates exceptions; handler exceptions are caught and suppressed
- * - dispatchResponse() returns bool, exceptions are contained internally
+ * - dispatchRequest() may propagate exceptions from user-provided RequestHandler callbacks
+ * - dispatchNotification() returns void; current implementation catches callback exceptions
+ * - dispatchResponse() returns bool; current implementation catches callback exceptions
  *
  * @subsection Request Operations
  * - sendRequest() may throw std::runtime_error on transport or serialization failure
- * - sendNotification() does not throw; exceptions are caught and suppressed
+ * - sendNotification() returns void; current implementation catches callback exceptions
  *
  * @subsection Progress Operations
- * - emitProgress() returns bool, does not throw; callback exceptions are caught and suppressed
+ * - emitProgress() returns bool; current implementation catches callback exceptions
  *
- * @subsection Exception Containment Guarantees
- * All SDK-created thread_pool work contains exceptions. No exceptions escape:
- * - Timeout handler threads
- * - Inbound completion threads
- * - Router destructor cleanup
+ * @subsection Background Thread Behavior
+ * Work posted to internal thread pools catches exceptions, but this is an implementation
+ * detail, not a guaranteed contract. Wrap your posted work in try-catch.
  */
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;

@@ -33,37 +33,37 @@ namespace mcp
  * - Session(SessionOptions) does not throw
  *
  * @subsection Destruction
- * - ~Session() is implicitly noexcept (default destructor)
+ * - ~Session() uses default destructor (implicitly noexcept)
  *
  * @subsection Lifecycle Operations (throwing)
  * - attachTransport() throws std::runtime_error on transport error
- * - start() throws std::runtime_error on startup failure
- * - stop() is noexcept - safe shutdown, never throws
+ * - start() may throw std::runtime_error on startup failure
+ * - stop() may throw on failure
  *
  * @subsection Request Operations (throwing)
  * - sendRequest() throws LifecycleError if session is not in kOperating state
  * - enforceOutboundRequestLifecycle() throws LifecycleError for invalid state
- * - sendRequestAsync() - exceptions in callback are contained
+ * - sendRequestAsync() - exceptions in callback are suppressed
  * - sendNotification() may throw LifecycleError for invalid state
  *
- * @subsection Handler Registration (noexcept)
+ * @subsection Handler Registration
  * - registerRequestHandler(), registerNotificationHandler() do not throw
  *
- * @subsection State Accessors (noexcept)
+ * @subsection State Accessors
  * - state() noexcept
  * - negotiatedProtocolVersion() noexcept
- * - supportedProtocolVersions() returns const ref, no allocations
- * - negotiatedParameters() returns const optional ref
  * - role() noexcept
+ * - supportedProtocolVersions() returns const ref
+ * - negotiatedParameters() returns const optional ref
  *
  * @subsection Capability Checking
- * - checkCapability() noexcept
- * - canHandleRequest(), canSendRequest(), canSendNotification() noexcept
+ * - checkCapability() const
+ * - canHandleRequest(), canSendRequest(), canSendNotification() const
  *
- * @subsection Initialize Handling (throwing)
+ * @subsection Initialize Handling
  * - handleInitializeRequest() may throw on protocol violation
  * - handleInitializeResponse() may throw on invalid response
- * - configureServerInitialization() noexcept
+ * - configureServerInitialization() does not throw
  */
 
 /**
