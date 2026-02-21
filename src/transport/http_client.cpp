@@ -471,6 +471,17 @@ struct StreamableHttpClient::Impl
     return request;
   }
 
+  auto makeDeleteRequest() const -> ServerRequest
+  {
+    ServerRequest request;
+    request.method = ServerRequestMethod::kDelete;
+    request.path = endpointPathFromUrl(options.endpointUrl);
+
+    setHeader(request.headers, kHeaderAccept, std::string(kAcceptJsonAndSse));
+    applyCommonRequestHeaders(request.headers, /*isInitializeRequest=*/false);
+    return request;
+  }
+
   auto resolveLegacyPath(std::string_view configuredValue, std::string_view fallbackPath) const -> std::string
   {
     const std::string_view trimmed = detail::trimAsciiWhitespace(configuredValue);
@@ -867,6 +878,21 @@ struct StreamableHttpClient::Impl
       return sendLegacy(message);
     }
 
+    // Handle HTTP 404 - session has been terminated by server
+    if (response.statusCode == kStatusNotFound)
+    {
+      options.headerState->clear();
+      listenState.reset();
+      throw std::runtime_error(statusMessage(response.statusCode, "200"));
+    }
+
+    // Handle HTTP 400 - session required but not provided
+    if (response.statusCode == kStatusBadRequest)
+    {
+      const auto errorBody = detail::trimAsciiWhitespace(response.body);
+      throw std::runtime_error("HTTP 400: " + std::string(errorBody));
+    }
+
     captureSessionFromInitializeResponse(message, response);
 
     StreamableHttpSendResult result;
@@ -953,6 +979,15 @@ struct StreamableHttpClient::Impl
     const ServerResponse response = requestExecutor(makeGetRequest(std::nullopt));
     result.statusCode = response.statusCode;
 
+    // Handle HTTP 404 - session has been terminated by server
+    if (response.statusCode == kStatusNotFound)
+    {
+      options.headerState->clear();
+      listenState.reset();
+      result.streamOpen = false;
+      return result;
+    }
+
     if (response.statusCode == kStatusMethodNotAllowed)
     {
       listenState.reset();
@@ -1008,6 +1043,15 @@ struct StreamableHttpClient::Impl
     StreamableHttpListenResult result;
     result.statusCode = response.statusCode;
 
+    // Handle HTTP 404 - session has been terminated by server, terminate listen loop
+    if (response.statusCode == kStatusNotFound)
+    {
+      options.headerState->clear();
+      listenState.reset();
+      result.streamOpen = false;
+      return result;
+    }
+
     ParsedSsePayload parsed = parseSseResponse(response, std::nullopt, streamState);
     result.messages = std::move(parsed.messages);
     result.streamOpen = streamState.active;
@@ -1021,6 +1065,41 @@ struct StreamableHttpClient::Impl
   }
 
   [[nodiscard]] auto hasActiveListenStream() const noexcept -> bool { return listenState.has_value(); }
+
+  auto terminateSession() -> bool
+  {
+    std::unique_lock lock(mutex);
+
+    if (legacyState.has_value())
+    {
+      throw std::runtime_error("terminateSession is not supported after legacy HTTP+SSE fallback activation.");
+    }
+
+    // Check if we have an active session
+    if (!options.headerState->replayOnSubsequentRequests())
+    {
+      return true;  // No active session to terminate
+    }
+
+    const ServerResponse response = requestExecutor(makeDeleteRequest());
+
+    // Handle HTTP 405 Method Not Allowed - server doesn't support DELETE
+    if (response.statusCode == kStatusMethodNotAllowed)
+    {
+      return false;
+    }
+
+    // Any other 2xx response indicates successful termination
+    if (response.statusCode >= kStatusOk && response.statusCode < kStatusMethodNotAllowed)
+    {
+      options.headerState->clear();
+      listenState.reset();
+      return true;
+    }
+
+    // For other error codes, throw an exception
+    throw std::runtime_error(statusMessage(response.statusCode, "2xx"));
+  }
 
   StreamableHttpClientOptions options;
   RequestExecutor requestExecutor;
@@ -1059,6 +1138,11 @@ auto StreamableHttpClient::pollListenStream() -> StreamableHttpListenResult
 auto StreamableHttpClient::hasActiveListenStream() const noexcept -> bool
 {
   return impl_->hasActiveListenStream();
+}
+
+auto StreamableHttpClient::terminateSession() -> bool
+{
+  return impl_->terminateSession();
 }
 
 }  // namespace mcp::transport::http

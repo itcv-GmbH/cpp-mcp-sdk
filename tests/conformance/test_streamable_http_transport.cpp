@@ -468,31 +468,39 @@ TEST_CASE("Streamable HTTP enforces MCP session and protocol version rules", "[c
 
     mcp_http::StreamableHttpClientOptions staleSessionOptions;
     staleSessionOptions.endpointUrl = "http://localhost/mcp";
-    REQUIRE(staleSessionOptions.sessionState.captureFromInitializeResponse("stale-session"));
-    REQUIRE(staleSessionOptions.protocolVersionState.setNegotiatedProtocolVersion(std::string(mcp::kLatestProtocolVersion)));
+    auto staleHeaderState = std::make_shared<mcp_http::SharedHeaderState>();
+    REQUIRE(staleHeaderState->captureFromInitializeResponse("stale-session", std::string(mcp::kLatestProtocolVersion)));
+    staleSessionOptions.headerState = staleHeaderState;
 
     mcp_http::StreamableHttpClient staleClient(std::move(staleSessionOptions), executor);
     REQUIRE_THROWS(staleClient.send(makeInitializeMessage(1)));
 
     REQUIRE(observedRequests.size() == 1);
     REQUIRE(mcp_http::getHeader(observedRequests[0].headers, mcp_http::kHeaderMcpSessionId) == std::optional<std::string> {"stale-session"});
+    // Note: MCP-Protocol-Version is NOT sent for initialize requests (it's negotiated in the response)
     REQUIRE_FALSE(mcp_http::getHeader(observedRequests[0].headers, mcp_http::kHeaderMcpProtocolVersion).has_value());
 
     mcp_http::StreamableHttpClientOptions reinitOptions;
     reinitOptions.endpointUrl = "http://localhost/mcp";
-    REQUIRE(reinitOptions.protocolVersionState.setNegotiatedProtocolVersion(std::string(mcp::kLatestProtocolVersion)));
+    auto reinitHeaderState = std::make_shared<mcp_http::SharedHeaderState>();
+    // Pre-set protocol version to simulate a client that already negotiated
+    reinitHeaderState->captureFromInitializeResponse(std::nullopt, std::string(mcp::kLatestProtocolVersion));
+    reinitOptions.headerState = reinitHeaderState;
 
     mcp_http::StreamableHttpClient reinitClient(std::move(reinitOptions), executor);
+    // Initialize request also doesn't send protocol version header
     const mcp_http::StreamableHttpSendResult initializeResult = reinitClient.send(makeInitializeMessage(2));
     REQUIRE(initializeResult.statusCode == 200);
     REQUIRE(initializeResult.response.has_value());
 
     REQUIRE(observedRequests.size() == 2);
+    // For initialize request: no session ID, no protocol version
     REQUIRE_FALSE(mcp_http::getHeader(observedRequests[1].headers, mcp_http::kHeaderMcpSessionId).has_value());
     REQUIRE_FALSE(mcp_http::getHeader(observedRequests[1].headers, mcp_http::kHeaderMcpProtocolVersion).has_value());
 
     mcp::jsonrpc::Notification initialized;
     initialized.method = "notifications/initialized";
+    // Post-initialize notification should include the negotiated protocol version
     const mcp_http::StreamableHttpSendResult postInitNotification = reinitClient.send(mcp::jsonrpc::Message {initialized});
     REQUIRE(postInitNotification.statusCode == 202);
     REQUIRE(observedRequests.size() == 3);

@@ -82,6 +82,7 @@ inline constexpr std::uint16_t kHttpStatusOk = 200;
 inline constexpr std::uint16_t kHttpStatusBadRequest = 400;
 inline constexpr std::uint16_t kHttpStatusForbidden = 403;
 inline constexpr std::uint16_t kHttpStatusNotFound = 404;
+inline constexpr std::uint16_t kHttpStatusMethodNotAllowed = 405;
 inline constexpr std::uint32_t kDefaultRetryMilliseconds = 1000U;
 
 using ::mcp::detail::equalsIgnoreCaseAscii;
@@ -609,6 +610,11 @@ public:
   auto openListenStream() -> StreamableHttpListenResult;
   auto pollListenStream() -> StreamableHttpListenResult;
   [[nodiscard]] auto hasActiveListenStream() const noexcept -> bool;
+
+  // Explicitly terminates the MCP session by sending HTTP DELETE.
+  // Servers may return HTTP 405 if they don't support client-initiated termination.
+  // Returns true if termination was successful (2xx response), false if server doesn't support it (405).
+  auto terminateSession() -> bool;
 
 private:
   struct Impl;

@@ -506,6 +506,225 @@ TEST_CASE("HTTP client legacy fallback rejects userinfo in absolute endpoint tar
   REQUIRE(observedRequests.size() == 1);
 }
 
+TEST_CASE("HTTP client clears session state on HTTP 404 and subsequent requests omit MCP-Session-Id", "[transport][http][client]")
+{
+  std::vector<mcp_http::ServerRequest> observedRequests;
+
+  auto headerState = std::make_shared<mcp_http::SharedHeaderState>();
+  // Simulate a session that was established in a previous connection
+  REQUIRE(headerState->captureFromInitializeResponse("active-session", "2025-11-25"));
+
+  mcp_http::StreamableHttpClientOptions options = makeClientOptions();
+  options.headerState = headerState;
+
+  std::size_t requestIndex = 0;
+  mcp_http::StreamableHttpClient client(std::move(options),
+                                        [&observedRequests, &requestIndex](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+                                        {
+                                          observedRequests.push_back(request);
+
+                                          mcp_http::ServerResponse response;
+
+                                          // First request: return 404 to simulate session expiration
+                                          if (requestIndex == 0)
+                                          {
+                                            response.statusCode = 404;
+                                            ++requestIndex;
+                                            return response;
+                                          }
+
+                                          // Subsequent requests: return 200 OK
+                                          response.statusCode = 200;
+                                          mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "application/json");
+                                          response.body = mcp::jsonrpc::serializeMessage(makeSuccessResponse(100));
+                                          ++requestIndex;
+                                          return response;
+                                        });
+
+  // First request should include the session ID
+  requireExceptionContains([&client]() -> void { static_cast<void>(client.send(makeRequest(100, "tools/list"))); }, {"404"});
+
+  REQUIRE(observedRequests.size() == 1);
+  REQUIRE(mcp_http::getHeader(observedRequests.front().headers, mcp_http::kHeaderMcpSessionId) == std::optional<std::string> {"active-session"});
+
+  // Verify session state was cleared
+  REQUIRE_FALSE(headerState->replayOnSubsequentRequests());
+  REQUIRE_FALSE(headerState->sessionId().has_value());
+
+  // Next request should NOT include MCP-Session-Id
+  const auto secondRequestResult = client.send(makeRequest(101, "tools/list"));
+  REQUIRE(secondRequestResult.statusCode == 200);
+  REQUIRE(observedRequests.size() == 2);
+  REQUIRE_FALSE(mcp_http::getHeader(observedRequests.back().headers, mcp_http::kHeaderMcpSessionId).has_value());
+}
+
+TEST_CASE("HTTP client terminateSession sends DELETE and clears state on success", "[transport][http][client]")
+{
+  std::vector<mcp_http::ServerRequest> observedRequests;
+
+  auto headerState = std::make_shared<mcp_http::SharedHeaderState>();
+  REQUIRE(headerState->captureFromInitializeResponse("session-to-terminate", "2025-11-25"));
+
+  mcp_http::StreamableHttpClientOptions options = makeClientOptions();
+  options.headerState = headerState;
+
+  mcp_http::StreamableHttpClient client(std::move(options),
+                                        [&observedRequests](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+                                        {
+                                          observedRequests.push_back(request);
+
+                                          mcp_http::ServerResponse response;
+                                          response.statusCode = 200;
+                                          return response;
+                                        });
+
+  // Verify we have an active session before termination
+  REQUIRE(headerState->replayOnSubsequentRequests());
+  REQUIRE(headerState->sessionId().has_value());
+
+  // Terminate the session
+  const bool result = client.terminateSession();
+  REQUIRE(result);
+
+  // Verify DELETE request was sent with MCP-Session-Id
+  REQUIRE(observedRequests.size() == 1);
+  REQUIRE(observedRequests.front().method == mcp_http::ServerRequestMethod::kDelete);
+  REQUIRE(mcp_http::getHeader(observedRequests.front().headers, mcp_http::kHeaderMcpSessionId) == std::optional<std::string> {"session-to-terminate"});
+
+  // Verify session state was cleared
+  REQUIRE_FALSE(headerState->replayOnSubsequentRequests());
+  REQUIRE_FALSE(headerState->sessionId().has_value());
+}
+
+TEST_CASE("HTTP client terminateSession handles HTTP 405 gracefully", "[transport][http][client]")
+{
+  std::vector<mcp_http::ServerRequest> observedRequests;
+
+  auto headerState = std::make_shared<mcp_http::SharedHeaderState>();
+  REQUIRE(headerState->captureFromInitializeResponse("session-405", "2025-11-25"));
+
+  mcp_http::StreamableHttpClientOptions options = makeClientOptions();
+  options.headerState = headerState;
+
+  mcp_http::StreamableHttpClient client(std::move(options),
+                                        [&observedRequests](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+                                        {
+                                          observedRequests.push_back(request);
+
+                                          mcp_http::ServerResponse response;
+                                          response.statusCode = 405;  // Method Not Allowed
+                                          return response;
+                                        });
+
+  // Verify we have an active session before termination
+  REQUIRE(headerState->replayOnSubsequentRequests());
+
+  // Terminate should return false for 405 but not throw
+  const bool result = client.terminateSession();
+  REQUIRE_FALSE(result);
+
+  // Verify DELETE request was sent
+  REQUIRE(observedRequests.size() == 1);
+  REQUIRE(observedRequests.front().method == mcp_http::ServerRequestMethod::kDelete);
+
+  // Session state should NOT be cleared when server returns 405
+  // (server may not support DELETE, but session is still valid)
+  REQUIRE(headerState->replayOnSubsequentRequests());
+}
+
+TEST_CASE("HTTP client handles HTTP 400 Bad Request for missing MCP-Session-Id", "[transport][http][client]")
+{
+  mcp_http::StreamableHttpClient client(makeClientOptions(),
+                                        [](const mcp_http::ServerRequest &) -> mcp_http::ServerResponse
+                                        {
+                                          mcp_http::ServerResponse response;
+                                          response.statusCode = 400;
+                                          response.body = "Missing required MCP-Session-Id header";
+                                          return response;
+                                        });
+
+  requireExceptionContains([&client]() -> void { static_cast<void>(client.send(makeRequest(200, "tools/list"))); }, {"400", "Missing required MCP-Session-Id"});
+}
+
+TEST_CASE("HTTP client openListenStream clears session state on HTTP 404", "[transport][http][client]")
+{
+  std::vector<mcp_http::ServerRequest> observedRequests;
+
+  auto headerState = std::make_shared<mcp_http::SharedHeaderState>();
+  REQUIRE(headerState->captureFromInitializeResponse("listen-session", "2025-11-25"));
+
+  mcp_http::StreamableHttpClientOptions options = makeClientOptions();
+  options.headerState = headerState;
+
+  mcp_http::StreamableHttpClient client(std::move(options),
+                                        [&observedRequests](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+                                        {
+                                          observedRequests.push_back(request);
+
+                                          mcp_http::ServerResponse response;
+                                          response.statusCode = 404;
+                                          return response;
+                                        });
+
+  // Open listen stream should return 404
+  const auto result = client.openListenStream();
+  REQUIRE(result.statusCode == 404);
+  REQUIRE_FALSE(result.streamOpen);
+
+  // Verify session state was cleared
+  REQUIRE_FALSE(headerState->replayOnSubsequentRequests());
+}
+
+TEST_CASE("HTTP client pollListenStream clears session state on HTTP 404", "[transport][http][client]")
+{
+  // Test using a custom executor that simulates an active listen stream and returns 404 on poll
+  auto headerState = std::make_shared<mcp_http::SharedHeaderState>();
+  REQUIRE(headerState->captureFromInitializeResponse("poll-session", "2025-11-25"));
+
+  mcp_http::StreamableHttpClientOptions options = makeClientOptions();
+  options.headerState = headerState;
+
+  // Track whether we've returned the initial 200 response (simulating openListenStream succeeded)
+  bool initialOpenDone = false;
+
+  mcp_http::StreamableHttpClient client(std::move(options),
+                                        [&initialOpenDone, &headerState](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
+                                        {
+                                          mcp_http::ServerResponse response;
+
+                                          // First request (openListenStream) returns 200 with SSE
+                                          if (!initialOpenDone && request.method == mcp_http::ServerRequestMethod::kGet)
+                                          {
+                                            initialOpenDone = true;
+                                            response.statusCode = 200;
+                                            mcp_http::setHeader(response.headers, mcp_http::kHeaderContentType, "text/event-stream");
+                                            // Return valid SSE data with retry to keep stream open
+                                            mcp::http::sse::Event event;
+                                            event.retryMilliseconds = 5000;
+                                            response.body = mcp::http::sse::encodeEvents({event});
+                                            return response;
+                                          }
+
+                                          // Subsequent GET request (poll) returns 404
+                                          response.statusCode = 404;
+                                          return response;
+                                        });
+
+  // Open listen stream - should succeed
+  const auto opened = client.openListenStream();
+  REQUIRE(opened.statusCode == 200);
+  REQUIRE(opened.streamOpen);
+  REQUIRE(headerState->replayOnSubsequentRequests());
+
+  // Poll the listen stream - should return 404 and clear session state
+  const auto polled = client.pollListenStream();
+  REQUIRE(polled.statusCode == 404);
+  REQUIRE_FALSE(polled.streamOpen);
+
+  // Verify session state was cleared after 404
+  REQUIRE_FALSE(headerState->replayOnSubsequentRequests());
+}
+
 TEST_CASE("HTTP client supports concurrent send and pollListenStream", "[transport][http][client][thread-safe]")
 {
   constexpr std::size_t kSendCount = 20;
