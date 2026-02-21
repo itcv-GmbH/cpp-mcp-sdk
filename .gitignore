@@ -50,3 +50,5 @@ build**/
 examples/http_server_auth/tls/*.pem
 examples/http_server_auth/tls/*.csr
 examples/http_server_auth/tls/*.srl
+
+__pycache__
