@@ -16,7 +16,9 @@
 - `.docs/requirements/cpp-mcp-sdk.md`
 - `.docs/requirements/mcp-spec-2025-11-25/spec/basic/transports.md`
 - `include/mcp/transport/http.hpp`
+- `include/mcp/transport/streamable_http_client_transport.hpp`
 - `src/transport/http_client.cpp`
+- `src/transport/streamable_http_client_transport.cpp`
 - `src/client/client.cpp`
 - `tests/transport_http_client_test.cpp`
 - `tests/client_test.cpp` or a new test file under `tests/`
@@ -51,8 +53,8 @@
 - Some servers will require `MCP-Session-Id` for GET. The transport must not attempt a GET listen stream until after `initialize` completes and the session header state is captured.
 - Failure modes (HTTP 404 session expiration, invalid `Last-Event-ID`, transient HTTP errors) will require a consistent strategy for surfacing errors to callers without crashing background threads.
 
-## Architecture Improvement Opportunities (Not Implemented By This Plan)
+## Architecture Improvements (Must Implement)
 
-- The nested `StreamableHttpClientTransport` in `src/client/client.cpp` will benefit from extraction into `src/transport/` with a dedicated header to improve compilation boundaries and maintainability.
-- `SessionHeaderState` and `ProtocolVersionHeaderState` are value-owned in `StreamableHttpClientOptions` and will benefit from shared ownership to enable multiple coordinated HTTP channels.
-- Transport lifecycle and inbound dispatch will benefit from a unified event-loop abstraction across stdio and HTTP transports.
+- The implementation will extract the nested `StreamableHttpClientTransport` from `src/client/client.cpp` into `src/transport/` and will introduce a dedicated header to define its construction and lifecycle.
+- The implementation will introduce shared ownership for HTTP session and protocol header state so that multiple HTTP channels will operate with a single consistent view of `MCP-Session-Id` and `MCP-Protocol-Version`.
+- The implementation will introduce a unified transport inbound loop abstraction that will be used by both stdio and Streamable HTTP client transports for consistent start, stop, join, and error containment behavior.

@@ -9,7 +9,9 @@
 
 * `.docs/requirements/cpp-mcp-sdk.md` section: "Streamable HTTP GET (Server-Initiated Messages)"
 * `.docs/requirements/mcp-spec-2025-11-25/spec/basic/transports.md` section: "Listening for Messages from the Server"
-* `src/client/client.cpp` (`StreamableHttpClientTransport`)
+* `include/mcp/transport/streamable_http_client_transport.hpp`
+* `src/transport/streamable_http_client_transport.cpp`
+* `src/client/client.cpp`
 * `src/transport/http_client.cpp` (`openListenStream`, `pollListenStream`)
 
 ## Output / Definition of Done

@@ -10,7 +10,9 @@ This task will define the configuration surface required to enable and control S
 * `.docs/requirements/cpp-mcp-sdk.md` sections: "Streamable HTTP (Required)", "Streamable HTTP GET (Server-Initiated Messages)", and "Streamable HTTP SSE Semantics"
 * `.docs/requirements/mcp-spec-2025-11-25/spec/basic/transports.md` sections: "Listening for Messages from the Server", "Resumability and Redelivery"
 * `include/mcp/transport/http.hpp`
-* `src/client/client.cpp` (`StreamableHttpClientTransport`)
+* `include/mcp/transport/streamable_http_client_transport.hpp`
+* `src/transport/streamable_http_client_transport.cpp`
+* `src/client/client.cpp`
 
 ## Output / Definition of Done
 
