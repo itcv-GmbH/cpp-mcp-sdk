@@ -3,9 +3,10 @@
 Streamable HTTP example demonstrating server-initiated messages via GET SSE listen.
 
 This example demonstrates:
-- Streamable HTTP server setup with GET SSE support
+- In-process StreamableHttpServer setup with GET SSE support
 - Client configuration with `enableGetListen = true`
 - Roots provider setup for handling server-initiated requests
+- Complete round-trip: server enqueues `roots/list` → client receives via GET SSE → roots provider invoked → response sent back
 
 ## What is GET SSE Listen?
 
@@ -43,35 +44,46 @@ cmake --build build/vcpkg-unix-release --target mcp_sdk_example_http_listen
 ## Expected Output
 
 ```
-=== Creating Server ===
-=== Configuring HTTP Server ===
-[Server] HTTP server ready for requests
+=== Creating In-Process HTTP Server ===
 
 === Creating Client ===
-[Client] Configured with enableGetListen=true
-[Client] Configured with roots provider for server-initiated requests
+[Client] Initializing connection...
+[Server] Received notifications/initialized from client
+[Client] Initialization successful
 
-=== Demonstrating Server-Initiated Request Flow ===
-[Demo] Server would use httpServer.enqueueServerMessage() to send
-[Demo] a server-initiated roots/list request to the client
-[Demo] Client's rootsProvider would be invoked to handle it
-[Demo] Response would be sent back via the GET SSE connection
+=== Sending Server-Initiated Request ===
+[Server] Enqueueing roots/list request...
+[Server] Enqueue result: success
+[Client] Roots provider invoked (server-initiated request received)
+[Server] Received response from client
+
+=== Verifying Response ===
+[Server] Received success response
+[Server] Response contains 1 root(s)
+[Server]   - uri: file:///example/dynamic-resource
+[Server]     name: Dynamic Resource
 
 === Shutting Down ===
 === Example completed successfully ===
+
+Server-initiated message flow demonstrated:
+  1. Server returned useSse=true in initialize response
+  2. Client enabled GET SSE listen
+  3. Server called enqueueServerMessage(roots/list)
+  4. Client received request via GET SSE
+  5. Client invoked roots provider callback
+  6. Client sent response back to server
+  7. Server received and validated response
 ```
 
 ## Code Flow
 
-1. **Create Server**: Configure a server with tools capability
-2. **Configure StreamableHttpServer**: Set up GET SSE (`allowGetSse = true`)
+1. **Create In-Process Server**: Create a `StreamableHttpServer` instance to handle requests
+2. **Configure Server Handlers**: Set up request handler to return `useSse=true` in initialize response
 3. **Create Client**: Connect via HTTP with `enableGetListen = true`
 4. **Set Roots Provider**: Register a callback for handling server-initiated roots/list requests
-5. **Server sends message**: Would call `httpServer.enqueueServerMessage()` with a roots/list request
-6. **Client responds**: Roots provider is invoked, returns root entries to the server
-
-## Notes
-
-- In a full implementation, the HTTP server would run on a proper server runtime (e.g., `StreamableHttpServerRunner`)
-- The session ID is used to route server-initiated messages to the correct client
-- If a server returns HTTP 405 for GET requests, the client falls back to POST-based message retrieval
+5. **Initialize**: Client sends initialize request, server returns roots capability + useSse=true
+6. **Server Enqueues Message**: Server calls `server.enqueueServerMessage(roots/list request)`
+7. **Client Processes**: Client receives request via GET SSE, invokes roots provider
+8. **Response Sent Back**: Client sends response with roots data to server
+9. **Server Verifies**: Server validates response contains expected roots data
