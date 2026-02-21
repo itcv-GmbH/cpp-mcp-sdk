@@ -44,6 +44,8 @@
 - This plan will not add a new transport interface beyond Streamable HTTP and stdio.
 - This plan will not change server-side Streamable HTTP behavior except where tests require adjustments.
 - This plan will not implement automatic session re-initialization on HTTP 404. The SDK will clear HTTP session header state on HTTP 404 and will require callers to perform a new `initialize` lifecycle before further HTTP requests will succeed.
+- This plan will implement a single concurrent GET SSE listen stream per client instance. Multiple concurrent streams (allowed by MCP 2025-11-25 spec section 6.4) are explicitly out of scope for this iteration.
+- This plan will implement HTTP DELETE for explicit session termination per MCP 2025-11-25 spec section 6.6.
 
 ## Risks / Unknowns
 
@@ -66,6 +68,9 @@
 - The implementation will persist the most recent SSE event ID and will send it as `Last-Event-ID` on subsequent GET polling requests.
 - The implementation will respect SSE `retry` values by delaying reconnect attempts, with delay bounded by configured runtime limits.
 - The implementation will include `MCP-Session-Id` and `MCP-Protocol-Version` headers on GET listen requests after initialization.
+- The implementation will support client-initiated stream closure at any time per MCP 2025-11-25 spec section 6.3.
+- The implementation will support HTTP DELETE for explicit session termination per MCP 2025-11-25 spec section 6.6, handling HTTP 405 if the server does not support client-initiated termination.
+- The implementation will handle HTTP 400 Bad Request for requests missing required `MCP-Session-Id` headers.
 
 ## SDK Consistency Gates (Must Satisfy)
 

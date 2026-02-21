@@ -28,6 +28,10 @@ This document will map this plan to the MCP 2025-11-25 official specification.
   - Plan coverage: `task-004`, `task-005`
 * The implementation will post JSON-RPC responses for server-initiated requests back to the server via HTTP POST.
   - Plan coverage: `task-004`, `task-005`
+* The implementation will support client-initiated stream closure at any time (per MCP 2025-11-25 section 6.3).
+  - Plan coverage: `task-004` (via `stop()` method)
+* The implementation will support a single concurrent GET SSE listen stream per client instance. Multiple concurrent streams (allowed by MCP 2025-11-25 section 6.4) are out of scope for this iteration.
+  - Plan coverage: explicit scope exclusion in `master_plan.md`
 
 ## Retry And Resumption Requirements
 
@@ -43,6 +47,12 @@ This document will map this plan to the MCP 2025-11-25 official specification.
 * The implementation will replay `MCP-Protocol-Version` on all HTTP requests after protocol negotiation.
   - Plan coverage: `task-008`
 * The implementation will clear session header state on HTTP 404 and will require a new initialization lifecycle to re-establish a session.
+  - Plan coverage: `task-010`
+* The implementation will handle HTTP 400 Bad Request for requests missing required `MCP-Session-Id` headers.
+  - Plan coverage: `task-010`
+* The implementation will support HTTP DELETE for explicit session termination per MCP 2025-11-25 section 6.6.
+  - Plan coverage: `task-010`
+* The implementation will handle HTTP 405 from DELETE gracefully (servers may not support client-initiated termination).
   - Plan coverage: `task-010`
 
 ## Concurrency And Lifecycle Requirements

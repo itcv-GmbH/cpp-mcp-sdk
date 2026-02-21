@@ -19,6 +19,7 @@
 * `StreamableHttpClientTransport` will start a background GET listen loop after the client has sent `notifications/initialized` over HTTP.
 * The listen loop will dispatch inbound JSON-RPC messages to the transport's inbound message handler.
 * The listen loop will terminate cleanly on `Client::stop()` and on transport destruction.
+* The implementation will support client-initiated stream closure at any time via the transport's `stop()` method.
 * The implementation will handle HTTP 405 from GET by disabling server-initiated listening without failing POST functionality.
 
 ## Step-by-Step Instructions
@@ -33,9 +34,10 @@
    - dispatch every returned message via the inbound message handler
    - stop when the stream closes or when the transport stops
 4. Implement stop semantics so that:
-   - `stop()` signals the listen loop to terminate
+   - `stop()` signals the listen loop to terminate (client-initiated closure per spec section 6.3)
    - `stop()` joins the background thread
    - repeated `start()`/`stop()` cycles remain safe
+   - client MAY close the SSE stream at any time (per MCP 2025-11-25 spec)
 5. Ensure that listen-loop failures do not crash the process. Failures must result in listen termination and must keep POST send operational.
 
 ## Verification
