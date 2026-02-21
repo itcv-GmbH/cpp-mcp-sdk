@@ -361,7 +361,7 @@ struct StreamableHttpClient::Impl
     std::vector<jsonrpc::Message> bufferedMessages;
   };
 
-  mutable std::mutex mutex_;
+  mutable std::mutex mutex;
 
   explicit Impl(StreamableHttpClientOptions options, RequestExecutor requestExecutor)
     : options(std::move(options))
@@ -498,7 +498,7 @@ struct StreamableHttpClient::Impl
     return absolute->requestTarget;
   }
 
-  auto captureSessionFromInitializeResponse(const jsonrpc::Message &requestMessage, const ServerResponse &response) -> void
+  auto captureSessionFromInitializeResponse(const jsonrpc::Message &requestMessage, const ServerResponse &response) const -> void
   {
     if (!isInitializeRequest(requestMessage) || response.statusCode >= kStatusBadRequest)
     {
@@ -852,7 +852,7 @@ struct StreamableHttpClient::Impl
 
   auto send(const jsonrpc::Message &message) -> StreamableHttpSendResult
   {
-    std::unique_lock lock(mutex_);
+    std::unique_lock lock(mutex);
 
     if (legacyState.has_value())
     {
@@ -939,7 +939,7 @@ struct StreamableHttpClient::Impl
 
   auto openListenStream() -> StreamableHttpListenResult
   {
-    std::unique_lock lock(mutex_);
+    std::unique_lock lock(mutex);
 
     if (legacyState.has_value())
     {
@@ -982,7 +982,7 @@ struct StreamableHttpClient::Impl
 
   auto pollListenStream() -> StreamableHttpListenResult
   {
-    std::unique_lock lock(mutex_);
+    std::unique_lock lock(mutex);
 
     if (legacyState.has_value())
     {
