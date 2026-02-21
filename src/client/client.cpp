@@ -1018,12 +1018,16 @@ public:
     if (readerLoop_)
     {
       readerLoop_->stop();
-      readerLoop_->join();
     }
 
     if (subprocess_.valid())
     {
       static_cast<void>(subprocess_.shutdown());
+    }
+
+    if (readerLoop_)
+    {
+      readerLoop_->join();
     }
   }
 

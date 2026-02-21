@@ -1,5 +1,6 @@
-#include <atomic>
+#include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <future>
 #include <memory>
@@ -7,7 +8,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -46,6 +46,9 @@ TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over
   // Track server-side state for responses
   std::mutex responseMutex;
   std::vector<mcp::jsonrpc::Response> serverReceivedResponses;
+  std::condition_variable responseCv;
+  bool rootsListResponseReceived = false;
+  const mcp::jsonrpc::RequestId expectedRootsRequestId {std::int64_t {100}};
 
   // Create in-process server
   mcp_http::StreamableHttpServer server;
@@ -94,10 +97,22 @@ TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over
 
   // Set up response handler to capture responses sent back by the client
   server.setResponseHandler(
-    [&responseMutex, &serverReceivedResponses](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Response &response) -> bool
+    [&responseMutex, &serverReceivedResponses, &rootsListResponseReceived, &responseCv, &expectedRootsRequestId](const mcp::jsonrpc::RequestContext &,
+                                                                                                                 const mcp::jsonrpc::Response &response) -> bool
     {
       const std::scoped_lock lock(responseMutex);
       serverReceivedResponses.push_back(response);
+      if (std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response) && std::get<mcp::jsonrpc::SuccessResponse>(response).id == expectedRootsRequestId)
+      {
+        rootsListResponseReceived = true;
+      }
+      else if (std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response) && std::get<mcp::jsonrpc::ErrorResponse>(response).id
+               && std::get<mcp::jsonrpc::ErrorResponse>(response).id == expectedRootsRequestId)
+      {
+        rootsListResponseReceived = true;
+      }
+
+      responseCv.notify_all();
       return true;
     });
 
@@ -147,35 +162,47 @@ TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over
   // Note: The client automatically sends notifications/initialized after initialize completes
   // This is required before the server can send server-initiated requests
 
-  // Give the client a moment to set up the listen stream after notifications/initialized
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
   // Step 7: Enqueue a roots/list request from the server (server-initiated JSON-RPC request)
   mcp::jsonrpc::Request rootsListRequest;
-  rootsListRequest.id = mcp::jsonrpc::RequestId {std::int64_t {100}};
+  rootsListRequest.id = expectedRootsRequestId;
   rootsListRequest.method = "roots/list";
   rootsListRequest.params = mcp::jsonrpc::JsonValue::object();
 
   const bool enqueueSuccess = server.enqueueServerMessage(mcp::jsonrpc::Message {rootsListRequest});
   REQUIRE(enqueueSuccess);
 
-  // Step 8: Poll the listen stream to receive the server-initiated request
-  // Note: The client automatically handles the roots/list request by:
-  //   1. Receiving the request from the server
-  //   2. Invoking the roots provider
-  //   3. Sending the response back to the server
-  // We need to poll the transport to trigger the listen cycle
-  // Since we're using in-process transport, we need to manually trigger this
-
-  // Wait a bit for the client to process the request and send response
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // Step 8: Wait for the client to process the server-initiated request and post a response
+  {
+    std::unique_lock lock(responseMutex);
+    REQUIRE(responseCv.wait_for(lock, std::chrono::seconds {5}, [&rootsListResponseReceived] { return rootsListResponseReceived; }) == true);
+  }
 
   // Step 9: Verify the server received the response with correct structure
   {
     const std::scoped_lock lock(responseMutex);
-    REQUIRE(serverReceivedResponses.size() == 1);
+    REQUIRE(serverReceivedResponses.size() >= 1);
 
-    const auto &response = serverReceivedResponses.front();
+    const auto responseIt =
+      std::find_if(serverReceivedResponses.begin(),
+                   serverReceivedResponses.end(),
+                   [&expectedRootsRequestId](const auto &candidate)
+                   {
+                     if (std::holds_alternative<mcp::jsonrpc::SuccessResponse>(candidate) && std::get<mcp::jsonrpc::SuccessResponse>(candidate).id == expectedRootsRequestId)
+                     {
+                       return true;
+                     }
+
+                     if (std::holds_alternative<mcp::jsonrpc::ErrorResponse>(candidate) && std::get<mcp::jsonrpc::ErrorResponse>(candidate).id
+                         && std::get<mcp::jsonrpc::ErrorResponse>(candidate).id == expectedRootsRequestId)
+                     {
+                       return true;
+                     }
+
+                     return false;
+                   });
+
+    REQUIRE(responseIt != serverReceivedResponses.end());
+    const auto &response = *responseIt;
     REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
 
     const auto &successResponse = std::get<mcp::jsonrpc::SuccessResponse>(response);
@@ -184,7 +211,7 @@ TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over
     REQUIRE(successResponse.result["roots"].size() == 1);
     REQUIRE(successResponse.result["roots"][0]["uri"] == "file:///test");
     REQUIRE(successResponse.result["roots"][0]["name"] == "Test Root");
-    REQUIRE(successResponse.id == mcp::jsonrpc::RequestId {std::int64_t {100}});
+    REQUIRE(successResponse.id == expectedRootsRequestId);
   }
 
   // Clean up
