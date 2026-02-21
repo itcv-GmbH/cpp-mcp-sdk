@@ -11,6 +11,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/client/client.hpp>
+#include <mcp/client/roots.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/transport/http.hpp>
@@ -24,7 +25,7 @@ namespace
 
 namespace mcp_http = mcp::transport::http;
 
-auto makeClientOptions() -> mcp_http::StreamableHttpClientOptions
+auto makeHttpClientOptions() -> mcp_http::StreamableHttpClientOptions
 {
   mcp_http::StreamableHttpClientOptions options;
   options.endpointUrl = "http://localhost/mcp";
@@ -33,41 +34,11 @@ auto makeClientOptions() -> mcp_http::StreamableHttpClientOptions
   return options;
 }
 
-auto makeRootsListRequest(std::int64_t id) -> mcp::jsonrpc::Message
-{
-  mcp::jsonrpc::Request request;
-  request.id = id;
-  request.method = "roots/list";
-  request.params = mcp::jsonrpc::JsonValue::object();
-  return mcp::jsonrpc::Message {request};
-}
-
-auto makeInitializeRequest(std::int64_t id) -> mcp::jsonrpc::Message
-{
-  mcp::jsonrpc::Request request;
-  request.id = id;
-  request.method = "initialize";
-  request.params = mcp::jsonrpc::JsonValue::object();
-  (*request.params)["protocolVersion"] = std::string(mcp::kLatestProtocolVersion);
-  (*request.params)["capabilities"] = mcp::jsonrpc::JsonValue::object();
-  (*request.params)["clientInfo"] = mcp::jsonrpc::JsonValue::object();
-  (*request.params)["clientInfo"]["name"] = "test-client";
-  (*request.params)["clientInfo"]["version"] = "1.0.0";
-  return mcp::jsonrpc::Message {request};
-}
-
-auto makeNotification(std::string method) -> mcp::jsonrpc::Message
-{
-  mcp::jsonrpc::Notification notification;
-  notification.method = std::move(method);
-  return mcp::jsonrpc::Message {notification};
-}
-
 }  // namespace
 
 // Test that demonstrates server-initiated JSON-RPC requests delivered over GET SSE stream
-// Complete round-trip: server enqueues roots/list -> client polls -> receives request -> sends response
-TEST_CASE("StreamableHttpClient receives and responds to server-initiated roots/list over GET SSE", "[client][http][listen]")
+// Complete round-trip: server enqueues roots/list -> client polls -> roots provider invoked -> response sent back
+TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over GET SSE", "[client][http][listen]")
 {
   // Track server-side state for responses
   std::mutex responseMutex;
@@ -130,51 +101,73 @@ TEST_CASE("StreamableHttpClient receives and responds to server-initiated roots/
   // Create request executor that delegates to in-process server
   auto requestExecutor = [&server](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse { return server.handleRequest(request); };
 
-  // Create StreamableHttpClient with GET listen enabled
-  mcp_http::StreamableHttpClientOptions clientOptions = makeClientOptions();
-  mcp_http::StreamableHttpClient httpClient(std::move(clientOptions), std::move(requestExecutor));
+  // Step 1: Create mcp::Client instance
+  auto client = mcp::Client::create();
 
-  // Step 1: Send initialize - server returns useSse=true to enable GET SSE listen
-  const auto initResult = httpClient.send(makeInitializeRequest(1));
-  REQUIRE(initResult.statusCode == 200);
-  REQUIRE(initResult.response.has_value());
-  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(*initResult.response));
+  // Step 2: Configure roots provider
+  client->setRootsProvider(
+    [](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry>
+    {
+      mcp::RootEntry entry;
+      entry.uri = "file:///test";
+      entry.name = "Test Root";
+      return {entry};
+    });
 
-  // Step 2: Send notifications/initialized to complete the handshake
-  const auto notifResult = httpClient.send(makeNotification("notifications/initialized"));
-  REQUIRE(notifResult.statusCode == 202);
+  // Step 3: Connect using Client::connectHttp with RequestExecutor
+  mcp_http::StreamableHttpClientOptions clientOptions = makeHttpClientOptions();
+  client->connectHttp(std::move(clientOptions), std::move(requestExecutor));
 
-  // Step 3: Open the GET SSE listen stream (this is the GET listen loop for server-initiated messages)
-  const auto listenOpenResult = httpClient.openListenStream();
-  REQUIRE(listenOpenResult.statusCode == 200);
-  REQUIRE(listenOpenResult.streamOpen);
+  // Step 4: Start the client
+  client->start();
 
-  // Step 4: Enqueue a roots/list request from the server (server-initiated JSON-RPC request)
-  const bool enqueueSuccess = server.enqueueServerMessage(makeRootsListRequest(100));
+  // Step 5: Run initialization
+  // Set up client capabilities to declare roots support - required for handling roots/list requests
+  mcp::RootsCapability rootsCapability;
+  rootsCapability.listChanged = true;
+
+  mcp::ClientInitializeConfiguration initConfig;
+  initConfig.clientInfo = mcp::Implementation {"test-client", "1.0.0"};
+  initConfig.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(initConfig);
+
+  auto initFuture = client->initialize();
+  mcp::jsonrpc::Response initResponse = initFuture.get();
+
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initResponse));
+
+  const auto &initSuccess = std::get<mcp::jsonrpc::SuccessResponse>(initResponse);
+  REQUIRE(initSuccess.result.contains("capabilities"));
+  REQUIRE(initSuccess.result["capabilities"].is_object());
+  REQUIRE(initSuccess.result["capabilities"].contains("roots"));
+
+  // Note: The client automatically sends notifications/initialized after initialize completes
+  // This is required before the server can send server-initiated requests
+
+  // Give the client a moment to set up the listen stream after notifications/initialized
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  // Step 7: Enqueue a roots/list request from the server (server-initiated JSON-RPC request)
+  mcp::jsonrpc::Request rootsListRequest;
+  rootsListRequest.id = mcp::jsonrpc::RequestId {std::int64_t {100}};
+  rootsListRequest.method = "roots/list";
+  rootsListRequest.params = mcp::jsonrpc::JsonValue::object();
+
+  const bool enqueueSuccess = server.enqueueServerMessage(mcp::jsonrpc::Message {rootsListRequest});
   REQUIRE(enqueueSuccess);
 
-  // Step 5: Poll the listen stream to receive the server-initiated request
-  const auto pollResult = httpClient.pollListenStream();
-  REQUIRE(pollResult.statusCode == 200);
-  REQUIRE(pollResult.streamOpen);
-  REQUIRE(pollResult.messages.size() == 1);
+  // Step 8: Poll the listen stream to receive the server-initiated request
+  // Note: The client automatically handles the roots/list request by:
+  //   1. Receiving the request from the server
+  //   2. Invoking the roots provider
+  //   3. Sending the response back to the server
+  // We need to poll the transport to trigger the listen cycle
+  // Since we're using in-process transport, we need to manually trigger this
 
-  // Verify it's a roots/list request from the server
-  REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(pollResult.messages.front()));
-  const auto &rootsRequest = std::get<mcp::jsonrpc::Request>(pollResult.messages.front());
-  REQUIRE(rootsRequest.method == "roots/list");
-  REQUIRE(rootsRequest.id == mcp::jsonrpc::RequestId {std::int64_t {100}});
+  // Wait a bit for the client to process the request and send response
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  // Step 6: Send response back to server (completing the round-trip)
-  mcp::jsonrpc::SuccessResponse manualResponse;
-  manualResponse.id = rootsRequest.id;
-  manualResponse.result = mcp::jsonrpc::JsonValue::object();
-  manualResponse.result["roots"] = mcp::jsonrpc::JsonValue::array();
-
-  const auto responseResult = httpClient.send(mcp::jsonrpc::Message {manualResponse});
-  REQUIRE(responseResult.statusCode == 202);
-
-  // Step 7: Verify the server received the response with correct structure
+  // Step 9: Verify the server received the response with correct structure
   {
     const std::scoped_lock lock(responseMutex);
     REQUIRE(serverReceivedResponses.size() == 1);
@@ -185,8 +178,14 @@ TEST_CASE("StreamableHttpClient receives and responds to server-initiated roots/
     const auto &successResponse = std::get<mcp::jsonrpc::SuccessResponse>(response);
     REQUIRE(successResponse.result.contains("roots"));
     REQUIRE(successResponse.result["roots"].is_array());
+    REQUIRE(successResponse.result["roots"].size() == 1);
+    REQUIRE(successResponse.result["roots"][0]["uri"] == "file:///test");
+    REQUIRE(successResponse.result["roots"][0]["name"] == "Test Root");
     REQUIRE(successResponse.id == mcp::jsonrpc::RequestId {std::int64_t {100}});
   }
+
+  // Clean up
+  client->stop();
 }
 
 // NOLINTEND(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
