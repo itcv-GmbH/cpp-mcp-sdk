@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cstdint>
 #include <exception>
 #include <mutex>
@@ -5,6 +6,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -196,8 +198,11 @@ TEST_CASE("HTTP client surfaces actionable 404 error for stale session requests"
 {
   std::vector<mcp_http::ServerRequest> observedRequests;
 
+  auto headerState = std::make_shared<mcp_http::SharedHeaderState>();
+  REQUIRE(headerState->captureFromInitializeResponse("stale-session", ""));
+
   mcp_http::StreamableHttpClientOptions options = makeClientOptions();
-  REQUIRE(options.sessionState.captureFromInitializeResponse("stale-session"));
+  options.headerState = headerState;
 
   mcp_http::StreamableHttpClient client(std::move(options),
                                         [&observedRequests](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse
@@ -499,6 +504,103 @@ TEST_CASE("HTTP client legacy fallback rejects userinfo in absolute endpoint tar
 
   requireExceptionContains([&client]() -> void { static_cast<void>(client.send(makeRequest(502, "initialize"))); }, {"absolute path", "same-origin"});
   REQUIRE(observedRequests.size() == 1);
+}
+
+TEST_CASE("HTTP client supports concurrent send and pollListenStream", "[transport][http][client][thread-safe]")
+{
+  constexpr std::size_t kSendCount = 20;
+  constexpr std::size_t kPollCount = 20;
+  constexpr std::chrono::milliseconds kMaxWaitTime {5000};
+
+  LocalHttpServerFixture fixture;
+  fixture.server.setRequestHandler(
+    [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &) -> mcp_http::StreamableRequestResult
+    {
+      mcp_http::StreamableRequestResult result;
+      result.useSse = true;
+      result.closeSseConnection = true;
+      result.retryMilliseconds = 10;
+      return result;
+    });
+
+  std::atomic<std::size_t> sendSuccessCount {0};
+  std::atomic<std::size_t> pollSuccessCount {0};
+  std::atomic<bool> testRunning {true};
+
+  mcp_http::StreamableHttpClientOptions options = makeClientOptions();
+  options.defaultRetryMilliseconds = 10;
+  options.waitBeforeReconnect = [](std::uint32_t) {};
+
+  mcp_http::StreamableHttpClient client(std::move(options), [&fixture](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse { return fixture.execute(request); });
+
+  auto startTime = std::chrono::steady_clock::now();
+
+  std::thread sendThread(
+    [&client, &sendSuccessCount, &testRunning, &startTime, &kSendCount]()
+    {
+      for (std::size_t i = 0; i < kSendCount && testRunning.load(); ++i)
+      {
+        try
+        {
+          const auto notification = makeNotification("test/notify");
+          const auto result = client.send(notification);
+          if (result.statusCode == 202)
+          {
+            sendSuccessCount.fetch_add(1, std::memory_order_relaxed);
+          }
+        }
+        catch (...)
+        {
+        }
+      }
+    });
+
+  auto pollThreadFunc = [&client, &pollSuccessCount, &testRunning, &startTime, &kPollCount, &kMaxWaitTime]() -> void
+  {
+    try
+    {
+      const auto opened = client.openListenStream();
+      if (!opened.streamOpen)
+      {
+        return;
+      }
+
+      for (std::size_t i = 0; i < kPollCount && testRunning.load(); ++i)
+      {
+        try
+        {
+          const auto pollResult = client.pollListenStream();
+          if (pollResult.statusCode == 200)
+          {
+            pollSuccessCount.fetch_add(1, std::memory_order_relaxed);
+          }
+
+          if (!pollResult.streamOpen)
+          {
+            break;
+          }
+        }
+        catch (...)
+        {
+        }
+      }
+    }
+    catch (...)
+    {
+    }
+  };
+
+  std::thread pollThread(pollThreadFunc);
+
+  sendThread.join();
+  testRunning.store(false);
+  pollThread.join();
+
+  auto elapsed = std::chrono::steady_clock::now() - startTime;
+
+  REQUIRE(elapsed < kMaxWaitTime);
+  REQUIRE(sendSuccessCount.load() > 0);
+  REQUIRE(pollSuccessCount.load() > 0);
 }
 
 // NOLINTEND(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -359,6 +360,8 @@ struct StreamableHttpClient::Impl
     std::uint32_t retryMilliseconds = 1000;
     std::vector<jsonrpc::Message> bufferedMessages;
   };
+
+  mutable std::mutex mutex_;
 
   explicit Impl(StreamableHttpClientOptions options, RequestExecutor requestExecutor)
     : options(std::move(options))
@@ -849,6 +852,8 @@ struct StreamableHttpClient::Impl
 
   auto send(const jsonrpc::Message &message) -> StreamableHttpSendResult
   {
+    std::unique_lock lock(mutex_);
+
     if (legacyState.has_value())
     {
       return sendLegacy(message);
@@ -915,6 +920,8 @@ struct StreamableHttpClient::Impl
     streamState.retryMilliseconds = options.defaultRetryMilliseconds;
 
     const auto requestId = std::get<jsonrpc::Request>(message).id;
+    lock.unlock();
+
     ParsedSsePayload parsed = parseSseResponse(response, requestId, streamState);
     result.messages = parsed.messages;
     if (parsed.matchingResponse.has_value())
@@ -932,6 +939,8 @@ struct StreamableHttpClient::Impl
 
   auto openListenStream() -> StreamableHttpListenResult
   {
+    std::unique_lock lock(mutex_);
+
     if (legacyState.has_value())
     {
       throw std::runtime_error("openListenStream is not supported after legacy HTTP+SSE fallback activation.");
@@ -951,9 +960,13 @@ struct StreamableHttpClient::Impl
       return result;
     }
 
+    lock.unlock();
+
     ParsedSsePayload parsed = parseSseResponse(response, std::nullopt, streamState);
     result.messages = std::move(parsed.messages);
     result.streamOpen = streamState.active;
+
+    lock.lock();
 
     if (streamState.active)
     {
@@ -969,6 +982,8 @@ struct StreamableHttpClient::Impl
 
   auto pollListenStream() -> StreamableHttpListenResult
   {
+    std::unique_lock lock(mutex_);
+
     if (legacyState.has_value())
     {
       throw std::runtime_error("pollListenStream is not supported after legacy HTTP+SSE fallback activation.");
@@ -980,9 +995,15 @@ struct StreamableHttpClient::Impl
     }
 
     SseState &streamState = listenState.value();
+    const std::optional<std::string> lastEventId = streamState.lastEventId;
+    const std::uint32_t retryMilliseconds = streamState.retryMilliseconds;
 
-    waitForReconnect(streamState.retryMilliseconds);
-    const ServerResponse response = requestExecutor(makeGetRequest(streamState.lastEventId));
+    lock.unlock();
+
+    waitForReconnect(retryMilliseconds);
+    const ServerResponse response = requestExecutor(makeGetRequest(lastEventId));
+
+    lock.lock();
 
     StreamableHttpListenResult result;
     result.statusCode = response.statusCode;
