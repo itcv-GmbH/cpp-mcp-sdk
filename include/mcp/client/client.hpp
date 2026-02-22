@@ -114,12 +114,14 @@ namespace mcp
  *
  * @subsection Callback Exception Behavior
  * Exceptions in user-provided callbacks are handled as follows:
- * - RootsProvider: Exceptions are captured in the returned std::future and propagated to the caller
- *   when the future is accessed
- * - SamplingCreateMessageHandler: Exceptions are captured in the returned std::future and
- *   propagated to the caller when the future is accessed
- * - FormElicitationHandler and UrlElicitationHandler: Exceptions propagate to the Router's
- *   exception handler and are converted to JSON-RPC error responses for request handlers
+ * - RootsProvider: Exceptions are caught and converted to JSON-RPC error responses
+ *   (internal error with the exception message included)
+ * - SamplingCreateMessageHandler: Exceptions are caught and converted to JSON-RPC error responses
+ *   (internal error with the exception message included)
+ * - FormElicitationHandler: Exceptions are caught and converted to JSON-RPC error responses
+ *   (internal error with the exception message included)
+ * - UrlElicitationHandler: Exceptions are caught and converted to JSON-RPC error responses
+ *   (internal error with the exception message included)
  * - Notification handlers: Exceptions are not converted to error responses (notifications have
  *   no response); they propagate to the caller or are handled by the transport's error handling
  */
