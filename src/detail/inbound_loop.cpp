@@ -4,9 +4,8 @@
 #include <utility>
 
 #include <mcp/detail/inbound_loop.hpp>
+#include <mcp/detail/thread_boundary.hpp>
 #include <mcp/error_reporter.hpp>
-
-#include "thread_boundary.hpp"
 
 namespace mcp::detail
 {

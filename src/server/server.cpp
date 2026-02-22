@@ -23,6 +23,7 @@
 #include <jsoncons_ext/jsonschema/json_schema_factory.hpp>
 #include <jsoncons_ext/jsonschema/validation_message.hpp>
 #include <mcp/detail/base64url.hpp>
+#include <mcp/detail/thread_boundary.hpp>
 #include <mcp/error_reporter.hpp>
 #include <mcp/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
@@ -35,8 +36,6 @@
 #include <mcp/server/tools.hpp>
 #include <mcp/util/tasks.hpp>
 #include <mcp/version.hpp>
-
-#include "../detail/thread_boundary.hpp"
 
 namespace mcp
 {
