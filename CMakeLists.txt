@@ -43,9 +43,9 @@ add_library(mcp::sdk ALIAS mcp_sdk)
 set(MCP_SDK_SOURCES
     src/jsonrpc/messages.cpp
     src/jsonrpc/router.cpp
-    src/auth_client_registration.cpp
-    src/auth_loopback_receiver.cpp
-    src/auth_protected_resource_metadata.cpp
+    src/auth/client_registration.cpp
+    src/auth/loopback_receiver.cpp
+    src/auth/protected_resource_metadata.cpp
     src/client/client.cpp
     src/detail/inbound_loop.cpp
     src/lifecycle/session.cpp
@@ -66,9 +66,9 @@ set(MCP_SDK_SOURCES
 )
 
 if(MCP_SDK_ENABLE_AUTH)
-    list(APPEND MCP_SDK_SOURCES src/auth_oauth_client.cpp)
+    list(APPEND MCP_SDK_SOURCES src/auth/oauth_client.cpp)
 else()
-    list(APPEND MCP_SDK_SOURCES src/auth_oauth_client_disabled.cpp)
+    list(APPEND MCP_SDK_SOURCES src/auth/oauth_client_disabled.cpp)
 endif()
 
 target_sources(mcp_sdk PRIVATE ${MCP_SDK_SOURCES})
