@@ -23,6 +23,8 @@
 #include <mcp/util/cancellation.hpp>
 #include <mcp/util/progress.hpp>
 
+#include "../detail/thread_boundary.hpp"
+
 namespace mcp::jsonrpc
 {
 namespace detail
@@ -38,13 +40,20 @@ static constexpr std::size_t kInboundCompletionWorkerCount = 4;
 // 1) The deleter itself is noexcept - no exceptions can escape shared_ptr destruction.
 // 2) Each deletion is isolated in its own thread - no starvation from blocking deletes.
 // 3) On thread creation failure, we leak the pool (acceptable tradeoff vs terminating).
-// 4) No caller-side allocations (no std::function construction that could throw).
-static void deleteThreadPoolNoexcept(boost::asio::thread_pool *pool) noexcept
+// 4) Uses threadBoundary for exception safety and error reporting.
+static void deleteThreadPoolWithReporter(boost::asio::thread_pool *pool, const ErrorReporter &errorReporter) noexcept
 {
   try
   {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    std::thread deletionThread([pool]() -> void { delete pool; });
+    std::thread deletionThread([wrapped = ::mcp::detail::threadBoundary(
+                                  [pool]() noexcept -> void
+                                  {
+                                    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+                                    delete pool;
+                                  },
+                                  errorReporter,
+                                  "Router")]() noexcept -> void { wrapped(); });
     deletionThread.detach();
   }
   // NOLINTNEXTLINE(bugprone-empty-catch)
@@ -159,10 +168,13 @@ Router::Router(RouterOptions options)
   // Create completion pool with custom deleter that ensures destruction
   // runs on a non-pool thread (a detached thread) to avoid crashes when
   // pool destructor runs on its own worker thread.
-  // The deleter is marked noexcept to ensure std::shared_ptr's destructor won't throw.
+  // The deleter uses threadBoundary for exception safety and error reporting.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   auto *rawPool = new boost::asio::thread_pool(detail::kInboundCompletionWorkerCount);
-  inboundState_->completionPool = std::shared_ptr<boost::asio::thread_pool>(rawPool, &detail::deleteThreadPoolNoexcept);
+  // Capture errorReporter by value for use in the deleter
+  const ErrorReporter errorReporter = options_.errorReporter;
+  inboundState_->completionPool = std::shared_ptr<boost::asio::thread_pool>(
+    rawPool, [errorReporter](boost::asio::thread_pool *pool) noexcept -> void { detail::deleteThreadPoolWithReporter(pool, errorReporter); });
 }
 
 Router::~Router() noexcept

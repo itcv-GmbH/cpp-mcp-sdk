@@ -998,6 +998,7 @@ public:
     spawnOptions.argv.insert(spawnOptions.argv.end(), options_.arguments.begin(), options_.arguments.end());
     spawnOptions.envOverrides = options_.environment;
     spawnOptions.stderrMode = transport::StdioClientStderrMode::kCapture;
+    spawnOptions.errorReporter = errorReporter_;
 
     subprocess_ = transport::StdioTransport::spawnSubprocess(spawnOptions);
     if (!subprocess_.valid())
