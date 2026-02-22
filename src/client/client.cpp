@@ -30,6 +30,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/router_options.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/schema/format_diagnostics.hpp>
 #include <mcp/schema/validator.hpp>
 #include <mcp/sdk/error_reporter.hpp>
 #include <mcp/sdk/version.hpp>

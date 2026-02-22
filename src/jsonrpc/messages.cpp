@@ -11,6 +11,7 @@
 #include <variant>
 
 #include <mcp/jsonrpc/all.hpp>
+#include <mcp/schema/format_diagnostics.hpp>
 #include <mcp/schema/validator.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>

@@ -10,7 +10,7 @@
 #include <jsoncons_ext/jsonschema/json_schema.hpp>
 #include <jsoncons_ext/jsonschema/json_schema_factory.hpp>
 #include <jsoncons_ext/jsonschema/validation_message.hpp>
-#include <mcp/schema/pinned_schema.hpp>
+#include <mcp/schema/detail/pinned_schema.hpp>
 #include <mcp/schema/validator.hpp>
 
 namespace mcp::schema

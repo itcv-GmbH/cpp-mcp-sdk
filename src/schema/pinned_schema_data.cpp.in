@@ -1,6 +1,6 @@
 #include <string_view>
 
-#include <mcp/schema/pinned_schema.hpp>
+#include <mcp/schema/detail/pinned_schema.hpp>
 
 namespace mcp::schema::detail
 {
