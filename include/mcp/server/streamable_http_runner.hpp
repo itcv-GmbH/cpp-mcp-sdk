@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/error_reporter.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/transport/http.hpp>
 
@@ -25,6 +26,10 @@ struct StreamableHttpServerRunnerOptions
   /// Options passed through to the underlying Streamable HTTP transport.
   /// Controls endpoint configuration, TLS, authorization, etc.
   transport::http::StreamableHttpServerOptions transportOptions;
+
+  /// Error reporter callback for background execution context failures.
+  /// If not set, errors are silently suppressed.
+  ErrorReporter errorReporter;
 };
 
 /// Runner for serving MCP over Streamable HTTP.

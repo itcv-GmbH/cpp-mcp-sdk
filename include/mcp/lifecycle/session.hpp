@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <jsoncons/json.hpp>
+#include <mcp/error_reporter.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/version.hpp>
 
@@ -144,6 +145,9 @@ struct SessionOptions
     std::string(kLatestProtocolVersion),
     std::string(kLegacyProtocolVersion),
   };
+  /// Error reporter callback for background execution context failures.
+  /// If not set, errors are silently suppressed.
+  ErrorReporter errorReporter;
 };
 
 struct RequestOptions

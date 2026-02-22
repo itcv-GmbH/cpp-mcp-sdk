@@ -4,6 +4,7 @@
 #include <utility>
 
 #include <mcp/detail/inbound_loop.hpp>
+#include <mcp/error_reporter.hpp>
 
 namespace mcp::detail
 {
@@ -11,8 +12,9 @@ namespace mcp::detail
 class InboundLoop::Impl
 {
 public:
-  explicit Impl(LoopBody body)
+  explicit Impl(LoopBody body, ErrorReporter errorReporter)
     : body_(std::move(body))
+    , errorReporter_(std::move(errorReporter))
     , running_(false)
   {
   }
@@ -51,24 +53,24 @@ private:
         body_();
       }
     }
-    // NOLINTNEXTLINE(bugprone-empty-catch)
     catch (...)
     {
       // Exception containment: Prevent exceptions from escaping the thread boundary.
-      // In production, you might want to log or store the exception for later inspection.
-      // For now, we silently swallow exceptions to maintain stable transport operation.
+      // Report the exception through the error reporter if configured.
+      reportCurrentException(errorReporter_, "InboundLoop");
     }
 
     running_.store(false);
   }
 
   LoopBody body_;
+  ErrorReporter errorReporter_;
   std::atomic<bool> running_;
   std::thread thread_;
 };
 
-InboundLoop::InboundLoop(LoopBody body)
-  : impl_(std::make_unique<Impl>(std::move(body)))
+InboundLoop::InboundLoop(LoopBody body, ErrorReporter errorReporter)
+  : impl_(std::make_unique<Impl>(std::move(body), std::move(errorReporter)))
 {
 }
 

@@ -4,6 +4,8 @@
 #include <functional>
 #include <memory>
 
+#include <mcp/error_reporter.hpp>
+
 namespace mcp::detail
 {
 /**
@@ -50,7 +52,10 @@ class InboundLoop
 public:
   using LoopBody = std::function<void()>;
 
-  explicit InboundLoop(LoopBody body);
+  /// Constructs an inbound loop with a body function and optional error reporter.
+  /// @param body The loop body function to execute
+  /// @param errorReporter Optional error reporter for background execution failures
+  explicit InboundLoop(LoopBody body, ErrorReporter errorReporter = {});
   ~InboundLoop();
 
   InboundLoop(const InboundLoop &) = delete;

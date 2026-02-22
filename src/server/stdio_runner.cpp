@@ -10,6 +10,7 @@
 #include <utility>
 #include <variant>
 
+#include <mcp/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
@@ -182,6 +183,8 @@ auto StdioServerRunner::run(std::istream &input, std::ostream &output, std::ostr
     catch (const std::exception &error)
     {
       impl_->writeError(error, errorStream);
+      // Report error through error reporter if configured
+      reportError(impl_->options.errorReporter, "StdioServerRunner", error.what());
       // Emit parse error response with fixed non-sensitive message
       Impl::writeMessage(jsonrpc::Message {jsonrpc::makeUnknownIdErrorResponse(jsonrpc::makeParseError(std::nullopt, "Parse error"))}, output);
     }
@@ -211,6 +214,8 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
     catch (const std::exception &error)
     {
       writeError(error, errorStream);
+      // Report error through error reporter if configured
+      reportError(options.errorReporter, "StdioServerRunner", error.what());
       // Emit internal error response with fixed non-sensitive message
       Impl::writeMessage(jsonrpc::Message {jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Internal error"), request.id)}, output);
     }
@@ -225,6 +230,8 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
     catch (const std::exception &error)
     {
       writeError(error, errorStream);
+      // Report error through error reporter if configured
+      reportError(options.errorReporter, "StdioServerRunner", error.what());
       // For notification dispatch exceptions, emit no output
     }
   }
@@ -238,6 +245,8 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
     catch (const std::exception &error)
     {
       writeError(error, errorStream);
+      // Report error through error reporter if configured
+      reportError(options.errorReporter, "StdioServerRunner", error.what());
       // For response dispatch exceptions, emit no output
     }
   }
@@ -251,6 +260,8 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
     catch (const std::exception &error)
     {
       writeError(error, errorStream);
+      // Report error through error reporter if configured
+      reportError(options.errorReporter, "StdioServerRunner", error.what());
       // For response dispatch exceptions, emit no output
     }
   }

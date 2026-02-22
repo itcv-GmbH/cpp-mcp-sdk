@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <mcp/detail/inbound_loop.hpp>
+#include <mcp/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/http.hpp>
@@ -213,7 +214,8 @@ private:
       {
         // Error containment: listen loop failures should not crash the process
         // Keep POST send operational even if listen loop fails
-        // Log or handle the exception as appropriate
+        // Report the exception through the error reporter if configured
+        reportCurrentException(options_.errorReporter, "StreamableHttpClientTransport");
         break;
       }
     }

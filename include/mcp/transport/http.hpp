@@ -15,6 +15,7 @@
 
 #include <mcp/auth/oauth_server.hpp>
 #include <mcp/detail/ascii.hpp>
+#include <mcp/error_reporter.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/limits.hpp>
@@ -560,6 +561,9 @@ struct HttpServerOptions
     std::string(kLegacyProtocolVersion),
     std::string(kFallbackProtocolVersion),
   };
+  /// Error reporter callback for background execution context failures.
+  /// If not set, errors are silently suppressed.
+  ErrorReporter errorReporter;
 };
 
 namespace http
@@ -682,6 +686,10 @@ struct StreamableHttpClientOptions
   // Allowed) for GET requests, this is treated as a supported configuration and the client
   // will fall back to POST-based message retrieval.
   bool enableGetListen = true;
+
+  /// Error reporter callback for background execution context failures.
+  /// If not set, errors are silently suppressed.
+  ErrorReporter errorReporter;
 };
 
 class StreamableHttpClient
@@ -732,6 +740,10 @@ struct HttpClientOptions
   // Allowed) for GET requests, this is treated as a supported configuration and the client
   // will fall back to POST-based message retrieval.
   bool enableGetListen = true;
+
+  /// Error reporter callback for background execution context failures.
+  /// If not set, errors are silently suppressed.
+  ErrorReporter errorReporter;
 };
 
 using HttpRequestHandler = std::function<http::ServerResponse(const http::ServerRequest &)>;

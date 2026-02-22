@@ -17,6 +17,7 @@
 #include <boost/asio/post.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <mcp/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/util/cancellation.hpp>
@@ -360,8 +361,14 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
       // Capturing shared_ptr by value is noexcept, and we mark the handler noexcept.
       const std::shared_ptr<RequestContext> contextPtr = std::make_shared<RequestContext>(context);
       // Construct lambda separately to ensure exception is caught by outer try/catch
-      auto completionHandler =
-        [poolKeepalive, inboundState, contextPtr, requestId = localRequestId, responsePromise, handlerFuture = std::move(handlerFuture)]() mutable noexcept -> void
+      // NOLINTNEXTLINE(cppcoreguidelines-avoid-capturing-lambda-coroutines) - Intentional capture of error reporter
+      auto completionHandler = [poolKeepalive,
+                                inboundState,
+                                contextPtr,
+                                requestId = localRequestId,
+                                responsePromise,
+                                handlerFuture = std::move(handlerFuture),
+                                errorReporter = options_.errorReporter]() mutable noexcept -> void
       {
         // Wrap entire handler in try/catch to prevent any exceptions from escaping.
         // The noexcept specifier ensures no exceptions escape to the caller.
@@ -377,6 +384,7 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
           {
             Router::completeInboundRequest(inboundState, *contextPtr, requestId);
             detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
+            reportCurrentException(errorReporter, "Router::dispatchRequest");
           }
         }
         // NOLINTNEXTLINE(bugprone-empty-catch, bugprone-exception-escape)

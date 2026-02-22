@@ -26,6 +26,7 @@
 #include <mcp/client/sampling.hpp>
 #include <mcp/detail/inbound_loop.hpp>
 #include <mcp/detail/initialize_codec.hpp>
+#include <mcp/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -960,9 +961,10 @@ static auto isFileUri(std::string_view uri) -> bool
 class SubprocessStdioClientTransport final : public transport::Transport
 {
 public:
-  SubprocessStdioClientTransport(transport::StdioClientOptions options, std::function<void(const jsonrpc::Message &)> inboundMessageHandler)
+  SubprocessStdioClientTransport(transport::StdioClientOptions options, std::function<void(const jsonrpc::Message &)> inboundMessageHandler, ErrorReporter errorReporter = {})
     : options_(std::move(options))
     , inboundMessageHandler_(std::move(inboundMessageHandler))
+    , errorReporter_(std::move(errorReporter))
   {
     if (options_.executablePath.empty())
     {
@@ -1004,7 +1006,7 @@ public:
     }
 
     running_.store(true);
-    readerLoop_ = std::make_unique<detail::InboundLoop>([this]() -> void { readerLoop(); });
+    readerLoop_ = std::make_unique<detail::InboundLoop>([this]() -> void { readerLoop(); }, errorReporter_);
     readerLoop_->start();
   }
 
@@ -1107,12 +1109,16 @@ private:
   transport::StdioSubprocess subprocess_;
   std::unique_ptr<detail::InboundLoop> readerLoop_;
   std::function<void(const jsonrpc::Message &)> inboundMessageHandler_;
+  ErrorReporter errorReporter_;
 };
 
 auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 {
+  // Extract error reporter before moving options
+  ErrorReporter errorReporter = std::move(options.errorReporter);
+
   // NOLINTNEXTLINE(modernize-return-braced-init-list)
-  return std::shared_ptr<Client>(new Client(std::make_shared<Session>(std::move(options))),
+  return std::shared_ptr<Client>(new Client(std::make_shared<Session>(std::move(options)), std::move(errorReporter)),
                                  [](Client *client) noexcept -> void
                                  {
                                    if (!client)
@@ -1149,10 +1155,11 @@ auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex initialization required by MCP protocol
-Client::Client(std::shared_ptr<Session> session)
+Client::Client(std::shared_ptr<Session> session, ErrorReporter errorReporter)
   : session_(std::move(session))
   , asyncWorkPool_(std::make_unique<boost::asio::thread_pool>(kClientAsyncWorkerCount))
   , callbackDispatchPool_(std::make_unique<boost::asio::thread_pool>(kClientCallbackWorkerCount))
+  , errorReporter_(std::move(errorReporter))
 {
   if (!session_)
   {
@@ -1767,18 +1774,20 @@ auto Client::attachTransport(std::shared_ptr<transport::Transport> transport) ->
 
 auto Client::connectStdio(const transport::StdioClientOptions &options) -> void
 {
-  auto transport = std::make_shared<SubprocessStdioClientTransport>(options,
-                                                                    [this](const jsonrpc::Message &inboundMessage) -> void
-                                                                    {
-                                                                      try
-                                                                      {
-                                                                        handleMessage(jsonrpc::RequestContext {}, inboundMessage);
-                                                                      }
-                                                                      catch (const std::exception &error)
-                                                                      {
-                                                                        static_cast<void>(error);
-                                                                      }
-                                                                    });
+  auto transport = std::make_shared<SubprocessStdioClientTransport>(
+    options,
+    [this](const jsonrpc::Message &inboundMessage) -> void
+    {
+      try
+      {
+        handleMessage(jsonrpc::RequestContext {}, inboundMessage);
+      }
+      catch (const std::exception &error)
+      {
+        reportError(errorReporter_, "Client::handleMessage", error.what());
+      }
+    },
+    errorReporter_);
 
   attachTransport(std::move(transport));
 }
@@ -2560,7 +2569,25 @@ auto Client::postManagedTask(std::function<void()> task) -> bool
     return false;
   }
 
-  boost::asio::post(*asyncWorkPool_, std::move(task));
+  // Wrap task with error reporting
+  ErrorReporter reporter = errorReporter_;
+  auto wrappedTask = [task = std::move(task), reporter = std::move(reporter)]() mutable -> void
+  {
+    try
+    {
+      task();
+    }
+    catch (const std::exception &error)
+    {
+      reportError(reporter, "Client::asyncWorkPool", error.what());
+    }
+    catch (...)
+    {
+      reportError(reporter, "Client::asyncWorkPool", "Unknown exception");
+    }
+  };
+
+  boost::asio::post(*asyncWorkPool_, std::move(wrappedTask));
 
   return true;
 }
@@ -2573,7 +2600,25 @@ auto Client::postCallbackTask(std::function<void()> task) -> bool
     return false;
   }
 
-  boost::asio::post(*callbackDispatchPool_, std::move(task));
+  // Wrap task with error reporting
+  ErrorReporter reporter = errorReporter_;
+  auto wrappedTask = [task = std::move(task), reporter = std::move(reporter)]() mutable -> void
+  {
+    try
+    {
+      task();
+    }
+    catch (const std::exception &error)
+    {
+      reportError(reporter, "Client::callbackDispatchPool", error.what());
+    }
+    catch (...)
+    {
+      reportError(reporter, "Client::callbackDispatchPool", "Unknown exception");
+    }
+  };
+
+  boost::asio::post(*callbackDispatchPool_, std::move(wrappedTask));
   return true;
 }
 

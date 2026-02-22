@@ -1,5 +1,6 @@
 #include <atomic>
 #include <cstdint>
+#include <exception>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -18,6 +19,7 @@
 #include <boost/beast/core.hpp>  // NOLINT(misc-include-cleaner)
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/detail/url.hpp>
+#include <mcp/error_reporter.hpp>
 #include <mcp/transport/http.hpp>
 
 #if MCP_SDK_ENABLE_TLS
@@ -466,6 +468,8 @@ struct HttpServerRuntime::Impl
       {
         startupPromise.set_exception(std::current_exception());
       }
+      // Report the exception through the error reporter
+      reportCurrentException(options_.errorReporter, "HttpServerRuntime");
     }
 
     running_.store(false);

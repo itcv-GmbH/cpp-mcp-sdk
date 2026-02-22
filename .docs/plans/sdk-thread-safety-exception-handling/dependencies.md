@@ -1,8 +1,8 @@
 # Dependency Graph
 
 ## Phase 1: Contracts (Must complete first)
-- [ ] `task-001`: Define Thread-Safety Contract
-- [ ] `task-002`: Define Exception Contract
+- [x] `task-001`: Define Thread-Safety Contract
+- [x] `task-002`: Define Exception Contract
 
 ## Phase 2: Infrastructure (Blocked by Phase 1)
 - [ ] `task-003`: Add Unified Error Reporting Mechanism (Depends on: `task-001`, `task-002`)

@@ -161,7 +161,7 @@ class Client : public std::enable_shared_from_this<Client>
 public:
   static auto create(SessionOptions options = {}) -> std::shared_ptr<Client>;
 
-  explicit Client(std::shared_ptr<Session> session);
+  explicit Client(std::shared_ptr<Session> session, ErrorReporter errorReporter = {});
   ~Client() noexcept;
 
   Client(const Client &) = delete;
@@ -301,6 +301,7 @@ private:
   std::atomic<bool> callbackDispatchEnabled_ {true};
   std::optional<jsonrpc::RequestId> pendingInitializeRequestId_;
   std::int64_t nextRequestId_ = 1;
+  ErrorReporter errorReporter_;
 };
 
 }  // namespace mcp

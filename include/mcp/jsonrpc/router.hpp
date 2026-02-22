@@ -14,6 +14,7 @@
 
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <mcp/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/limits.hpp>
 
@@ -94,9 +95,14 @@ using RequestHandler = std::function<std::future<Response>(const RequestContext 
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;
 using OutboundMessageSender = std::function<void(const RequestContext &, Message)>;
 
+#include <mcp/error_reporter.hpp>
+
 struct RouterOptions
 {
   std::size_t maxConcurrentInFlightRequests = security::kDefaultMaxConcurrentInFlightRequests;
+  /// Error reporter callback for background execution context failures.
+  /// If not set, errors are silently suppressed.
+  ::mcp::ErrorReporter errorReporter;
 };
 
 struct ProgressUpdate
