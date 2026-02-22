@@ -2628,3 +2628,227 @@ TEST_CASE("Client connectStdio spawns subprocess and performs initialize/ping", 
   client->stop();
 }
 #endif
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("Client server-initiated request handling does not deadlock during stop", "[client][threading][deadlock]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::RootsCapability rootsCapability;
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  client->setRootsProvider(
+    [](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry>
+    {
+      return {
+        mcp::RootEntry {"file:///workspace/project-a", std::optional<std::string> {"Project A"}, std::nullopt},
+      };
+    });
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  std::promise<void> handlerEnteredPromise;
+  auto handlerEnteredFuture = handlerEnteredPromise.get_future();
+  std::promise<void> releaseHandlerPromise;
+  auto releaseHandlerFuture = releaseHandlerPromise.get_future();
+  std::promise<void> handlerFinishedPromise;
+  auto handlerFinishedFuture = handlerFinishedPromise.get_future();
+
+  std::atomic<bool> stopCompleted = false;
+  std::atomic<bool> stopRaisedException = false;
+
+  client->setRootsProvider(
+    [&handlerEnteredPromise, &releaseHandlerFuture, &handlerFinishedPromise](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry>
+    {
+      handlerEnteredPromise.set_value();
+      releaseHandlerFuture.wait();
+
+      std::vector<mcp::RootEntry> roots;
+      roots.push_back(mcp::RootEntry {"file:///workspace/project-b", std::optional<std::string> {"Project B"}, std::nullopt});
+      handlerFinishedPromise.set_value();
+      return roots;
+    });
+
+  mcp::jsonrpc::Request listRootsRequest;
+  listRootsRequest.id = std::int64_t {9500};
+  listRootsRequest.method = "roots/list";
+  listRootsRequest.params = mcp::jsonrpc::JsonValue::object();
+
+  auto requestFuture = std::async(
+    std::launch::async, [&client, &listRootsRequest]() -> mcp::jsonrpc::Response { return client->handleRequest(mcp::jsonrpc::RequestContext {}, listRootsRequest).get(); });
+
+  REQUIRE(handlerEnteredFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+
+  auto stopFuture = std::async(std::launch::async,
+                               [&client, &stopCompleted, &stopRaisedException]() -> void
+                               {
+                                 try
+                                 {
+                                   client->stop();
+                                   stopCompleted.store(true);
+                                 }
+                                 catch (const std::exception &)
+                                 {
+                                   stopRaisedException.store(true);
+                                 }
+                               });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  releaseHandlerPromise.set_value();
+
+  REQUIRE(handlerFinishedFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+  REQUIRE(requestFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+  REQUIRE(stopFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+
+  const auto response = requestFuture.get();
+  REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
+
+  REQUIRE(stopCompleted.load());
+  REQUIRE_FALSE(stopRaisedException.load());
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+TEST_CASE("Client provider exceptions result in deterministic JSON-RPC error responses", "[client][exceptions][error_handling]")
+{
+  auto client = mcp::Client::create();
+  auto transport = std::make_shared<RecordingTransport>();
+  client->attachTransport(transport);
+  client->start();
+
+  mcp::RootsCapability rootsCapability;
+  mcp::SamplingCapability samplingCapability;
+  mcp::ElicitationCapability elicitationCapability;
+  elicitationCapability.form = true;
+
+  mcp::ClientInitializeConfiguration configuration;
+  configuration.capabilities = mcp::ClientCapabilities(rootsCapability, samplingCapability, elicitationCapability, std::nullopt, std::nullopt);
+  client->setInitializeConfiguration(std::move(configuration));
+
+  auto initializeFuture = client->initialize();
+  const auto outboundMessages = transport->messages();
+  REQUIRE(outboundMessages.size() == 1);
+  const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundMessages.front());
+  REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)));
+  static_cast<void>(initializeFuture.get());
+
+  SECTION("roots/list provider exception returns internal error")
+  {
+    client->setRootsProvider([](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry> { throw std::runtime_error("Simulated roots provider failure"); });
+
+    mcp::jsonrpc::Request listRootsRequest;
+    listRootsRequest.id = std::int64_t {9600};
+    listRootsRequest.method = "roots/list";
+    listRootsRequest.params = mcp::jsonrpc::JsonValue::object();
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, listRootsRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInternalError));
+    REQUIRE(error.error.message.find("roots/list failed") != std::string::npos);
+    REQUIRE(error.error.message.find("Simulated roots provider failure") != std::string::npos);
+  }
+
+  SECTION("sampling/createMessage handler exception returns internal error")
+  {
+    client->setSamplingCreateMessageHandler([](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &) -> std::optional<mcp::jsonrpc::JsonValue>
+                                            { throw std::runtime_error("Simulated sampling handler failure"); });
+
+    mcp::jsonrpc::Request samplingRequest;
+    samplingRequest.id = std::int64_t {9601};
+    samplingRequest.method = "sampling/createMessage";
+    samplingRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*samplingRequest.params)["maxTokens"] = 64;
+    (*samplingRequest.params)["messages"] = mcp::jsonrpc::JsonValue::array();
+    mcp::jsonrpc::JsonValue message = mcp::jsonrpc::JsonValue::object();
+    message["role"] = "user";
+    message["content"] = mcp::jsonrpc::JsonValue::object();
+    message["content"]["type"] = "text";
+    message["content"]["text"] = "hello";
+    (*samplingRequest.params)["messages"].push_back(std::move(message));
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, samplingRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInternalError));
+    REQUIRE(error.error.message.find("sampling/createMessage failed") != std::string::npos);
+    REQUIRE(error.error.message.find("Simulated sampling handler failure") != std::string::npos);
+  }
+
+  SECTION("elicitation/create form handler exception returns internal error")
+  {
+    client->setFormElicitationHandler([](const mcp::ElicitationCreateContext &, const mcp::FormElicitationRequest &) -> mcp::FormElicitationResult
+                                      { throw std::runtime_error("Simulated form elicitation failure"); });
+
+    mcp::jsonrpc::Request elicitationRequest;
+    elicitationRequest.id = std::int64_t {9602};
+    elicitationRequest.method = "elicitation/create";
+    elicitationRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["mode"] = "form";
+    (*elicitationRequest.params)["message"] = "Collect project name";
+    (*elicitationRequest.params)["requestedSchema"] = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["requestedSchema"]["type"] = "object";
+    (*elicitationRequest.params)["requestedSchema"]["properties"] = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["requestedSchema"]["properties"]["name"] = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["requestedSchema"]["properties"]["name"]["type"] = "string";
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, elicitationRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInternalError));
+    REQUIRE(error.error.message.find("elicitation/create form handling failed") != std::string::npos);
+    REQUIRE(error.error.message.find("Simulated form elicitation failure") != std::string::npos);
+  }
+
+  SECTION("elicitation/create url handler exception returns internal error")
+  {
+    // Need to re-initialize client with url capability enabled
+    client = mcp::Client::create();
+    transport = std::make_shared<RecordingTransport>();
+    client->attachTransport(transport);
+    client->start();
+
+    mcp::ElicitationCapability urlElicitationCapability;
+    urlElicitationCapability.url = true;
+
+    mcp::ClientInitializeConfiguration urlConfiguration;
+    urlConfiguration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, urlElicitationCapability, std::nullopt, std::nullopt);
+    client->setInitializeConfiguration(std::move(urlConfiguration));
+
+    auto urlInitFuture = client->initialize();
+    const auto urlOutboundMessages = transport->messages();
+    REQUIRE(urlOutboundMessages.size() == 1);
+    const auto &urlInitRequest = std::get<mcp::jsonrpc::Request>(urlOutboundMessages.front());
+    REQUIRE(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(urlInitRequest.id)));
+    static_cast<void>(urlInitFuture.get());
+
+    client->setUrlElicitationHandler([](const mcp::ElicitationCreateContext &, const mcp::UrlElicitationRequest &) -> mcp::UrlElicitationResult
+                                     { throw std::runtime_error("Simulated URL elicitation failure"); });
+
+    mcp::jsonrpc::Request elicitationRequest;
+    elicitationRequest.id = std::int64_t {9603};
+    elicitationRequest.method = "elicitation/create";
+    elicitationRequest.params = mcp::jsonrpc::JsonValue::object();
+    (*elicitationRequest.params)["mode"] = "url";
+    (*elicitationRequest.params)["elicitationId"] = "elic-test-1";
+    (*elicitationRequest.params)["message"] = "Open settings page";
+    (*elicitationRequest.params)["url"] = "https://example.com/settings";
+
+    const mcp::jsonrpc::Response response = client->handleRequest(mcp::jsonrpc::RequestContext {}, elicitationRequest).get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(response));
+    const auto &error = std::get<mcp::jsonrpc::ErrorResponse>(response);
+    REQUIRE(error.error.code == static_cast<std::int32_t>(mcp::JsonRpcErrorCode::kInternalError));
+    REQUIRE(error.error.message.find("elicitation/create url handling failed") != std::string::npos);
+    REQUIRE(error.error.message.find("Simulated URL elicitation failure") != std::string::npos);
+  }
+}

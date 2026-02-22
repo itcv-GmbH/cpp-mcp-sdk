@@ -113,10 +113,17 @@ namespace mcp
  * - negotiatedProtocolVersion() noexcept
  *
  * @subsection Callback Exception Behavior
- * User-provided callbacks should handle their own exceptions:
- * - RootsProvider: Exceptions may propagate through the returned future; wrap in try-catch
- * - SamplingCreateMessageHandler: Exceptions may propagate through the returned future; wrap in try-catch
- * - FormElicitationHandler and UrlElicitationHandler: Exceptions may propagate; wrap in try-catch
+ * Exceptions in user-provided callbacks are handled as follows:
+ * - RootsProvider: Exceptions are caught and converted to JSON-RPC error responses
+ *   (internal error with the exception message included)
+ * - SamplingCreateMessageHandler: Exceptions are caught and converted to JSON-RPC error responses
+ *   (internal error with the exception message included)
+ * - FormElicitationHandler: Exceptions are caught and converted to JSON-RPC error responses
+ *   (internal error with the exception message included)
+ * - UrlElicitationHandler: Exceptions are caught and converted to JSON-RPC error responses
+ *   (internal error with the exception message included)
+ * - Notification handlers: Exceptions are not converted to error responses (notifications have
+ *   no response); they propagate to the caller or are handled by the transport's error handling
  */
 inline constexpr std::size_t kDefaultMaxPaginationPages = 1024U;
 

@@ -22,53 +22,7 @@ namespace mcp
 /**
  * @brief Session lifecycle management.
  *
- * @section Exceptions
- *
- * @subsection Exception Types
- * - LifecycleError: Thrown on invalid session state transitions or operations in wrong state
- *   Inherits from std::runtime_error
- * - CapabilityError: Thrown when a capability check fails
- *   Inherits from std::runtime_error
- *
- * @subsection Construction
- * - Session(SessionOptions) does not throw
- *
- * @subsection Destruction
- * - ~Session() uses default destructor (implicitly noexcept)
- *
- * @subsection Lifecycle Operations (throwing)
- * - attachTransport() throws std::runtime_error on transport error
- * - start() may throw std::runtime_error on startup failure
- * - stop() may throw on failure
- *
- * @subsection Request Operations (throwing)
- * - sendRequest() throws LifecycleError if session is not in kOperating state
- * - enforceOutboundRequestLifecycle() throws LifecycleError for invalid state
- * - sendRequestAsync() - exceptions in callback are suppressed
- * - sendNotification() may throw LifecycleError for invalid state
- *
- * @subsection Handler Registration
- * - registerRequestHandler(), registerNotificationHandler() do not throw
- *
- * @subsection State Accessors
- * - state() noexcept
- * - negotiatedProtocolVersion() noexcept
- * - role() noexcept
- * - supportedProtocolVersions() returns const ref
- * - negotiatedParameters() returns const optional ref
- *
- * @subsection Capability Checking
- * - checkCapability() const
- * - canHandleRequest(), canSendRequest(), canSendNotification() const
- *
- * @subsection Initialize Handling
- * - handleInitializeRequest() may throw on protocol violation
- * - handleInitializeResponse() may throw on invalid response
- * - configureServerInitialization() does not throw
- */
-
-/**
- * @brief Thread Safety
+ * @section Thread Safety
  *
  * @par Thread-Safety Classification: Thread-safe
  *
@@ -93,7 +47,7 @@ namespace mcp
  * @par Lifecycle Methods (thread-safe):
  * - start() - Thread-safe. Not idempotent - throws LifecycleError if called when state
  *   is not kCreated. Must only be called once per session instance.
- * - stop() - Thread-safe, idempotent
+ * - stop() - Thread-safe, idempotent. Safe to call from any thread. Never throws.
  *
  * @par Concurrency Rules:
  * 1. attachTransport() must be called before start() or while holding external synchronization.
@@ -107,6 +61,63 @@ namespace mcp
  * - -> kStopping -> kStopped
  *
  * State transitions are performed atomically under mutex_. All state queries are atomic.
+ *
+ * @par Handler Threading Configuration:
+ * The SessionOptions::threading field allows configuration of handler threading behavior:
+ * - HandlerThreadingPolicy::kIoThread: Handlers are invoked directly on the I/O thread
+ * - HandlerThreadingPolicy::kExecutor: Handlers are dispatched to the configured Executor
+ *
+ * Note: The threading policy is stored in SessionOptions but actual threading behavior
+ * is determined by the Router and Client/Server implementations that use the Session.
+ * Callbacks may be invoked on I/O threads or internal worker threads depending on
+ * the transport and client/server configuration.
+ *
+ * @section Exceptions
+ *
+ * @subsection Exception Types
+ * - LifecycleError: Thrown on invalid session state transitions or operations in wrong state
+ *   Inherits from std::runtime_error
+ * - CapabilityError: Thrown when a capability check fails
+ *   Inherits from std::runtime_error
+ *
+ * @subsection Construction
+ * - Session(SessionOptions) does not throw
+ *
+ * @subsection Destruction
+ * - ~Session() uses default destructor (implicitly noexcept)
+ *
+ * @subsection Lifecycle Operations (throwing)
+ * - attachTransport() throws std::runtime_error on transport error
+ * - start() may throw std::runtime_error on startup failure (throws LifecycleError if not in kCreated state)
+ * - stop() is noexcept - never throws
+ *
+ * @subsection Request Operations (throwing)
+ * - sendRequest() throws LifecycleError if session is not in appropriate state
+ * - enforceOutboundRequestLifecycle() throws LifecycleError for invalid state
+ * - sendRequestAsync() - exceptions in callback are suppressed by caller
+ * - sendNotification() may throw LifecycleError for invalid state
+ *
+ * @subsection Handler Registration
+ * - registerRequestHandler(), registerNotificationHandler() do not throw
+ *   (request handler exceptions are caught and converted to JSON-RPC error responses by Router;
+ *   notification handler exceptions propagate to the caller since notifications have no response)
+ *
+ * @subsection State Accessors
+ * - state() noexcept
+ * - negotiatedProtocolVersion() noexcept
+ * - role() noexcept
+ * - supportedProtocolVersions() returns const ref (thread-safe, never modified after construction)
+ * - negotiatedParameters() returns const optional ref (protected by mutex_)
+ *
+ * @subsection Capability Checking
+ * - checkCapability() const (thread-safe)
+ * - canHandleRequest(), canSendRequest(), canSendNotification() const (thread-safe)
+ *
+ * @subsection Initialize Handling
+ * - handleInitializeRequest() may throw on protocol violation
+ * - handleInitializeResponse() may throw on invalid response
+ * - handleInitializedNotification() does not throw
+ * - configureServerInitialization() does not throw
  */
 
 namespace transport
@@ -403,7 +414,7 @@ public:
   // Transport and lifecycle
   auto attachTransport(std::shared_ptr<transport::Transport> transport) -> void;
   auto start() -> void;
-  auto stop() -> void;
+  auto stop() noexcept -> void;
 
   // State accessors
   auto state() const noexcept -> SessionState;
