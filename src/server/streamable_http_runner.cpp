@@ -517,7 +517,7 @@ auto StreamableHttpServerRunner::start() -> void
   impl_->running.store(true);
 }
 
-auto StreamableHttpServerRunner::stop() -> void
+auto StreamableHttpServerRunner::stop() noexcept -> void
 {
   if (!impl_->running.load())
   {

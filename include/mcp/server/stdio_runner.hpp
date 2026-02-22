@@ -138,7 +138,7 @@ public:
   /// The host must close the input stream to unblock any blocking reads.
   ///
   /// @note This does not block; it only signals the server thread to stop.
-  auto stop() -> void;
+  auto stop() noexcept -> void;
 
   /// Returns the options used by this runner.
   [[nodiscard]] auto options() const -> const StdioServerRunnerOptions &;

@@ -112,7 +112,7 @@ public:
   /// Stops the HTTP server and closes all active connections.
   ///
   /// This method blocks until all connections are gracefully closed.
-  auto stop() -> void;
+  auto stop() noexcept -> void;
 
   /// Returns whether the server is currently running.
   ///

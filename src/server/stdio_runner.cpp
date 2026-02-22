@@ -320,7 +320,7 @@ auto StdioServerRunner::startAsync() -> std::thread
   return std::thread {[wrapped = mcp::detail::threadBoundary([this]() -> void { run(); }, impl_->options.errorReporter, "StdioServerRunner")]() noexcept -> void { wrapped(); }};
 }
 
-auto StdioServerRunner::stop() -> void
+auto StdioServerRunner::stop() noexcept -> void
 {
   impl_->stopRequested.store(true);
 }
