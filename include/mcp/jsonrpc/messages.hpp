@@ -1,20 +1,33 @@
 #pragma once
 
-#include <cstdint>
-#include <optional>
-#include <stdexcept>
-#include <string>
-#include <string_view>
-#include <variant>
-
-#include <jsoncons/json.hpp>
-#include <mcp/sdk/errors.hpp>
-#include <mcp/sdk/version.hpp>
-
-namespace mcp::jsonrpc
-{
 /**
- * @brief JSON-RPC message types and parsing utilities.
+ * @file messages.hpp
+ * @brief Umbrella header for JSON-RPC message types.
+ *
+ * @section Overview
+ * This header provides access to all JSON-RPC message types, utilities, and error handling.
+ * For specific types, you can include individual headers from the jsonrpc/ directory.
+ *
+ * @subsection Type Categories
+ *
+ * @subsubsection Core Types
+ * - types.hpp: RequestId, JsonValue
+ * - encode_options.hpp: EncodeOptions
+ * - message_validation_error.hpp: MessageValidationError
+ *
+ * @subsubsection Message Types
+ * - request_context.hpp: RequestContext
+ * - request.hpp: Request
+ * - notification.hpp: Notification
+ * - success_response.hpp: SuccessResponse
+ * - error_response.hpp: ErrorResponse
+ * - response.hpp: Response (variant alias)
+ * - message.hpp: Message (variant alias)
+ *
+ * @subsubsection Functions
+ * - message_functions.hpp: parseMessage, parseMessageJson, toJson, serializeMessage
+ * - error_factories.hpp: makeJsonRpcError, makeParseError, etc.
+ * - response_factories.hpp: makeErrorResponse, makeUnknownIdErrorResponse
  *
  * @section Exceptions
  *
@@ -45,79 +58,17 @@ namespace mcp::jsonrpc
  * - Parse failures (malformed JSON)
  * - System errors (memory exhaustion)
  */
-using RequestId = std::variant<std::int64_t, std::string>;
-using JsonValue = jsoncons::json;
 
-struct EncodeOptions
-{
-  bool disallowEmbeddedNewlines = false;
-};
-
-class MessageValidationError : public std::runtime_error
-{
-public:
-  using std::runtime_error::runtime_error;
-};
-
-struct RequestContext
-{
-  std::string protocolVersion = std::string(kLatestProtocolVersion);
-  std::optional<std::string> sessionId;
-  std::optional<std::string> authContext;
-};
-
-struct Request
-{
-  std::string jsonrpc = std::string(kJsonRpcVersion);
-  RequestId id = std::int64_t {0};
-  std::string method;
-  std::optional<JsonValue> params;
-  JsonValue additionalProperties = JsonValue::object();
-};
-
-struct Notification
-{
-  std::string jsonrpc = std::string(kJsonRpcVersion);
-  std::string method;
-  std::optional<JsonValue> params;
-  JsonValue additionalProperties = JsonValue::object();
-};
-
-struct SuccessResponse
-{
-  std::string jsonrpc = std::string(kJsonRpcVersion);
-  RequestId id = std::int64_t {0};
-  JsonValue result;
-  JsonValue additionalProperties = JsonValue::object();
-};
-
-struct ErrorResponse
-{
-  std::string jsonrpc = std::string(kJsonRpcVersion);
-  std::optional<RequestId> id;
-  bool hasUnknownId = false;
-  JsonRpcError error;
-  JsonValue additionalProperties = JsonValue::object();
-};
-
-using Response = std::variant<SuccessResponse, ErrorResponse>;
-using Message = std::variant<Request, Notification, SuccessResponse, ErrorResponse>;
-
-auto parseMessage(std::string_view utf8Json) -> Message;
-auto parseMessageJson(const JsonValue &messageJson) -> Message;
-
-auto toJson(const Message &message) -> JsonValue;
-auto serializeMessage(const Message &message, const EncodeOptions &options = {}) -> std::string;
-
-auto makeJsonRpcError(JsonRpcErrorCode code, std::string message, std::optional<JsonValue> data = std::nullopt) -> JsonRpcError;
-auto makeParseError(std::optional<JsonValue> data = std::nullopt, std::string message = "Parse error") -> JsonRpcError;
-auto makeInvalidRequestError(std::optional<JsonValue> data = std::nullopt, std::string message = "Invalid Request") -> JsonRpcError;
-auto makeMethodNotFoundError(std::optional<JsonValue> data = std::nullopt, std::string message = "Method not found") -> JsonRpcError;
-auto makeInvalidParamsError(std::optional<JsonValue> data = std::nullopt, std::string message = "Invalid params") -> JsonRpcError;
-auto makeInternalError(std::optional<JsonValue> data = std::nullopt, std::string message = "Internal error") -> JsonRpcError;
-auto makeUrlElicitationRequiredError(std::optional<JsonValue> data = std::nullopt, std::string message = "URL elicitation required") -> JsonRpcError;
-
-auto makeErrorResponse(JsonRpcError error, std::optional<RequestId> id = std::nullopt) -> ErrorResponse;
-auto makeUnknownIdErrorResponse(JsonRpcError error) -> ErrorResponse;
-
-}  // namespace mcp::jsonrpc
+#include <mcp/jsonrpc/encode_options.hpp>
+#include <mcp/jsonrpc/error_factories.hpp>
+#include <mcp/jsonrpc/error_response.hpp>
+#include <mcp/jsonrpc/message.hpp>
+#include <mcp/jsonrpc/message_functions.hpp>
+#include <mcp/jsonrpc/message_validation_error.hpp>
+#include <mcp/jsonrpc/notification.hpp>
+#include <mcp/jsonrpc/request.hpp>
+#include <mcp/jsonrpc/request_context.hpp>
+#include <mcp/jsonrpc/response.hpp>
+#include <mcp/jsonrpc/response_factories.hpp>
+#include <mcp/jsonrpc/success_response.hpp>
+#include <mcp/jsonrpc/types.hpp>
