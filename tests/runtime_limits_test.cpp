@@ -16,7 +16,7 @@
 #include <mcp/sdk/errors.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
-#include <mcp/util/tasks.hpp>
+#include <mcp/util/all.hpp>
 
 namespace
 {

@@ -20,7 +20,7 @@
 #include <mcp/server/resources.hpp>
 #include <mcp/server/server_configuration.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/util/tasks.hpp>
+#include <mcp/util/all.hpp>
 
 namespace mcp
 {

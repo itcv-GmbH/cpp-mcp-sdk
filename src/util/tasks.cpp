@@ -24,7 +24,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/security/crypto_random.hpp>
-#include <mcp/util/tasks.hpp>
+#include <mcp/util/all.hpp>
 
 namespace mcp::util
 {

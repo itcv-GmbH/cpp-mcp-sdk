@@ -32,7 +32,7 @@
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
 #include <mcp/transport/transport.hpp>
-#include <mcp/util/tasks.hpp>
+#include <mcp/util/all.hpp>
 
 namespace mcp
 {

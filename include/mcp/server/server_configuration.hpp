@@ -8,7 +8,7 @@
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/util/tasks.hpp>
+#include <mcp/util/all.hpp>
 
 namespace mcp
 {

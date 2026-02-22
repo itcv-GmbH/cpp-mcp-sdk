@@ -41,7 +41,7 @@
 #include <mcp/transport/stdio.hpp>
 #include <mcp/transport/streamable_http_client_transport.hpp>
 #include <mcp/transport/transport.hpp>
-#include <mcp/util/tasks.hpp>
+#include <mcp/util/all.hpp>
 
 namespace mcp
 {

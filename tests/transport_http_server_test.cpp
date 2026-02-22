@@ -11,7 +11,7 @@
 #include <mcp/auth/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http.hpp>
-#include <mcp/util/tasks.hpp>
+#include <mcp/util/all.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
 // readability-magic-numbers, misc-const-correctness)

@@ -21,7 +21,7 @@
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/util/cancellation.hpp>
 #include <mcp/util/progress.hpp>
-#include <mcp/util/tasks.hpp>
+#include <mcp/util/all.hpp>
 
 namespace
 {
