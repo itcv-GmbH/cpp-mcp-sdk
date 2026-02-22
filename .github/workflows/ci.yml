@@ -46,6 +46,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run codebase enforcement checks
+        run: python3 tools/checks/run_checks.py
+
       - name: Set up MSVC (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -129,6 +137,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run codebase enforcement checks
+        run: python3 tools/checks/run_checks.py
+
       - name: Validate pinned vcpkg baseline
         run: |
           baseline=$(jq -r '."builtin-baseline"' vcpkg.json)
@@ -207,6 +223,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Run codebase enforcement checks
+        run: python3 tools/checks/run_checks.py
 
       - name: Validate pinned vcpkg baseline
         run: |

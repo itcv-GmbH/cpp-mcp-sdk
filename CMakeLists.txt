@@ -226,11 +226,24 @@ if(CLANG_FORMAT_EXE)
         COMMENT "Running clang-format on source files"
         VERBATIM
     )
-    
+
     add_custom_target(clang-format-check
         COMMAND ${CLANG_FORMAT_EXE} --dry-run --Werror ${ALL_SOURCE_FILES}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Checking code formatting with clang-format"
         VERBATIM
     )
+endif()
+
+# Codebase enforcement checks
+find_program(PYTHON3_EXE NAMES python3 python)
+if(PYTHON3_EXE)
+    add_custom_target(codebase-check
+        COMMAND ${PYTHON3_EXE} tools/checks/run_checks.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Running codebase enforcement checks"
+        VERBATIM
+    )
+else()
+    message(WARNING "Python3 not found - codebase-check target disabled")
 endif()
