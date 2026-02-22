@@ -662,6 +662,7 @@ Server::Server(std::shared_ptr<Session> session)
 Server::Server(std::shared_ptr<Session> session, ServerConfiguration configuration)
   : session_(std::move(session))
   , configuration_(std::move(configuration))
+  , router_(jsonrpc::RouterOptions {.errorReporter = configuration_.sessionOptions.errorReporter})
 {
   if (!session_)
   {

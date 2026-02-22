@@ -285,7 +285,6 @@ private:
 
   mutable std::mutex mutex_;
   std::shared_ptr<Session> session_;
-  jsonrpc::Router router_;
   std::shared_ptr<transport::Transport> transport_;
   ClientInitializeConfiguration initializeConfiguration_;
   std::optional<RootsProvider> rootsProvider_;
@@ -302,6 +301,7 @@ private:
   std::optional<jsonrpc::RequestId> pendingInitializeRequestId_;
   std::int64_t nextRequestId_ = 1;
   ErrorReporter errorReporter_;
+  jsonrpc::Router router_;
 };
 
 }  // namespace mcp

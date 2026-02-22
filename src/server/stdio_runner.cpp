@@ -54,6 +54,15 @@ struct StdioServerRunner::Impl
     }
   }
 
+  auto writeError(std::string_view message, std::ostream &errorStream) const -> void
+  {
+    if (options.transportOptions.allowStderrLogs)
+    {
+      errorStream << kName << " error: " << message << '\n';
+      errorStream.flush();
+    }
+  }
+
   auto processMessage(const jsonrpc::Message &message, const jsonrpc::RequestContext &context, std::ostream &output, std::ostream &errorStream) const -> void;
 };
 
@@ -188,6 +197,14 @@ auto StdioServerRunner::run(std::istream &input, std::ostream &output, std::ostr
       // Emit parse error response with fixed non-sensitive message
       Impl::writeMessage(jsonrpc::Message {jsonrpc::makeUnknownIdErrorResponse(jsonrpc::makeParseError(std::nullopt, "Parse error"))}, output);
     }
+    catch (...)
+    {
+      impl_->writeError("Unknown exception", errorStream);
+      // Report unknown exception through error reporter if configured
+      reportError(impl_->options.errorReporter, "StdioServerRunner", "Unknown exception");
+      // Emit parse error response with fixed non-sensitive message
+      Impl::writeMessage(jsonrpc::Message {jsonrpc::makeUnknownIdErrorResponse(jsonrpc::makeParseError(std::nullopt, "Parse error"))}, output);
+    }
   }
 
   // Guard destructor will call server->stop() on exit
@@ -219,6 +236,14 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
       // Emit internal error response with fixed non-sensitive message
       Impl::writeMessage(jsonrpc::Message {jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Internal error"), request.id)}, output);
     }
+    catch (...)
+    {
+      writeError("Unknown exception", errorStream);
+      // Report unknown exception through error reporter if configured
+      reportError(options.errorReporter, "StdioServerRunner", "Unknown exception");
+      // Emit internal error response with fixed non-sensitive message
+      Impl::writeMessage(jsonrpc::Message {jsonrpc::makeErrorResponse(jsonrpc::makeInternalError(std::nullopt, "Internal error"), request.id)}, output);
+    }
   }
   else if (std::holds_alternative<jsonrpc::Notification>(message))
   {
@@ -232,6 +257,13 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
       writeError(error, errorStream);
       // Report error through error reporter if configured
       reportError(options.errorReporter, "StdioServerRunner", error.what());
+      // For notification dispatch exceptions, emit no output
+    }
+    catch (...)
+    {
+      writeError("Unknown exception", errorStream);
+      // Report unknown exception through error reporter if configured
+      reportError(options.errorReporter, "StdioServerRunner", "Unknown exception");
       // For notification dispatch exceptions, emit no output
     }
   }
@@ -249,6 +281,13 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
       reportError(options.errorReporter, "StdioServerRunner", error.what());
       // For response dispatch exceptions, emit no output
     }
+    catch (...)
+    {
+      writeError("Unknown exception", errorStream);
+      // Report unknown exception through error reporter if configured
+      reportError(options.errorReporter, "StdioServerRunner", "Unknown exception");
+      // For response dispatch exceptions, emit no output
+    }
   }
   else if (std::holds_alternative<jsonrpc::ErrorResponse>(message))
   {
@@ -262,6 +301,13 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
       writeError(error, errorStream);
       // Report error through error reporter if configured
       reportError(options.errorReporter, "StdioServerRunner", error.what());
+      // For response dispatch exceptions, emit no output
+    }
+    catch (...)
+    {
+      writeError("Unknown exception", errorStream);
+      // Report unknown exception through error reporter if configured
+      reportError(options.errorReporter, "StdioServerRunner", "Unknown exception");
       // For response dispatch exceptions, emit no output
     }
   }

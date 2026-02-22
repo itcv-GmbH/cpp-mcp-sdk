@@ -5,7 +5,6 @@
 #include <memory>
 #include <optional>
 
-#include <mcp/error_reporter.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
@@ -50,10 +49,6 @@ struct CombinedServerRunnerOptions
   /// Only used if enableStdio is true.
   /// @note The caller is responsible for ensuring the stream outlives the runner.
   std::ostream *stdioError = nullptr;
-
-  /// Error reporter callback for background execution context failures.
-  /// If not set, errors are silently suppressed.
-  ErrorReporter errorReporter;
 };
 
 /// Combined runner for serving MCP over multiple transports.

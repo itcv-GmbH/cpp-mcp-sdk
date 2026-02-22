@@ -1066,7 +1066,7 @@ private:
       }
       catch (const std::exception &error)
       {
-        static_cast<void>(error);
+        reportError(errorReporter_, "SubprocessStdioClientTransport::readLine", error.what());
         running_.store(false);
         break;
       }
@@ -1097,7 +1097,7 @@ private:
       }
       catch (const std::exception &error)
       {
-        static_cast<void>(error);
+        reportError(errorReporter_, "SubprocessStdioClientTransport::parseMessage", error.what());
       }
     }
   }
@@ -1160,6 +1160,7 @@ Client::Client(std::shared_ptr<Session> session, ErrorReporter errorReporter)
   , asyncWorkPool_(std::make_unique<boost::asio::thread_pool>(kClientAsyncWorkerCount))
   , callbackDispatchPool_(std::make_unique<boost::asio::thread_pool>(kClientCallbackWorkerCount))
   , errorReporter_(std::move(errorReporter))
+  , router_(jsonrpc::RouterOptions {.errorReporter = errorReporter_})
 {
   if (!session_)
   {
@@ -1172,7 +1173,7 @@ Client::Client(std::shared_ptr<Session> session, ErrorReporter errorReporter)
 
   taskReceiver_ = std::make_shared<util::TaskReceiver>(std::make_shared<util::InMemoryTaskStore>());
   taskReceiver_->setStatusObserver(
-    [weakSession = std::weak_ptr<Session>(session_)](const jsonrpc::RequestContext &, const util::Task &task) -> void
+    [weakSession = std::weak_ptr<Session>(session_), errorReporter = errorReporter_](const jsonrpc::RequestContext &, const util::Task &task) -> void
     {
       const std::shared_ptr<Session> session = weakSession.lock();
       if (!session)
@@ -1197,7 +1198,7 @@ Client::Client(std::shared_ptr<Session> session, ErrorReporter errorReporter)
       }
       catch (const std::exception &error)
       {
-        static_cast<void>(error);
+        reportError(errorReporter, "Client::taskStatusObserver", error.what());
       }
     });
 
@@ -1807,6 +1808,7 @@ auto Client::connectHttp(const transport::HttpClientOptions &options) -> void
   streamableOptions.legacyFallbackPostPath = options.legacyFallbackPostPath;
   streamableOptions.legacyFallbackSsePath = options.legacyFallbackSsePath;
   streamableOptions.enableGetListen = options.enableGetListen;
+  streamableOptions.errorReporter = options.errorReporter;
 
   connectHttp(std::move(streamableOptions), [runtime](const transport::http::ServerRequest &request) -> transport::http::ServerResponse { return runtime->execute(request); });
 }
@@ -1823,7 +1825,7 @@ auto Client::connectHttp(transport::http::StreamableHttpClientOptions options, t
                                                                   }
                                                                   catch (const std::exception &error)
                                                                   {
-                                                                    static_cast<void>(error);
+                                                                    reportError(errorReporter_, "Client::connectHttp::handleMessage", error.what());
                                                                   }
                                                                 });
 
@@ -2273,7 +2275,7 @@ auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestO
         }
         catch (const LifecycleError &error)
         {
-          static_cast<void>(error);
+          reportError(errorReporter_, "Client::sendRequest::handleInitializeResponse", error.what());
         }
 
         return makeReadyResponseFuture(std::move(response));
@@ -2312,12 +2314,12 @@ auto Client::sendRequestAsync(std::string method, jsonrpc::JsonValue params, con
         }
         catch (const std::exception &error)
         {
-          static_cast<void>(error);
+          reportError(errorReporter_, "Client::sendRequestAsync::getResponse", error.what());
           return;
         }
 
         static_cast<void>(postCallbackTask(
-          [callback, response = std::move(response)]() mutable -> void
+          [callback, response = std::move(response), errorReporter = errorReporter_]() mutable -> void
           {
             try
             {
@@ -2325,7 +2327,7 @@ auto Client::sendRequestAsync(std::string method, jsonrpc::JsonValue params, con
             }
             catch (const std::exception &error)
             {
-              static_cast<void>(error);
+              reportError(errorReporter, "Client::sendRequestAsync::callback", error.what());
             }
           }));
 
@@ -2381,7 +2383,7 @@ auto Client::handleResponse(const jsonrpc::RequestContext &context, const jsonrp
     }
     catch (const LifecycleError &error)
     {
-      static_cast<void>(error);
+      reportError(errorReporter_, "Client::handleResponse::handleInitializeResponse", error.what());
       const bool dispatched = router_.dispatchResponse(context, response);
       static_cast<void>(dispatched);
       throw;
