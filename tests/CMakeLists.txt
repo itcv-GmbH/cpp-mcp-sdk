@@ -496,6 +496,51 @@ target_link_libraries(mcp_sdk_test_transport_threading
 
 add_test(NAME mcp_sdk_transport_threading_test COMMAND mcp_sdk_test_transport_threading)
 
+add_executable(mcp_sdk_test_concurrency_concurrent_routing concurrency/concurrent_routing_test.cpp)
+
+target_link_libraries(mcp_sdk_test_concurrency_concurrent_routing
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_concurrency_concurrent_routing_test COMMAND mcp_sdk_test_concurrency_concurrent_routing)
+
+add_executable(mcp_sdk_test_concurrency_exception_containment concurrency/exception_containment_test.cpp)
+
+target_link_libraries(mcp_sdk_test_concurrency_exception_containment
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_concurrency_exception_containment_test COMMAND mcp_sdk_test_concurrency_exception_containment)
+
+add_executable(mcp_sdk_test_concurrency_idempotent_lifecycle concurrency/idempotent_lifecycle_test.cpp)
+
+target_link_libraries(mcp_sdk_test_concurrency_idempotent_lifecycle
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+target_compile_definitions(mcp_sdk_test_concurrency_idempotent_lifecycle
+    PRIVATE
+        MCP_TEST_STDIO_SUBPROCESS_HELPER_PATH="$<TARGET_FILE:mcp_sdk_test_stdio_subprocess_server>"
+)
+
+add_test(NAME mcp_sdk_concurrency_idempotent_lifecycle_test COMMAND mcp_sdk_test_concurrency_idempotent_lifecycle)
+
+add_executable(mcp_sdk_test_concurrency_destructor_safety concurrency/destructor_safety_test.cpp)
+
+target_link_libraries(mcp_sdk_test_concurrency_destructor_safety
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_concurrency_destructor_safety_test COMMAND mcp_sdk_test_concurrency_destructor_safety)
+
 if(MCP_SDK_INTEGRATION_TESTS)
     add_subdirectory(integration)
 endif()
