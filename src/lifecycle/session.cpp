@@ -449,7 +449,7 @@ auto Session::start() -> void
   // State remains kCreated until initialize is sent (client) or received (server)
 }
 
-auto Session::stop() -> void
+auto Session::stop() noexcept -> void
 {
   const std::scoped_lock lock(mutex_);
   if (state_ == SessionState::kStopped)
