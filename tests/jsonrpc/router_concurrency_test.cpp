@@ -97,15 +97,29 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
   const std::int64_t requestsPerThread = 25;
   const std::int64_t totalRequests = numThreads * requestsPerThread;
 
+  using ExpectedContent = std::pair<std::int64_t, std::int64_t>;
+
   std::vector<std::thread> threads;
-  std::vector<std::future<mcp::jsonrpc::Response>> allFutures;
+  std::unordered_map<std::int64_t, std::future<mcp::jsonrpc::Response>> futuresByRequestId;
+  futuresByRequestId.reserve(static_cast<std::size_t>(totalRequests));
   std::mutex futuresMutex;
+
+  std::unordered_map<std::int64_t, ExpectedContent> expectedContentByRequestId;
+  expectedContentByRequestId.reserve(static_cast<std::size_t>(totalRequests));
+  for (std::int64_t t = 0; t < numThreads; ++t)
+  {
+    for (std::int64_t r = 0; r < requestsPerThread; ++r)
+    {
+      const std::int64_t requestId = t * requestsPerThread + r;
+      expectedContentByRequestId.emplace(requestId, ExpectedContent {t, r});
+    }
+  }
 
   // Launch multiple threads, each issuing concurrent requests
   for (std::int64_t t = 0; t < numThreads; ++t)
   {
     threads.emplace_back(
-      [&router, &allFutures, &futuresMutex, t, requestsPerThread]() -> void
+      [&router, &futuresByRequestId, &futuresMutex, t, requestsPerThread]() -> void
       {
         mcp::jsonrpc::RequestContext context;
         context.sessionId = std::string("thread-") + std::to_string(t);
@@ -124,7 +138,7 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
           auto future = router.sendRequest(context, std::move(request));
           {
             const std::scoped_lock lock(futuresMutex);
-            allFutures.push_back(std::move(future));
+            futuresByRequestId.emplace(requestId, std::move(future));
           }
         }
       });
@@ -149,7 +163,7 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
 
   // Dispatch responses from a different thread
   std::thread responseThread(
-    [&router, totalRequests]() -> void
+    [&router, totalRequests, requestsPerThread]() -> void
     {
       const mcp::jsonrpc::RequestContext context;
 
@@ -173,28 +187,10 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
 
   responseThread.join();
 
-  // Verify all futures are resolved
-  REQUIRE(allFutures.size() == static_cast<std::size_t>(totalRequests));
+  // Verify each response is routed to the future created for that request ID.
+  REQUIRE(futuresByRequestId.size() == static_cast<std::size_t>(totalRequests));
 
-  // Build a map from requestId to the expected response content for that request
-  // Each request was created with: requestId = t * requestsPerThread + r
-  // where t is thread index and r is request index within thread
-  // Expected response content: response.result["thread"] = t, response.result["request"] = r
-  std::unordered_map<std::int64_t, std::pair<std::int64_t, std::int64_t>> expectedContentByRequestId;
-  for (std::int64_t t = 0; t < numThreads; ++t)
-  {
-    for (std::int64_t r = 0; r < requestsPerThread; ++r)
-    {
-      const std::int64_t requestId = t * requestsPerThread + r;
-      expectedContentByRequestId[requestId] = {t, r};
-    }
-  }
-
-  // Track which request IDs we've verified
-  std::unordered_set<std::int64_t> verifiedRequestIds;
-  verifiedRequestIds.reserve(static_cast<std::size_t>(totalRequests));
-
-  for (auto &future : allFutures)
+  for (auto &[requestId, future] : futuresByRequestId)
   {
     const std::future_status status = future.wait_for(std::chrono::milliseconds(kResponseWaitMillis));
     REQUIRE(status == std::future_status::ready);
@@ -204,32 +200,19 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
 
     const auto &successResp = std::get<mcp::jsonrpc::SuccessResponse>(response);
 
-    // Verify response has correct ID type
+    // Verify the response delivered to this future carries the matching request ID.
     REQUIRE(std::holds_alternative<std::int64_t>(successResp.id));
-    const std::int64_t responseId = std::get<std::int64_t>(successResp.id);
+    REQUIRE(std::get<std::int64_t>(successResp.id) == requestId);
 
-    // Verify this ID is in our expected range and hasn't been verified yet
-    REQUIRE(responseId >= 0);
-    REQUIRE(responseId < totalRequests);
-    REQUIRE(verifiedRequestIds.find(responseId) == verifiedRequestIds.end());
-
-    // Look up the expected content for this request ID
-    const auto expectedIt = expectedContentByRequestId.find(responseId);
+    const auto expectedIt = expectedContentByRequestId.find(requestId);
     REQUIRE(expectedIt != expectedContentByRequestId.end());
 
-    // Verify the response contains the correct thread and request values
-    // The router should route each response to the future that was created
-    // for the request with the matching ID
+    // Verify response payload still matches the content expected for this request.
     REQUIRE(successResp.result.contains("thread"));
     REQUIRE(successResp.result.contains("request"));
     REQUIRE(successResp.result.at("thread").as<std::int64_t>() == expectedIt->second.first);
     REQUIRE(successResp.result.at("request").as<std::int64_t>() == expectedIt->second.second);
-
-    verifiedRequestIds.insert(responseId);
   }
-
-  // Verify we verified all request IDs
-  REQUIRE(verifiedRequestIds.size() == static_cast<std::size_t>(totalRequests));
 }
 
 TEST_CASE("Router shutdown with in-flight requests completes without throwing", "[jsonrpc][router][concurrency][shutdown]")
