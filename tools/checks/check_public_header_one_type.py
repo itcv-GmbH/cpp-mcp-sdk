@@ -9,7 +9,7 @@ defines more than one top-level class or struct.
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 
 def strip_comments_and_strings(content: str) -> str:
@@ -115,6 +115,70 @@ def strip_comments_and_strings(content: str) -> str:
     return "".join(result)
 
 
+def strip_preprocessor_directives(content: str) -> str:
+    """
+    Replace preprocessor directive lines with whitespace.
+
+    Preserves line and column positions by replacing non-newline characters
+    with spaces.
+    """
+    lines = content.splitlines(keepends=True)
+    sanitized_lines = []
+
+    for line in lines:
+        if line.lstrip().startswith("#"):
+            sanitized_line = "".join("\n" if ch == "\n" else " " for ch in line)
+            sanitized_lines.append(sanitized_line)
+        else:
+            sanitized_lines.append(line)
+
+    return "".join(sanitized_lines)
+
+
+def tokenize_cpp(content: str) -> List[Tuple[str, str, int]]:
+    """
+    Tokenize a C++ source string into (kind, value, line_number) tuples.
+
+    Only emits the tokens needed by the one-type-per-header parser.
+    """
+    tokens: List[Tuple[str, str, int]] = []
+    i = 0
+    line_num = 1
+    n = len(content)
+
+    while i < n:
+        ch = content[i]
+
+        if ch == "\n":
+            line_num += 1
+            i += 1
+            continue
+
+        if ch.isspace():
+            i += 1
+            continue
+
+        if ch.isalpha() or ch == "_":
+            start = i
+            i += 1
+            while i < n and (content[i].isalnum() or content[i] == "_"):
+                i += 1
+            tokens.append(("identifier", content[start:i], line_num))
+            continue
+
+        if ch == ":" and i + 1 < n and content[i + 1] == ":":
+            tokens.append(("symbol", "::", line_num))
+            i += 2
+            continue
+
+        if ch in "{};<>:(),[]=":
+            tokens.append(("symbol", ch, line_num))
+
+        i += 1
+
+    return tokens
+
+
 def count_top_level_types(content: str) -> List[Tuple[str, int]]:
     """
     Count top-level class and struct definitions.
@@ -125,133 +189,120 @@ def count_top_level_types(content: str) -> List[Tuple[str, int]]:
 
     Returns list of (type_name, line_number) tuples for top-level types.
     """
-    types = []
-    lines = content.split("\n")
+    types: List[Tuple[str, int]] = []
 
-    # Track the scope stack: each entry is ('namespace'|'type'|'other', name)
-    scope_stack = []
+    sanitized = strip_preprocessor_directives(content)
+    tokens = tokenize_cpp(sanitized)
 
-    # Track pending type declaration to handle Allman-style braces
-    # Format: (type_name, line_number, namespace_depth_at_declaration)
-    pending_type = None
+    scope_stack: List[str] = []
+    type_scope_depth = 0
 
-    # Pattern to detect namespace keyword
-    namespace_pattern = re.compile(r"\bnamespace\b")
-    # Pattern to match class or struct keyword followed by name
-    type_keyword_pattern = re.compile(r"\b(class|struct)\s+(\w+)")
-    # Pattern to detect forward declaration: class Foo; or struct Foo;
-    forward_decl_pattern = re.compile(r"\b(class|struct)\s+\w+\s*;")
+    pending_namespace = False
+    pending_type: Optional[dict] = None
 
-    for line_num, line in enumerate(lines, 1):
-        stripped = line.strip()
+    expect_template_params = False
+    template_param_depth = 0
 
-        # Skip empty lines and preprocessor directives
-        if not stripped or stripped.startswith("#"):
+    previous_token_kind: Optional[str] = None
+    previous_token_value: Optional[str] = None
+
+    for token_kind, token_value, line_num in tokens:
+        if (
+            token_kind == "identifier"
+            and token_value == "template"
+            and pending_type is None
+        ):
+            expect_template_params = True
+
+        if token_kind == "symbol" and token_value == "<":
+            if expect_template_params:
+                template_param_depth = 1
+                expect_template_params = False
+            elif template_param_depth > 0:
+                template_param_depth += 1
+        elif token_kind == "symbol" and token_value == ">":
+            if template_param_depth > 0:
+                template_param_depth -= 1
+
+        if pending_type is not None:
+            if token_kind == "identifier" and pending_type["name"] is None:
+                pending_type["name"] = token_value
+
+            if token_kind == "symbol" and token_value == "{":
+                if (
+                    pending_type["name"]
+                    and pending_type["top_level"]
+                    and type_scope_depth == 0
+                ):
+                    types.append((pending_type["name"], pending_type["line"]))
+
+                scope_stack.append("type")
+                type_scope_depth += 1
+
+                pending_type = None
+                pending_namespace = False
+                expect_template_params = False
+
+            elif token_kind == "symbol" and token_value == ";":
+                pending_type = None
+                pending_namespace = False
+                expect_template_params = False
+
+            elif token_kind == "symbol" and token_value == "}":
+                pending_type = None
+                pending_namespace = False
+                expect_template_params = False
+                if scope_stack:
+                    popped = scope_stack.pop()
+                    if popped == "type":
+                        type_scope_depth -= 1
+
+            previous_token_kind = token_kind
+            previous_token_value = token_value
             continue
 
-        # Skip forward declarations (class Foo; or struct Foo;)
-        if forward_decl_pattern.search(line):
-            continue
+        if token_kind == "identifier" and token_value == "namespace":
+            pending_namespace = True
 
-        # Track if this line has a namespace declaration
-        has_namespace = namespace_pattern.search(line)
+        elif (
+            token_kind == "identifier"
+            and token_value in {"class", "struct"}
+            and template_param_depth == 0
+        ):
+            is_enum_type = (
+                previous_token_kind == "identifier" and previous_token_value == "enum"
+            )
 
-        # First: check for namespace declaration with opening brace
-        if has_namespace:
-            ns_match = namespace_pattern.search(line)
-            if ns_match and "{" in line[ns_match.end() :]:
-                scope_stack.append(("namespace", None))
+            if not is_enum_type:
+                pending_type = {
+                    "name": None,
+                    "line": line_num,
+                    "top_level": type_scope_depth == 0,
+                }
 
-        # Get current type nesting depth from scope stack (before processing this line)
-        base_type_depth = sum(1 for s in scope_stack if s[0] == "type")
-
-        # Find all type keywords on this line
-        type_matches = list(type_keyword_pattern.finditer(line))
-
-        # Process each type keyword
-        for match in type_matches:
-            keyword = match.group(1)  # 'class' or 'struct'
-            type_name = match.group(2)
-            type_start = match.start()
-
-            # Skip if preceded by 'enum' (enum class/struct)
-            preceding = line[:type_start].strip()
-            if preceding.endswith("enum"):
-                continue
-
-            # Skip template specializations
-            if "template" in preceding:
-                continue
-
-            # Calculate brace depth at this keyword's position:
-            # Count braces before this keyword on this line
-            line_before_keyword = line[:type_start]
-            open_on_line_before = line_before_keyword.count("{")
-            close_on_line_before = line_before_keyword.count("}")
-
-            # Check if any preceding type keywords on this line opened a brace before this keyword
-            types_with_braces_before = 0
-            for prev_match in type_matches:
-                if prev_match.end() < type_start:
-                    # Check if there's a '{' between the end of previous type and this keyword
-                    text_between = line[prev_match.end() : type_start]
-                    if "{" in text_between:
-                        types_with_braces_before += 1
-
-            # Total type depth at this position = base depth + types that opened braces
-            total_type_depth = base_type_depth + types_with_braces_before
-
-            # If at type depth 0, mark as pending - we'll finalize when we see the opening brace
-            # This handles both K&R and Allman brace styles correctly
-            if total_type_depth == 0:
-                pending_type = (type_name, line_num)
-
-        # Process opening braces - finalize pending types and update scope
-        open_braces = line.count("{")
-        close_braces = line.count("}")
-
-        # Process opening braces
-        brace_positions = [i for i, c in enumerate(line) if c == "{"]
-
-        for brace_pos in brace_positions:
-            # Check if this brace follows a type definition
-            matched_type_name = None
-            for match in type_matches:
-                match_end = match.end()
-                if match_end <= brace_pos:
-                    text_between = line[match_end:brace_pos]
-                    stripped_between = text_between.strip()
-                    # Type braces are either immediately after the type name or
-                    # after a constructor initializer list (starting with ':')
-                    if stripped_between == "" or stripped_between.startswith(":"):
-                        matched_type_name = match.group(2)
-                        break
-
-            # Determine the type name for this brace
-            brace_type_name = matched_type_name
-            if not brace_type_name and pending_type:
-                # This brace belongs to the pending type (Allman style)
-                brace_type_name = pending_type[0]
-
-            if brace_type_name:
-                # This brace opens a type definition
-                # Finalize the pending type if it matches
-                if pending_type and pending_type[0] == brace_type_name:
-                    # Check if we're at namespace level only (no type scope)
-                    current_type_depth = sum(1 for s in scope_stack if s[0] == "type")
-                    if current_type_depth == 0:
-                        types.append(pending_type)
-                    pending_type = None
-                scope_stack.append(("type", brace_type_name))
+        elif token_kind == "symbol" and token_value == "{":
+            if pending_namespace:
+                scope_stack.append("namespace")
             else:
-                scope_stack.append(("other", None))
+                scope_stack.append("other")
 
-        # Process closing braces
-        for _ in range(close_braces):
+            pending_namespace = False
+            expect_template_params = False
+
+        elif token_kind == "symbol" and token_value == "}":
+            pending_namespace = False
+            expect_template_params = False
             if scope_stack:
-                scope_stack.pop()
-            # Clear pending type on any closing brace (it was a forward declaration or invalid)
-            pending_type = None
+                popped = scope_stack.pop()
+                if popped == "type":
+                    type_scope_depth -= 1
+
+        elif token_kind == "symbol" and token_value == ";":
+            pending_namespace = False
+            expect_template_params = False
+
+        previous_token_kind = token_kind
+        previous_token_value = token_value
 
     return types
 
