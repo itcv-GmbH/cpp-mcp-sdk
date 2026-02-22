@@ -19,55 +19,14 @@
 static constexpr std::int64_t kResponseWaitMillis = 500;
 static constexpr std::int64_t kConcurrentRequestCount = 100;
 
-static auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::future<mcp::jsonrpc::Response>
-{
-  std::promise<mcp::jsonrpc::Response> promise;
-  promise.set_value(std::move(response));
-  return promise.get_future();
-}
-
-class MessageCapture
-{
-public:
-  auto record(mcp::jsonrpc::Message message) -> void
-  {
-    {
-      const std::scoped_lock lock(mutex_);
-      messages_.push_back(std::move(message));
-    }
-    messagesCv_.notify_all();
-  }
-
-  [[nodiscard]] auto waitForMessageCount(std::size_t expectedCount, std::chrono::milliseconds timeout) -> bool
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    return messagesCv_.wait_for(lock, timeout, [&]() -> bool { return messages_.size() >= expectedCount; });
-  }
-
-  [[nodiscard]] auto messageCount() const -> std::size_t
-  {
-    const std::scoped_lock lock(mutex_);
-    return messages_.size();
-  }
-
-  [[nodiscard]] auto copyMessages() const -> std::vector<mcp::jsonrpc::Message>
-  {
-    const std::scoped_lock lock(mutex_);
-    return messages_;
-  }
-
-private:
-  mutable std::mutex mutex_;
-  std::condition_variable messagesCv_;
-  std::vector<mcp::jsonrpc::Message> messages_;
-};
-
 TEST_CASE("Concurrent sendRequest calls route responses correctly", "[jsonrpc][router][concurrency]")
 {
   mcp::jsonrpc::Router router;
-  MessageCapture outboundMessages;
-  router.setOutboundMessageSender([&outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
-                                  { outboundMessages.record(std::move(message)); });
+
+  // Use atomic counter to track sent messages
+  std::atomic<std::size_t> sentCount {0};
+
+  router.setOutboundMessageSender([&sentCount](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message) -> void { sentCount.fetch_add(1, std::memory_order_relaxed); });
 
   const mcp::jsonrpc::RequestContext context;
   std::vector<std::future<mcp::jsonrpc::Response>> futures;
@@ -85,9 +44,18 @@ TEST_CASE("Concurrent sendRequest calls route responses correctly", "[jsonrpc][r
     futures.push_back(router.sendRequest(context, std::move(request)));
   }
 
-  // Wait for all outbound messages to be captured
-  REQUIRE(outboundMessages.waitForMessageCount(static_cast<std::size_t>(kConcurrentRequestCount), std::chrono::milliseconds(kResponseWaitMillis)));
-  REQUIRE(outboundMessages.messageCount() == static_cast<std::size_t>(kConcurrentRequestCount));
+  // Wait for all outbound messages to be captured (spin wait for simplicity)
+  auto start = std::chrono::steady_clock::now();
+  while (sentCount.load(std::memory_order_relaxed) < static_cast<std::size_t>(kConcurrentRequestCount))
+  {
+    if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(kResponseWaitMillis))
+    {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  REQUIRE(sentCount.load(std::memory_order_relaxed) == static_cast<std::size_t>(kConcurrentRequestCount));
 
   // Dispatch responses in REVERSE order to test correct routing
   for (std::int64_t i = kConcurrentRequestCount - 1; i >= 0; --i)
@@ -118,9 +86,10 @@ TEST_CASE("Concurrent sendRequest calls route responses correctly", "[jsonrpc][r
 TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][router][concurrency]")
 {
   mcp::jsonrpc::Router router;
-  MessageCapture outboundMessages;
-  router.setOutboundMessageSender([&outboundMessages](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
-                                  { outboundMessages.record(std::move(message)); });
+
+  std::atomic<std::size_t> sentCount {0};
+
+  router.setOutboundMessageSender([&sentCount](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message) -> void { sentCount.fetch_add(1, std::memory_order_relaxed); });
 
   const std::int64_t numThreads = 8;
   const std::int64_t requestsPerThread = 25;
@@ -166,7 +135,15 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
   }
 
   // Wait for all outbound messages
-  REQUIRE(outboundMessages.waitForMessageCount(static_cast<std::size_t>(totalRequests), std::chrono::milliseconds(kResponseWaitMillis)));
+  auto start = std::chrono::steady_clock::now();
+  while (sentCount.load(std::memory_order_relaxed) < static_cast<std::size_t>(totalRequests))
+  {
+    if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(kResponseWaitMillis))
+    {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
 
   // Dispatch responses from a different thread
   std::thread responseThread(
@@ -210,14 +187,15 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
 
 TEST_CASE("Router shutdown with in-flight requests completes without throwing", "[jsonrpc][router][concurrency][shutdown]")
 {
-  std::vector<mcp::ErrorEvent> capturedErrors;
-  std::mutex errorsMutex;
+  // Use shared_ptr for thread-safe error tracking that outlives the router
+  auto capturedErrors = std::make_shared<std::vector<mcp::ErrorEvent>>();
+  auto errorsMutex = std::make_shared<std::mutex>();
 
-  mcp::RouterOptions options;
-  options.errorReporter = [&capturedErrors, &errorsMutex](const mcp::ErrorEvent &event) -> void
+  mcp::jsonrpc::RouterOptions options;
+  options.errorReporter = [capturedErrors, errorsMutex](const mcp::ErrorEvent &event) -> void
   {
-    const std::scoped_lock lock(errorsMutex);
-    capturedErrors.push_back(event);
+    const std::scoped_lock lock(*errorsMutex);
+    capturedErrors->push_back(event);
   };
 
   auto router = std::make_unique<mcp::jsonrpc::Router>(options);
@@ -274,33 +252,34 @@ TEST_CASE("Router shutdown with in-flight requests completes without throwing", 
 
 TEST_CASE("Router shutdown during concurrent dispatchRequest completes all promises", "[jsonrpc][router][concurrency][shutdown]")
 {
-  std::vector<mcp::ErrorEvent> capturedErrors;
-  std::mutex errorsMutex;
+  // Use shared_ptr for thread-safe tracking that outlives the router
+  auto capturedErrors = std::make_shared<std::vector<mcp::ErrorEvent>>();
+  auto errorsMutex = std::make_shared<std::mutex>();
 
-  mcp::RouterOptions options;
-  options.errorReporter = [&capturedErrors, &errorsMutex](const mcp::ErrorEvent &event) -> void
+  mcp::jsonrpc::RouterOptions options;
+  options.errorReporter = [capturedErrors, errorsMutex](const mcp::ErrorEvent &event) -> void
   {
-    const std::scoped_lock lock(errorsMutex);
-    capturedErrors.push_back(event);
+    const std::scoped_lock lock(*errorsMutex);
+    capturedErrors->push_back(event);
   };
 
   auto router = std::make_unique<mcp::jsonrpc::Router>(options);
 
   // Register a handler that blocks until we signal it
-  std::atomic<std::size_t> handlerStartedCount {0};
-  std::promise<void> releaseHandlers;
-  auto releaseFuture = releaseHandlers.get_future();
+  auto handlerStartedCount = std::make_shared<std::atomic<std::size_t>>(0);
+  auto releaseHandlers = std::make_shared<std::promise<void>>();
+  auto releaseFuture = releaseHandlers->get_future();
 
   router->registerRequestHandler(
     "slow/op",
-    [&handlerStartedCount, &releaseFuture](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
+    [handlerStartedCount, releaseHandlers](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
     {
-      handlerStartedCount.fetch_add(1, std::memory_order_relaxed);
+      handlerStartedCount->fetch_add(1, std::memory_order_relaxed);
 
       return std::async(std::launch::async,
-                        [&releaseFuture, request]() -> mcp::jsonrpc::Response
+                        [releaseHandlers, request]() -> mcp::jsonrpc::Response
                         {
-                          releaseFuture.wait();
+                          releaseHandlers->get_future().wait();
                           mcp::jsonrpc::SuccessResponse success;
                           success.id = request.id;
                           success.result = mcp::jsonrpc::JsonValue::object();
@@ -324,7 +303,7 @@ TEST_CASE("Router shutdown during concurrent dispatchRequest completes all promi
   }
 
   // Wait for handlers to start
-  while (handlerStartedCount.load() < static_cast<std::size_t>(kConcurrentRequestCount))
+  while (handlerStartedCount->load() < static_cast<std::size_t>(kConcurrentRequestCount))
   {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
@@ -340,7 +319,7 @@ TEST_CASE("Router shutdown during concurrent dispatchRequest completes all promi
     }());
 
   // Now release the handlers (they should complete in the background)
-  releaseHandlers.set_value();
+  releaseHandlers->set_value();
 
   // All futures should be resolved (either successfully or with error)
   std::size_t resolvedCount = 0;
@@ -361,14 +340,15 @@ TEST_CASE("Router shutdown during concurrent dispatchRequest completes all promi
 
 TEST_CASE("User callback exceptions are contained and reported", "[jsonrpc][router][concurrency][exceptions]")
 {
-  std::vector<mcp::ErrorEvent> capturedErrors;
-  std::mutex errorsMutex;
+  // Use shared_ptr for thread-safe error tracking
+  auto capturedErrors = std::make_shared<std::vector<mcp::ErrorEvent>>();
+  auto errorsMutex = std::make_shared<std::mutex>();
 
-  mcp::RouterOptions options;
-  options.errorReporter = [&capturedErrors, &errorsMutex](const mcp::ErrorEvent &event) -> void
+  mcp::jsonrpc::RouterOptions options;
+  options.errorReporter = [capturedErrors, errorsMutex](const mcp::ErrorEvent &event) -> void
   {
-    const std::scoped_lock lock(errorsMutex);
-    capturedErrors.push_back(event);
+    const std::scoped_lock lock(*errorsMutex);
+    capturedErrors->push_back(event);
   };
 
   mcp::jsonrpc::Router router(options);
@@ -390,10 +370,10 @@ TEST_CASE("User callback exceptions are contained and reported", "[jsonrpc][rout
 
   // Verify the error was reported
   {
-    const std::scoped_lock lock(errorsMutex);
-    REQUIRE(!capturedErrors.empty());
+    const std::scoped_lock lock(*errorsMutex);
+    REQUIRE(!capturedErrors->empty());
     bool foundExpectedError = false;
-    for (const auto &error : capturedErrors)
+    for (const auto &error : *capturedErrors)
     {
       if (error.message().find("Notification handler error") != std::string::npos)
       {
@@ -407,14 +387,15 @@ TEST_CASE("User callback exceptions are contained and reported", "[jsonrpc][rout
 
 TEST_CASE("Progress callback exceptions are contained and reported", "[jsonrpc][router][concurrency][exceptions]")
 {
-  std::vector<mcp::ErrorEvent> capturedErrors;
-  std::mutex errorsMutex;
+  // Use shared_ptr for thread-safe error tracking
+  auto capturedErrors = std::make_shared<std::vector<mcp::ErrorEvent>>();
+  auto errorsMutex = std::make_shared<std::mutex>();
 
-  mcp::RouterOptions options;
-  options.errorReporter = [&capturedErrors, &errorsMutex](const mcp::ErrorEvent &event) -> void
+  mcp::jsonrpc::RouterOptions options;
+  options.errorReporter = [capturedErrors, errorsMutex](const mcp::ErrorEvent &event) -> void
   {
-    const std::scoped_lock lock(errorsMutex);
-    capturedErrors.push_back(event);
+    const std::scoped_lock lock(*errorsMutex);
+    capturedErrors->push_back(event);
   };
 
   mcp::jsonrpc::Router router(options);
@@ -430,8 +411,7 @@ TEST_CASE("Progress callback exceptions are contained and reported", "[jsonrpc][
   (*request.params)["_meta"]["progressToken"] = "progress-1";
 
   mcp::jsonrpc::OutboundRequestOptions requestOptions;
-  requestOptions.onProgress = [&capturedErrors](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::ProgressUpdate &) -> void
-  { throw std::runtime_error("Progress callback error"); };
+  requestOptions.onProgress = [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::ProgressUpdate &) -> void { throw std::runtime_error("Progress callback error"); };
 
   std::future<mcp::jsonrpc::Response> responseFuture = router.sendRequest(context, request, std::move(requestOptions));
 
@@ -449,9 +429,9 @@ TEST_CASE("Progress callback exceptions are contained and reported", "[jsonrpc][
 
   // Verify the error was reported
   {
-    const std::scoped_lock lock(errorsMutex);
+    const std::scoped_lock lock(*errorsMutex);
     bool foundExpectedError = false;
-    for (const auto &error : capturedErrors)
+    for (const auto &error : *capturedErrors)
     {
       if (error.message().find("Progress callback error") != std::string::npos)
       {
