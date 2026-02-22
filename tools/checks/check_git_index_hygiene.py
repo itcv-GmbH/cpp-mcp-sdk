@@ -9,10 +9,8 @@ Runs `git ls-files` and exits non-zero if any required-absent path is present:
 - **/*.pyc
 """
 
-import os
 import subprocess
 import sys
-from fnmatch import fnmatch
 from pathlib import Path
 from typing import List
 
@@ -43,40 +41,28 @@ def matches_forbidden_pattern(filepath: str) -> tuple[bool, str]:
     """
     # Normalize path separators for matching
     normalized_path = filepath.replace("\\", "/")
+    path_parts = normalized_path.split("/")
 
-    forbidden_patterns = [
-        ("build/", "build/ directory"),
-        ("build/*", "build/ directory"),
-        ("tests/integration/.venv/", "tests/integration/.venv/ directory"),
-        ("tests/integration/.venv/*", "tests/integration/.venv/ directory"),
-        ("*/__pycache__/*", "__pycache__/ directory"),
-        ("**/__pycache__/*", "__pycache__/ directory"),
-        ("*.pyc", "*.pyc file"),
-        ("**/*.pyc", "*.pyc file"),
-    ]
+    # Check for build/ prefix
+    if path_parts[0] == "build":
+        return True, "build/ directory"
 
-    for pattern, description in forbidden_patterns:
-        # Use fnmatch for glob-style matching
-        if fnmatch(normalized_path, pattern) or fnmatch(
-            normalized_path, pattern.lstrip("*/")
-        ):
-            return True, description
+    # Check for tests/integration/.venv/ prefix
+    if (
+        len(path_parts) >= 3
+        and path_parts[0] == "tests"
+        and path_parts[1] == "integration"
+        and path_parts[2] == ".venv"
+    ):
+        return True, "tests/integration/.venv/ directory"
 
     # Check for __pycache__ in path components
-    if "__pycache__" in normalized_path.split("/"):
+    if "__pycache__" in path_parts:
         return True, "__pycache__/ directory"
 
     # Check for .pyc extension
     if normalized_path.endswith(".pyc"):
         return True, "*.pyc file"
-
-    # Check for build/ prefix
-    if normalized_path.startswith("build/"):
-        return True, "build/ directory"
-
-    # Check for tests/integration/.venv/ prefix
-    if normalized_path.startswith("tests/integration/.venv/"):
-        return True, "tests/integration/.venv/ directory"
 
     return False, ""
 

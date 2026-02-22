@@ -7,7 +7,6 @@ Scans src/**/*.{cpp,hpp} and tests/**/*.{cpp,hpp} files and exits non-zero if:
 2. Any test file includes 'src/' paths
 """
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -27,9 +26,13 @@ def find_include_violations(
     lines = content.split("\n")
 
     rel_path = filepath.relative_to(project_root)
+    rel_path_parts = rel_path.parts
+
+    # Check if this is a test file using Path.parts for cross-platform comparison
+    is_test_file = len(rel_path_parts) >= 1 and rel_path_parts[0] == "tests"
 
     # Pattern to match #include directives with various quote/bracket styles
-    include_pattern = re.compile(r'^\s*#\s*include\s+["<]([^">]+)[">]')
+    include_pattern = re.compile(r'^\s*#\s*include\s+["\u003c]([^"\u003e]+)["\u003e]')
 
     for line_num, line in enumerate(lines, 1):
         match = include_pattern.match(line)
@@ -37,16 +40,18 @@ def find_include_violations(
             continue
 
         include_path = match.group(1)
+        include_path_parts = Path(include_path).parts
 
-        # Check for directory-traversing relative includes
-        if "../" in include_path or "..\\" in include_path:
+        # Check for directory-traversing relative includes using Path.parts
+        if ".." in include_path_parts:
             violations.append((line_num, line.strip(), "directory_traversal"))
             continue
 
-        # Check if test file includes src/ paths
-        is_test_file = "tests/" in str(rel_path) or str(rel_path).startswith("tests\\")
-        if is_test_file and (
-            include_path.startswith("src/") or include_path.startswith("src\\")
+        # Check if test file includes src/ paths using Path.parts
+        if (
+            is_test_file
+            and len(include_path_parts) >= 1
+            and include_path_parts[0] == "src"
         ):
             violations.append((line_num, line.strip(), "test_includes_src"))
 

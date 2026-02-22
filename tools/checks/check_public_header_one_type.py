@@ -6,7 +6,6 @@ Scans all include/mcp/**/*.hpp files and exits non-zero if any file
 defines more than one top-level class or struct.
 """
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -26,7 +25,6 @@ def strip_comments_and_strings(content: str) -> str:
     while i < n:
         # Check for single-line comment
         if i + 1 < n and content[i : i + 2] == "//":
-            # Skip until end of line
             while i < n and content[i] != "\n":
                 result.append(" ")
                 i += 1
@@ -37,7 +35,6 @@ def strip_comments_and_strings(content: str) -> str:
 
         # Check for multi-line comment
         if i + 1 < n and content[i : i + 2] == "/*":
-            # Skip until */
             result.append(" ")
             result.append(" ")
             i += 2
@@ -58,7 +55,6 @@ def strip_comments_and_strings(content: str) -> str:
             delimiter = raw_string_match.group(1)
             end_marker = f'){delimiter}"'
             i += raw_string_match.end()
-            # Replace with spaces, preserving newlines
             while i < n:
                 if content[i : i + len(end_marker)] == end_marker:
                     result.extend([" "] * len(end_marker))
@@ -77,7 +73,6 @@ def strip_comments_and_strings(content: str) -> str:
             i += 1
             while i < n:
                 if content[i] == "\\" and i + 1 < n:
-                    # Escape sequence
                     result.append(" ")
                     result.append(" ")
                     i += 2
@@ -122,66 +117,103 @@ def strip_comments_and_strings(content: str) -> str:
 
 def count_top_level_types(content: str) -> List[Tuple[str, int]]:
     """
-    Count top-level class and struct declarations.
-    Uses a brace-depth state machine to track nesting.
+    Count top-level class and struct definitions.
+
+    A type is considered "top-level" if it's not inside another class/struct definition.
+    Types inside namespaces ARE considered top-level (namespaces don't create type nesting).
+    Forward declarations (e.g., "class Foo;") are excluded.
 
     Returns list of (type_name, line_number) tuples for top-level types.
     """
-    # Pattern to match class or struct declarations (but not enum class/enum struct)
-    # Matches: class Name, struct Name, but NOT enum class Name, enum struct Name
-    # Also handles templates by ignoring lines starting with 'template'
-    type_pattern = re.compile(r"\b(class|struct)\s+(\w+)", re.MULTILINE)
-
     types = []
-    brace_depth = 0
     lines = content.split("\n")
 
-    # First pass: track brace depth for each position
-    line_brace_depths = []
-    current_depth = 0
+    # Track the scope stack: each entry is ('namespace'|'type'|'other', name)
+    scope_stack = []
 
-    for line in lines:
-        line_brace_depths.append(current_depth)
-        # Count braces, ignoring braces in comments/strings
-        for char in line:
-            if char == "{":
-                current_depth += 1
-            elif char == "}":
-                current_depth -= 1
+    # Pattern to detect namespace keyword
+    namespace_pattern = re.compile(r"\bnamespace\b")
+    # Pattern to match class or struct keyword followed by name
+    type_keyword_pattern = re.compile(r"\b(class|struct)\s+(\w+)")
+    # Pattern to detect forward declaration: class Foo; or struct Foo;
+    forward_decl_pattern = re.compile(r"\b(class|struct)\s+\w+\s*;")
 
-    # Second pass: find type declarations at brace depth 0
     for line_num, line in enumerate(lines, 1):
-        # Skip preprocessor directives
         stripped = line.strip()
-        if stripped.startswith("#"):
+
+        # Skip empty lines and preprocessor directives
+        if not stripped or stripped.startswith("#"):
             continue
 
-        # Skip template declarations (the actual type follows)
-        if stripped.startswith("template"):
+        # Skip forward declarations (class Foo; or struct Foo;)
+        if forward_decl_pattern.search(line):
             continue
 
-        # Skip using declarations
-        if stripped.startswith("using "):
-            continue
+        # Count braces on this line
+        open_braces = line.count("{")
+        close_braces = line.count("}")
 
-        # Skip typedef declarations
-        if stripped.startswith("typedef "):
-            continue
+        # Check if this line starts a namespace
+        if namespace_pattern.search(line):
+            # Check if there's an opening brace on this line or we need to wait
+            if open_braces > 0:
+                scope_stack.append(("namespace", None))
+                open_braces -= 1
+            else:
+                # Multi-line namespace declaration - mark that we're expecting a brace
+                scope_stack.append(("namespace_pending", None))
 
-        # Find all potential type declarations on this line
-        for match in type_pattern.finditer(line):
+        # Check if we need to convert pending namespace to active
+        if (
+            scope_stack
+            and scope_stack[-1][0] == "namespace_pending"
+            and open_braces > 0
+        ):
+            scope_stack[-1] = ("namespace", None)
+            open_braces -= 1
+
+        # Check for type definitions BEFORE processing remaining braces
+        # A type is at "top-level" if there's no 'type' entry in the scope stack
+        type_count_in_stack = sum(1 for s in scope_stack if s[0] == "type")
+
+        for match in type_keyword_pattern.finditer(line):
             keyword = match.group(1)  # 'class' or 'struct'
             type_name = match.group(2)
 
-            # Check if preceded by 'enum' (for enum class/struct)
+            # Skip if preceded by 'enum' (enum class/struct)
             start_pos = match.start()
             preceding = line[:start_pos].strip()
             if preceding.endswith("enum"):
                 continue
 
-            # Check if brace depth at this line is 0 (top-level)
-            if line_brace_depths[line_num - 1] == 0:
+            # Skip template specializations
+            if "template" in preceding:
+                continue
+
+            # A type is "top-level" if type_count_in_stack == 0
+            if type_count_in_stack == 0:
                 types.append((type_name, line_num))
+
+        # Process remaining opening braces
+        for _ in range(open_braces):
+            # Determine if this is a type scope or other scope
+            # If we just saw a class/struct keyword on this line, it's a type scope
+            if type_keyword_pattern.search(line):
+                # Find the last type name on this line
+                matches = list(type_keyword_pattern.finditer(line))
+                if matches:
+                    last_match = matches[-1]
+                    type_name = last_match.group(2)
+                    scope_stack.append(("type", type_name))
+                else:
+                    scope_stack.append(("other", None))
+            else:
+                scope_stack.append(("other", None))
+
+        # Process closing braces
+        for _ in range(close_braces):
+            if scope_stack:
+                scope_stack.pop()
 
     return types
 
