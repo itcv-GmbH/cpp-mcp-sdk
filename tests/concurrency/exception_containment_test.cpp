@@ -9,7 +9,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/transport/http.hpp>

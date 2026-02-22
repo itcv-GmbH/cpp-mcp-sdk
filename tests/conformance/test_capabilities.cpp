@@ -5,11 +5,11 @@
 #include <utility>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/errors.hpp>
+#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/server.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace
 {

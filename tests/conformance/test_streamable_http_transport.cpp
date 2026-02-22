@@ -13,7 +13,7 @@
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/transport/http.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace
 {

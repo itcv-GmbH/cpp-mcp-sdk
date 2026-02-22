@@ -4,7 +4,7 @@
 #include <functional>
 #include <memory>
 
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 
 namespace mcp::detail
 {

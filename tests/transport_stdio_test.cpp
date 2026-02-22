@@ -8,7 +8,7 @@
 #include <variant>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/errors.hpp>
+#include <mcp/sdk/errors.hpp>
 
 #if defined(__clang__)
 #  pragma clang diagnostic push

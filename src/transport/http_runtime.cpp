@@ -19,7 +19,7 @@
 #include <boost/beast/core.hpp>  // NOLINT(misc-include-cleaner)
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/detail/url.hpp>
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/transport/http.hpp>
 
 #if MCP_SDK_ENABLE_TLS

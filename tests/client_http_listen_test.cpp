@@ -18,7 +18,7 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/streamable_http_client_transport.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
 // readability-magic-numbers, misc-const-correctness)

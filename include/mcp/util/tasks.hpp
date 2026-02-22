@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-#include <mcp/errors.hpp>
+#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/limits.hpp>
 

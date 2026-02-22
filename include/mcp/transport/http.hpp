@@ -15,13 +15,13 @@
 
 #include <mcp/auth/oauth_server.hpp>
 #include <mcp/detail/ascii.hpp>
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/limits.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/transport/transport.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace mcp::transport
 {

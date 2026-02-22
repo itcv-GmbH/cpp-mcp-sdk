@@ -10,7 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/detail/inbound_loop.hpp>
 #include <mcp/detail/thread_boundary.hpp>
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 
 // NOLINTBEGIN(readability-function-cognitive-complexity, misc-const-correctness, misc-include-cleaner)
 

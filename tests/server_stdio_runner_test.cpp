@@ -10,7 +10,7 @@
 #include <mcp/server/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace
 {

@@ -9,7 +9,7 @@
 #include <vector>
 
 #include <mcp/detail/inbound_loop.hpp>
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/http.hpp>

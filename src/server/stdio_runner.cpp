@@ -11,7 +11,7 @@
 #include <variant>
 
 #include <mcp/detail/thread_boundary.hpp>
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/stdio_runner.hpp>

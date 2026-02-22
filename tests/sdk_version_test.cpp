@@ -3,7 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/transport/http.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 // NOLINTBEGIN(readability-function-cognitive-complexity)
 

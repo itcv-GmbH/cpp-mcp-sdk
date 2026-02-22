@@ -1,7 +1,7 @@
 // Minimal example for MCP SDK
 #include <iostream>
 
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 auto main() -> int
 {

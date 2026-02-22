@@ -5,7 +5,7 @@
 
 #include <mcp/auth/provider.hpp>
 #include <mcp/client/client.hpp>
-#include <mcp/errors.hpp>
+#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -14,7 +14,7 @@
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
 #include <mcp/transport/transport.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 auto main() -> int
 {

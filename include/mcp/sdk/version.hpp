@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace mcp
 {

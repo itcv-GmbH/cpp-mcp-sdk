@@ -15,7 +15,7 @@
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/transport/http.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 // NOLINTBEGIN(misc-include-cleaner, llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
 // readability-magic-numbers, misc-const-correctness, bugprone-argument-comment)

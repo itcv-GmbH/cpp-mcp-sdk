@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 #ifndef MCP_SDK_ENABLE_TLS
 #  define MCP_SDK_ENABLE_TLS -1

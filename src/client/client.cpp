@@ -26,7 +26,7 @@
 #include <mcp/client/sampling.hpp>
 #include <mcp/detail/inbound_loop.hpp>
 #include <mcp/detail/initialize_codec.hpp>
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -39,7 +39,7 @@
 #include <mcp/transport/streamable_http_client_transport.hpp>
 #include <mcp/transport/transport.hpp>
 #include <mcp/util/tasks.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace mcp
 {

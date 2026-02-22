@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 auto main() -> int
 {

@@ -6,7 +6,7 @@
 #include <type_traits>
 #include <utility>
 
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 
 namespace mcp::detail
 {

@@ -14,7 +14,7 @@
 
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/thread_pool.hpp>
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/limits.hpp>
 

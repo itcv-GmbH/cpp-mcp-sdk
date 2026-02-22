@@ -8,8 +8,8 @@
 #include <variant>
 
 #include <jsoncons/json.hpp>
-#include <mcp/errors.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/errors.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace mcp::jsonrpc
 {

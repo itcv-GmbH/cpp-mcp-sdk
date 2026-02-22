@@ -4,7 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 // NOLINTBEGIN(readability-function-cognitive-complexity, misc-const-correctness, bugprone-unchecked-optional-access, google-build-using-namespace, abseil-string-find-str-contains,
 // misc-include-cleaner)

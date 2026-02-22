@@ -10,10 +10,10 @@
 #include <utility>
 #include <variant>
 
-#include <mcp/errors.hpp>
+#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/schema/validator.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace mcp::jsonrpc
 {

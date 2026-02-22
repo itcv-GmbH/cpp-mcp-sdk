@@ -21,7 +21,7 @@
 #include <mcp/server/tools.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/transport.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace
 {
