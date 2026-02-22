@@ -18,6 +18,24 @@ This task is responsible for converting `include/mcp/auth/oauth_client.hpp` into
     *   `mcp::auth::InMemoryOAuthTokenStorage`
 *   `tools/checks/check_public_header_one_type.py` reports zero violations for the OAuth client module headers.
 
+The per-type header set is required to cover the following top-level `class` and `struct` types currently defined in `include/mcp/auth/oauth_client.hpp`:
+*   `OAuthClientError`
+*   `OAuthQueryParameter`
+*   `OAuthHttpHeader`
+*   `PkceCodePair`
+*   `OAuthAuthorizationUrlRequest`
+*   `OAuthTokenExchangeRequest`
+*   `OAuthTokenHttpRequest`
+*   `OAuthHttpResponse`
+*   `OAuthHttpSecurityPolicy`
+*   `OAuthTokenRequestExecutionRequest`
+*   `OAuthAccessToken`
+*   `OAuthTokenStorage`
+*   `InMemoryOAuthTokenStorage`
+*   `OAuthProtectedResourceRequest`
+*   `OAuthStepUpAuthorizationRequest`
+*   `OAuthStepUpExecutionRequest`
+
 ## Step-by-Step Instructions
 1.  Create per-type headers under `include/mcp/auth/` for each top-level `class` and `struct` defined in `include/mcp/auth/oauth_client.hpp` using `snake_case` basenames.
 2.  Move each type declaration into its corresponding per-type header without changing declarations.

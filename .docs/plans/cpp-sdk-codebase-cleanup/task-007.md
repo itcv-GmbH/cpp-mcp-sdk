@@ -18,6 +18,18 @@ This task is responsible for converting `include/mcp/util/tasks.hpp` into an umb
     *   `mcp::util::TaskReceiver`
 *   `tools/checks/check_public_header_one_type.py` reports zero violations for the tasks module headers.
 
+The per-type header set is required to cover the following top-level `class` and `struct` types currently defined in `include/mcp/util/tasks.hpp`:
+*   `Task`
+*   `CreateTaskResult`
+*   `TaskAugmentationRequest`
+*   `TaskRecordResult`
+*   `TaskTerminalResult`
+*   `TaskCreateOptions`
+*   `InMemoryTaskStoreOptions`
+*   `TaskStore`
+*   `InMemoryTaskStore`
+*   `TaskReceiver`
+
 ## Step-by-Step Instructions
 1.  Create per-type headers under `include/mcp/util/` for each top-level `class` and `struct` defined in `include/mcp/util/tasks.hpp` using `snake_case` basenames.
 2.  Move each type declaration into its corresponding per-type header without changing declarations.

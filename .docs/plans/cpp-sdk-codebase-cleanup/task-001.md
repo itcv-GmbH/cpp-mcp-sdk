@@ -23,5 +23,5 @@ This task is responsible for enforcing repository hygiene requirements by ensuri
 4.  Run `git status` and verify the working tree contains the `.gitignore` change and contains no staged generated artifacts.
 
 ## Verification
-*   `git ls-files | rg -n "^(build/|tests/integration/\.venv/|.*__/pycache__/.*|.*\.pyc)$" || true`
+*   `git ls-files | rg -n "^(build/|tests/integration/\.venv/|.*__pycache__/.*|.*\.pyc)$" || true`
 *   `git status --porcelain`

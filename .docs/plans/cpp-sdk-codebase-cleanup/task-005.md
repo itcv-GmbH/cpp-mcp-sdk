@@ -22,6 +22,32 @@ This task is responsible for converting `include/mcp/transport/http.hpp` into an
     *   `mcp::transport::http::ProtocolVersionHeaderState`
 *   `tools/checks/check_public_header_one_type.py` reports zero violations for `include/mcp/transport/http.hpp` and for all newly added per-type headers.
 
+The per-type header set is required to cover the following top-level `class` and `struct` types currently defined in `include/mcp/transport/http.hpp`:
+*   `Header`
+*   `ServerTlsConfiguration`
+*   `ClientTlsConfiguration`
+*   `SessionHeaderState`
+*   `ProtocolVersionHeaderState`
+*   `SharedHeaderState`
+*   `SessionResolution`
+*   `RequestValidationOptions`
+*   `RequestValidationResult`
+*   `HttpEndpointConfig`
+*   `HttpServerOptions`
+*   `ServerRequest`
+*   `SseStreamResponse`
+*   `ServerResponse`
+*   `StreamableRequestResult`
+*   `StreamableHttpServerOptions`
+*   `StreamableHttpServer`
+*   `StreamableHttpSendResult`
+*   `StreamableHttpListenResult`
+*   `StreamableHttpClientOptions`
+*   `StreamableHttpClient`
+*   `HttpClientOptions`
+*   `HttpServerRuntime`
+*   `HttpClientRuntime`
+
 ## Step-by-Step Instructions
 1.  Create directory `include/mcp/transport/http/`.
 2.  Create per-type headers for each top-level `class` and `struct` currently defined in `include/mcp/transport/http.hpp` using `snake_case` basenames.

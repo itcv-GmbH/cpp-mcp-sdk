@@ -14,6 +14,17 @@ This task is responsible for converting `include/mcp/auth/oauth_server.hpp` into
 *   Per-type headers exist for all top-level `class` and `struct` types formerly defined in `include/mcp/auth/oauth_server.hpp`.
 *   `tools/checks/check_public_header_one_type.py` reports zero violations for the OAuth server module headers.
 
+The per-type header set is required to cover the following top-level `class` and `struct` types currently defined in `include/mcp/auth/oauth_server.hpp`:
+*   `OAuthScopeSet`
+*   `OAuthProtectedResourceMetadata`
+*   `OAuthProtectedResourceMetadataPublication`
+*   `OAuthAuthorizationRequestContext`
+*   `OAuthTokenVerificationRequest`
+*   `OAuthAuthorizationContext`
+*   `OAuthTokenVerificationResult`
+*   `OAuthTokenVerifier`
+*   `OAuthServerAuthorizationOptions`
+
 ## Step-by-Step Instructions
 1.  Create per-type headers under `include/mcp/auth/` for each top-level `class` and `struct` defined in `include/mcp/auth/oauth_server.hpp` using `snake_case` basenames.
 2.  Move each type declaration into its corresponding per-type header without changing declarations.
