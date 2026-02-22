@@ -120,6 +120,9 @@ struct StdioSubprocessSpawnOptions
   std::vector<std::string> envOverrides;
   std::string cwd;
   StdioClientStderrMode stderrMode = StdioClientStderrMode::kCapture;
+  /// Error reporter callback for background thread failures.
+  /// If not set, errors are silently suppressed.
+  ErrorReporter errorReporter;
 };
 
 struct StdioSubprocessShutdownOptions

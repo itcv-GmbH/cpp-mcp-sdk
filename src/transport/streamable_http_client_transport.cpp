@@ -153,7 +153,7 @@ private:
 
     // Create the InboundLoop with the listen loop body
     auto loopBody = [this]() -> void { runListenLoop(); };
-    inboundLoop_ = std::make_unique<detail::InboundLoop>(std::move(loopBody));
+    inboundLoop_ = std::make_unique<detail::InboundLoop>(std::move(loopBody), options_.errorReporter);
     inboundLoop_->start();
   }
 

@@ -15,6 +15,8 @@
 #include <mcp/server/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
 
+#include "../detail/thread_boundary.hpp"
+
 namespace
 {
 
@@ -315,7 +317,7 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
 
 auto StdioServerRunner::startAsync() -> std::thread
 {
-  return std::thread {[this]() -> void { run(); }};
+  return std::thread {[wrapped = mcp::detail::threadBoundary([this]() -> void { run(); }, impl_->options.errorReporter, "StdioServerRunner")]() noexcept -> void { wrapped(); }};
 }
 
 auto StdioServerRunner::stop() -> void

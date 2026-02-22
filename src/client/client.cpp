@@ -80,7 +80,7 @@ static auto clientDeletionPool() -> boost::asio::thread_pool &
 static auto deferClientDeletion(Client *client) -> void
 {
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) - Intentional ownership transfer to async worker
-  boost::asio::post(clientDeletionPool(), [client]() -> void { delete client; });
+  boost::asio::post(clientDeletionPool(), [client]() noexcept -> void { delete client; });
 }
 
 static auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>

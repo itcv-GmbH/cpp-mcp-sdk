@@ -153,6 +153,16 @@ target_link_libraries(mcp_sdk_test_detail_initialize_codec
 
 add_test(NAME mcp_sdk_detail_initialize_codec_test COMMAND mcp_sdk_test_detail_initialize_codec)
 
+add_executable(mcp_sdk_test_detail_thread_boundary detail/thread_boundary_test.cpp)
+
+target_link_libraries(mcp_sdk_test_detail_thread_boundary
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_detail_thread_boundary_test COMMAND mcp_sdk_test_detail_thread_boundary)
+
 add_executable(mcp_sdk_test_client client_test.cpp)
 
 target_link_libraries(mcp_sdk_test_client

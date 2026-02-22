@@ -330,7 +330,19 @@ struct HttpServerRuntime::Impl
 
     std::promise<std::uint16_t> startupPromise;
     auto startupFuture = startupPromise.get_future();
-    serverThread_ = std::thread([this, startupPromise = std::move(startupPromise)]() mutable { run(std::move(startupPromise)); });
+    // Wrap the thread entrypoint in a noexcept boundary with exception reporting
+    serverThread_ = std::thread(
+      [this, startupPromise = std::move(startupPromise)]() mutable noexcept -> void
+      {
+        try
+        {
+          run(std::move(startupPromise));
+        }
+        catch (...)
+        {
+          reportCurrentException(options_.errorReporter, "HttpServerRuntime");
+        }
+      });
 
     try
     {

@@ -6,6 +6,8 @@
 #include <mcp/detail/inbound_loop.hpp>
 #include <mcp/error_reporter.hpp>
 
+#include "thread_boundary.hpp"
+
 namespace mcp::detail
 {
 
@@ -27,7 +29,8 @@ public:
     }
 
     running_.store(true);
-    thread_ = std::thread([this]() -> void { runLoop(); });
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    thread_ = std::thread([wrapped = threadBoundary([this]() -> void { runLoop(); }, errorReporter_, "InboundLoop")]() noexcept -> void { wrapped(); });
   }
 
   void stop() { running_.store(false); }

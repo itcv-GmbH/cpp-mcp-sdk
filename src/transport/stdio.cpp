@@ -36,6 +36,8 @@
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/stdio.hpp>
 
+#include "../detail/thread_boundary.hpp"
+
 namespace mcp::transport
 {
 namespace detail
@@ -383,6 +385,7 @@ struct StdioSubprocess::Impl
   std::thread stderrReader;
   mutable std::mutex stderrMutex;
   std::string capturedStderr;
+  ErrorReporter errorReporter;
 
   auto startStderrCapture() -> void
   {
@@ -391,17 +394,19 @@ struct StdioSubprocess::Impl
       return;
     }
 
-    stderrReader = std::thread(
-      [this]() -> void
-      {
-        std::string line;
-        while (std::getline(stderrPipe, line))
-        {
-          const std::scoped_lock lock(stderrMutex);
-          capturedStderr.append(line);
-          capturedStderr.push_back('\n');
-        }
-      });
+    stderrReader = std::thread([wrapped = ::mcp::detail::threadBoundary(
+                                  [this]() -> void
+                                  {
+                                    std::string line;
+                                    while (std::getline(stderrPipe, line))
+                                    {
+                                      const std::scoped_lock lock(stderrMutex);
+                                      capturedStderr.append(line);
+                                      capturedStderr.push_back('\n');
+                                    }
+                                  },
+                                  errorReporter,
+                                  "StdioSubprocess")]() noexcept -> void { wrapped(); });
   }
 
   auto joinStderrCapture() noexcept -> void
