@@ -3,7 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/transport/http.hpp>
-#include <mcp/sdk/version.hpp>
+
+// Wrapper for backward compatibility - provides mcp::sdk::get_version()
+#include <mcp/version.hpp>
 
 // NOLINTBEGIN(readability-function-cognitive-complexity)
 
