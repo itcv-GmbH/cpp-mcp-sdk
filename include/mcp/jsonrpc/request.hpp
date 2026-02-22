@@ -4,7 +4,7 @@
 #include <string>
 
 #include <mcp/jsonrpc/types.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace mcp::jsonrpc
 {

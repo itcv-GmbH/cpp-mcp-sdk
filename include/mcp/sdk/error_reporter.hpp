@@ -7,6 +7,8 @@
 
 namespace mcp
 {
+namespace sdk
+{
 
 namespace detail
 {
@@ -80,7 +82,7 @@ private:
  * @section Usage Example
  *
  * @code
- * auto errorReporter = [](const mcp::ErrorEvent& event) {
+ * auto errorReporter = [](const mcp::sdk::ErrorEvent& event) {
  *     try {
  *         std::cerr << "[" << event.component() << "] " << event.message() << std::endl;
  *     } catch (...) {
@@ -88,9 +90,9 @@ private:
  *     }
  * };
  *
- * mcp::SessionOptions options;
+ * mcp::lifecycle::SessionOptions options;
  * options.errorReporter = errorReporter;
- * auto session = mcp::Session::create(options);
+ * auto session = mcp::lifecycle::Session::create(options);
  * @endcode
  */
 using ErrorReporter = std::function<void(const ErrorEvent &)>;
@@ -162,5 +164,13 @@ inline auto reportCurrentException(const ErrorReporter &reporter, std::string_vi
     detail::suppressReporterException();
   }
 }
+
+}  // namespace sdk
+
+// Deprecated: Backwards compatibility aliases
+using sdk::ErrorEvent;
+using sdk::ErrorReporter;
+using sdk::reportCurrentException;
+using sdk::reportError;
 
 }  // namespace mcp

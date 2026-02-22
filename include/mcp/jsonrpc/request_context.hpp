@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 
-#include <mcp/version.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace mcp::jsonrpc
 {

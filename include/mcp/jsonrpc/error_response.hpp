@@ -3,9 +3,9 @@
 #include <optional>
 #include <string>
 
-#include <mcp/errors.hpp>
 #include <mcp/jsonrpc/types.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/errors.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace mcp::jsonrpc
 {

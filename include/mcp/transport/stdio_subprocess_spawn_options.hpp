@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/transport/stdio_client_stderr_mode.hpp>
 
 namespace mcp::transport

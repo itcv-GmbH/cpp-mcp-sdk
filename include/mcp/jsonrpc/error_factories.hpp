@@ -4,7 +4,7 @@
 #include <string>
 
 #include <jsoncons/json.hpp>
-#include <mcp/errors.hpp>
+#include <mcp/sdk/errors.hpp>
 
 namespace mcp::jsonrpc
 {

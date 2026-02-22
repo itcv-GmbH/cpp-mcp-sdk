@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include <mcp/error_reporter.hpp>
 #include <mcp/lifecycle/session/session_threading.hpp>
-#include <mcp/version.hpp>
+#include <mcp/sdk/error_reporter.hpp>
+#include <mcp/sdk/version.hpp>
 
 namespace mcp
 {

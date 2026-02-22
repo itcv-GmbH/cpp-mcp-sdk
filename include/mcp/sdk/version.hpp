@@ -7,6 +7,8 @@
 
 namespace mcp
 {
+namespace sdk
+{
 
 inline constexpr std::string_view kSdkVersion = "0.1.0";
 inline constexpr std::string_view kJsonRpcVersion = "2.0";
@@ -39,14 +41,20 @@ private:
 
 auto getLibraryVersion() noexcept -> const char *;
 
-namespace sdk
-{
-
 inline auto get_version() noexcept -> const char *
 {
   return getLibraryVersion();
 }
 
 }  // namespace sdk
+
+// Deprecated: Backwards compatibility aliases
+using sdk::getLibraryVersion;
+using sdk::kFallbackProtocolVersion;
+using sdk::kJsonRpcVersion;
+using sdk::kLatestProtocolVersion;
+using sdk::kLegacyProtocolVersion;
+using sdk::kSdkVersion;
+using sdk::NegotiatedProtocolVersion;
 
 }  // namespace mcp

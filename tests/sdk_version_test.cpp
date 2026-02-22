@@ -4,9 +4,6 @@
 #include <mcp/sdk/version.hpp>
 #include <mcp/transport/http.hpp>
 
-// Wrapper for backward compatibility - provides mcp::sdk::get_version()
-#include <mcp/version.hpp>
-
 // NOLINTBEGIN(readability-function-cognitive-complexity)
 
 TEST_CASE("SDK version retrieval", "[sdk][version]")

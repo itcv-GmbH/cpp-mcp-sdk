@@ -5,10 +5,10 @@
 #include <string>
 #include <vector>
 
+#include <mcp/sdk/version.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/transport/http/request_kind.hpp>
 #include <mcp/transport/http/session_resolution.hpp>
-#include <mcp/version.hpp>
 
 namespace mcp::transport::http
 {

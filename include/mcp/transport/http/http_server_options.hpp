@@ -5,12 +5,12 @@
 #include <vector>
 
 #include <mcp/auth/oauth_server_authorization_options.hpp>
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
+#include <mcp/sdk/version.hpp>
 #include <mcp/security/limits.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/transport/http/http_endpoint_config.hpp>
 #include <mcp/transport/http/server_tls_configuration.hpp>
-#include <mcp/version.hpp>
 
 namespace mcp::transport
 {

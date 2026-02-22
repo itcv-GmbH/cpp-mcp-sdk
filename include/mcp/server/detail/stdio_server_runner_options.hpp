@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/transport/stdio.hpp>
 
 namespace mcp

@@ -8,6 +8,8 @@
 
 namespace mcp
 {
+namespace sdk
+{
 /**
  * @brief MCP SDK error codes and structures.
  *
@@ -53,5 +55,11 @@ struct JsonRpcError
   std::string message;
   std::optional<jsoncons::json> data;
 };
+
+}  // namespace sdk
+
+// Deprecated: Backwards compatibility aliases
+using sdk::JsonRpcError;
+using sdk::JsonRpcErrorCode;
 
 }  // namespace mcp

@@ -4,11 +4,11 @@
 #include <string>
 #include <string_view>
 
-#include <mcp/errors.hpp>
 #include <mcp/jsonrpc/encode_options.hpp>
 #include <mcp/jsonrpc/message.hpp>
 #include <mcp/jsonrpc/message_validation_error.hpp>
 #include <mcp/jsonrpc/types.hpp>
+#include <mcp/sdk/errors.hpp>
 
 namespace mcp::jsonrpc
 {

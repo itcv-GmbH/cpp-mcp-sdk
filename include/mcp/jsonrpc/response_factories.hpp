@@ -2,9 +2,9 @@
 
 #include <optional>
 
-#include <mcp/errors.hpp>
 #include <mcp/jsonrpc/error_response.hpp>
 #include <mcp/jsonrpc/types.hpp>
+#include <mcp/sdk/errors.hpp>
 
 namespace mcp::jsonrpc
 {

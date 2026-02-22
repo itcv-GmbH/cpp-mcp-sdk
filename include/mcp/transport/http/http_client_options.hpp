@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-#include <mcp/error_reporter.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/security/limits.hpp>
 #include <mcp/transport/http/client_tls_configuration.hpp>
 #include <mcp/transport/http/shared_header_state.hpp>

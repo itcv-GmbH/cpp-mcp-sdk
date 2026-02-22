@@ -11,9 +11,9 @@
 #include <vector>
 
 #include <mcp/detail/ascii.hpp>
+#include <mcp/sdk/version.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/transport/http/header.hpp>
-#include <mcp/version.hpp>
 
 namespace mcp::transport::http
 {

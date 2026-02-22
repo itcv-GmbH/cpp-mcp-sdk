@@ -2,8 +2,8 @@
 
 #include <optional>
 
-#include <mcp/errors.hpp>
 #include <mcp/jsonrpc/all.hpp>
+#include <mcp/sdk/errors.hpp>
 #include <mcp/util/task.hpp>
 #include <mcp/util/task_store_error.hpp>
 
