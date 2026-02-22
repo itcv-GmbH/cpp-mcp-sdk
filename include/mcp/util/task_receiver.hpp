@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 
 #include <mcp/jsonrpc/messages.hpp>
@@ -22,6 +23,8 @@ inline constexpr std::int64_t kDefaultTaskPollIntervalMs = 1000;
 inline constexpr std::size_t kDefaultTaskListPageSize = 50;
 
 using TaskStatusObserver = std::function<void(const jsonrpc::RequestContext &, const Task &)>;
+
+auto authContextForRequest(const jsonrpc::RequestContext &context) -> std::optional<std::string>;
 
 class TaskReceiver
 {
