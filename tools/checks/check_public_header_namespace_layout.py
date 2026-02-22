@@ -125,20 +125,91 @@ def strip_comments_and_strings(content: str) -> str:
 
 def strip_preprocessor_directives(content: str) -> str:
     """
-    Replace preprocessor directive lines with whitespace.
+    Replace preprocessor directives with whitespace, including #if 0 blocks.
 
     Preserves line and column positions by replacing non-newline characters
-    with spaces.
+    with spaces. Properly handles conditional compilation by tracking
+    #if/#ifdef/#ifndef/#elif/#else/#endif blocks and excluding content
+    from inactive branches.
     """
     lines = content.splitlines(keepends=True)
     sanitized_lines = []
 
+    # Track preprocessor conditional state
+    # Each element is True if the branch is active, False otherwise
+    conditional_stack: List[bool] = []
+    current_branch_active = True
+
     for line in lines:
-        if line.lstrip().startswith("#"):
+        stripped = line.lstrip()
+
+        if stripped.startswith("#"):
+            # Check for conditional directives
+            directive_match = re.match(
+                r"#\s*(if|ifdef|ifndef|elif|else|endif)\b", stripped
+            )
+
+            if directive_match:
+                directive = directive_match.group(1)
+
+                if directive in ("if", "ifdef", "ifndef"):
+                    # Check if this is #if 0 or #ifdef 0 (always false)
+                    if directive == "if":
+                        # Check for #if 0 or #if (0)
+                        rest = stripped[directive_match.end() :].strip()
+                        if rest == "0" or rest == "(0)":
+                            conditional_stack.append(False)
+                        else:
+                            conditional_stack.append(True)
+                    elif directive == "ifdef" or directive == "ifndef":
+                        # For #ifdef 0 or #ifndef 0, 0 is not a defined macro
+                        rest = stripped[directive_match.end() :].strip()
+                        if rest == "0":
+                            # #ifdef 0 is always false, #ifndef 0 is always true
+                            conditional_stack.append(directive == "ifndef")
+                        else:
+                            conditional_stack.append(True)
+                    else:
+                        conditional_stack.append(True)
+
+                    # Update current branch state
+                    current_branch_active = all(conditional_stack)
+
+                elif directive == "elif":
+                    # Pop the previous if/elif and push new state
+                    if conditional_stack:
+                        conditional_stack.pop()
+                        # Check for #elif 0
+                        rest = stripped[directive_match.end() :].strip()
+                        if rest == "0" or rest == "(0)":
+                            conditional_stack.append(False)
+                        else:
+                            conditional_stack.append(True)
+                    current_branch_active = all(conditional_stack)
+
+                elif directive == "else":
+                    # Invert the current branch
+                    if conditional_stack:
+                        conditional_stack[-1] = not conditional_stack[-1]
+                    current_branch_active = all(conditional_stack)
+
+                elif directive == "endif":
+                    # Pop the conditional
+                    if conditional_stack:
+                        conditional_stack.pop()
+                    current_branch_active = all(conditional_stack)
+
+            # Replace the directive line with spaces (preserving newlines)
             sanitized_line = "".join("\n" if ch == "\n" else " " for ch in line)
             sanitized_lines.append(sanitized_line)
         else:
-            sanitized_lines.append(line)
+            # Regular line - preserve only if current branch is active
+            if current_branch_active:
+                sanitized_lines.append(line)
+            else:
+                # Replace with spaces (preserving newlines)
+                sanitized_line = "".join("\n" if ch == "\n" else " " for ch in line)
+                sanitized_lines.append(sanitized_line)
 
     return "".join(sanitized_lines)
 
@@ -251,8 +322,9 @@ def find_namespace_violations(
     sanitized = strip_preprocessor_directives(content)
     tokens = tokenize_cpp(sanitized)
 
-    # Track scope: each element is "namespace", "class", "struct", or "other"
-    scope_stack: List[str] = []
+    # Track scope: each element is ("namespace", parts_count), "type", or "other"
+    # For namespaces, we track how many parts were pushed to properly unwind nested ns
+    scope_stack: List[Tuple[str, int]] = []
     # Track namespace stack: list of namespace names we're currently inside
     namespace_stack: List[str] = []
 
@@ -322,7 +394,7 @@ def find_namespace_violations(
             if pending_type is not None:
                 # This is a type definition with a body
                 # Check violation BEFORE pushing to scope stack (at top level, depth should be 0)
-                type_scope_depth = sum(1 for s in scope_stack if s == "type")
+                type_scope_depth = sum(1 for s, _ in scope_stack if s == "type")
                 if type_scope_depth == 0:
                     # Check namespace
                     actual_namespace = list(namespace_stack)
@@ -335,35 +407,37 @@ def find_namespace_violations(
                                 actual_namespace,
                             )
                         )
-                scope_stack.append("type")
+                scope_stack.append(("type", 0))
                 pending_type = None
                 type_entered = True
 
             # Handle namespace opening
-            if pending_namespace and pending_namespace_name:
-                scope_stack.append("namespace")
+            elif pending_namespace and pending_namespace_name:
                 # Handle nested namespace syntax: namespace mcp::client {
                 # We need to look back to collect all parts
                 namespace_parts = collect_namespace_parts(tokens, i)
                 namespace_stack.extend(namespace_parts)
+                # Track how many parts we pushed so we can pop the right amount
+                scope_stack.append(("namespace", len(namespace_parts)))
                 pending_namespace = False
                 pending_namespace_name = None
 
             # If neither type nor namespace, it's something else
-            if not type_entered and not (pending_namespace and pending_namespace_name):
-                scope_stack.append("other")
+            elif not type_entered:
+                scope_stack.append(("other", 0))
             expect_template_params = False
 
         # Handle closing brace
         elif token_kind == "symbol" and token_value == "}":
             if scope_stack:
-                popped = scope_stack.pop()
-                if popped == "namespace" and namespace_stack:
-                    # Pop one level of namespace
-                    # For nested namespaces opened together, we need to pop all
-                    # But we track them individually in namespace_stack
-                    if namespace_stack:
-                        namespace_stack.pop()
+                scope_kind, parts_count = scope_stack.pop()
+                if scope_kind == "namespace" and namespace_stack:
+                    # Pop the correct number of namespace parts
+                    # For nested namespaces like `namespace a::b {`, we pushed
+                    # multiple parts and need to pop all of them
+                    for _ in range(parts_count):
+                        if namespace_stack:
+                            namespace_stack.pop()
             pending_namespace = False
             pending_type = None
             expect_template_params = False
@@ -414,7 +488,7 @@ def find_namespace_violations(
                     token_kind, token_value, line_num = tokens[i]
 
             # Check if we're at top level (not inside a class/struct body)
-            type_scope_depth = sum(1 for s in scope_stack if s == "type")
+            type_scope_depth = sum(1 for s, _ in scope_stack if s == "type")
             if type_scope_depth == 0:
                 pending_type = {
                     "keyword": token_value if not is_enum_class else "enum",
