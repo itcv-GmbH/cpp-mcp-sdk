@@ -42,8 +42,13 @@ def find_include_violations(
         include_path = match.group(1)
         include_path_parts = Path(include_path).parts
 
-        # Check for directory-traversing relative includes using Path.parts
-        if ".." in include_path_parts:
+        # Check for directory-traversing relative includes
+        # Check raw string for both '../' and '..\' to catch violations regardless of host OS
+        if (
+            ".." in include_path_parts
+            or "../" in include_path
+            or "..\\" in include_path
+        ):
             violations.append((line_num, line.strip(), "directory_traversal"))
             continue
 

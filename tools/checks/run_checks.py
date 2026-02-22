@@ -59,8 +59,8 @@ def main() -> int:
         script_path = script_dir / check_script
 
         if not script_path.exists():
-            print(f"WARNING: Check script not found: {check_script}")
-            continue
+            print(f"ERROR: Check script not found: {check_script}")
+            return 1
 
         print(f"Running {check_script}...")
         script_name, exit_code, output = run_check(script_path)

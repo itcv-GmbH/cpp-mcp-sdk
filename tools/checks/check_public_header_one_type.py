@@ -149,40 +149,29 @@ def count_top_level_types(content: str) -> List[Tuple[str, int]]:
         if forward_decl_pattern.search(line):
             continue
 
-        # Count braces on this line
-        open_braces = line.count("{")
-        close_braces = line.count("}")
+        # Track if this line has a namespace declaration
+        has_namespace = namespace_pattern.search(line)
 
-        # Check if this line starts a namespace
-        if namespace_pattern.search(line):
-            # Check if there's an opening brace on this line or we need to wait
-            if open_braces > 0:
+        # First: check for namespace declaration with opening brace
+        if has_namespace:
+            ns_match = namespace_pattern.search(line)
+            if ns_match and "{" in line[ns_match.end() :]:
                 scope_stack.append(("namespace", None))
-                open_braces -= 1
-            else:
-                # Multi-line namespace declaration - mark that we're expecting a brace
-                scope_stack.append(("namespace_pending", None))
 
-        # Check if we need to convert pending namespace to active
-        if (
-            scope_stack
-            and scope_stack[-1][0] == "namespace_pending"
-            and open_braces > 0
-        ):
-            scope_stack[-1] = ("namespace", None)
-            open_braces -= 1
+        # Get current type nesting depth from scope stack (before processing this line)
+        base_type_depth = sum(1 for s in scope_stack if s[0] == "type")
 
-        # Check for type definitions BEFORE processing remaining braces
-        # A type is at "top-level" if there's no 'type' entry in the scope stack
-        type_count_in_stack = sum(1 for s in scope_stack if s[0] == "type")
+        # Find all type keywords on this line
+        type_matches = list(type_keyword_pattern.finditer(line))
 
-        for match in type_keyword_pattern.finditer(line):
+        # Process each type keyword in order, tracking brace depth at each position
+        for match in type_matches:
             keyword = match.group(1)  # 'class' or 'struct'
             type_name = match.group(2)
+            type_start = match.start()
 
             # Skip if preceded by 'enum' (enum class/struct)
-            start_pos = match.start()
-            preceding = line[:start_pos].strip()
+            preceding = line[:type_start].strip()
             if preceding.endswith("enum"):
                 continue
 
@@ -190,23 +179,51 @@ def count_top_level_types(content: str) -> List[Tuple[str, int]]:
             if "template" in preceding:
                 continue
 
-            # A type is "top-level" if type_count_in_stack == 0
-            if type_count_in_stack == 0:
+            # Calculate brace depth at this keyword's position:
+            # Count braces before this keyword on this line
+            line_before_keyword = line[:type_start]
+            open_on_line_before = line_before_keyword.count("{")
+            close_on_line_before = line_before_keyword.count("}")
+
+            # Check if any preceding type keywords on this line opened a brace before this keyword
+            types_with_braces_before = 0
+            for prev_match in type_matches:
+                if prev_match.end() < type_start:
+                    # Check if there's a '{' between the end of previous type and this keyword
+                    text_between = line[prev_match.end() : type_start]
+                    if "{" in text_between:
+                        types_with_braces_before += 1
+
+            # Total type depth at this position = base depth + types that opened braces
+            total_type_depth = base_type_depth + types_with_braces_before
+
+            # Count only top-level types (not nested inside another type)
+            if total_type_depth == 0:
                 types.append((type_name, line_num))
 
-        # Process remaining opening braces
-        for _ in range(open_braces):
-            # Determine if this is a type scope or other scope
-            # If we just saw a class/struct keyword on this line, it's a type scope
-            if type_keyword_pattern.search(line):
-                # Find the last type name on this line
-                matches = list(type_keyword_pattern.finditer(line))
-                if matches:
-                    last_match = matches[-1]
-                    type_name = last_match.group(2)
-                    scope_stack.append(("type", type_name))
-                else:
-                    scope_stack.append(("other", None))
+        # After processing all type keywords, update scope stack based on all braces
+        open_braces = line.count("{")
+        close_braces = line.count("}")
+
+        # Process opening braces - determine if they belong to types or other constructs
+        brace_positions = [i for i, c in enumerate(line) if c == "{"]
+
+        for brace_pos in brace_positions:
+            # Check if this brace follows a type definition
+            matched_type_name = None
+            for match in type_matches:
+                match_end = match.end()
+                if match_end <= brace_pos:
+                    text_between = line[match_end:brace_pos]
+                    stripped_between = text_between.strip()
+                    # Type braces are either immediately after the type name or
+                    # after a constructor initializer list (starting with ':')
+                    if stripped_between == "" or stripped_between.startswith(":"):
+                        matched_type_name = match.group(2)
+                        break
+
+            if matched_type_name:
+                scope_stack.append(("type", matched_type_name))
             else:
                 scope_stack.append(("other", None))
 
