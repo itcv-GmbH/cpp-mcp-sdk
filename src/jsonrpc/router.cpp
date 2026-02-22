@@ -548,7 +548,7 @@ auto Router::addInFlightRequest(const std::shared_ptr<InFlightRequestState> &inF
   return std::nullopt;
 }
 
-auto Router::popInFlightRequest(const RequestId &requestId, Router::MarkIgnoredResponseId markIgnoredResponseId) -> std::shared_ptr<InFlightRequestState>
+auto Router::popInFlightRequest(const RequestId &requestId, MarkIgnoredResponseId markIgnoredResponseId) -> std::shared_ptr<InFlightRequestState>
 {
   const std::scoped_lock lock(mutex_);
 
