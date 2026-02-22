@@ -51,4 +51,10 @@ examples/http_server_auth/tls/*.pem
 examples/http_server_auth/tls/*.csr
 examples/http_server_auth/tls/*.srl
 
-__pycache__
+# Python
+__pycache__/
+**/__pycache__/
+**/*.pyc
+
+# Integration test virtual environment
+tests/integration/.venv/
