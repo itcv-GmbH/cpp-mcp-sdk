@@ -71,6 +71,8 @@ static constexpr std::size_t kClientAsyncWorkerCount = 4U;
 static constexpr std::size_t kClientCallbackWorkerCount = 1U;
 static constexpr auto kAsyncCallbackPollInterval = std::chrono::milliseconds {10};
 
+inline auto suppressException() noexcept -> void {}
+
 static auto clientDeletionPool() -> boost::asio::thread_pool &
 {
   static boost::asio::thread_pool pool {1};
@@ -981,6 +983,7 @@ public:
     catch (...)
     {
       // Suppress exceptions from destructor - noexcept guarantee
+      suppressException();
     }
   }
 
@@ -1052,6 +1055,7 @@ public:
     catch (...)
     {
       // Suppress exceptions - stop() is noexcept
+      suppressException();
     }
 
     try
@@ -1064,6 +1068,7 @@ public:
     catch (...)
     {
       // Suppress exceptions - stop() is noexcept
+      suppressException();
     }
 
     try
@@ -1076,6 +1081,7 @@ public:
     catch (...)
     {
       // Suppress exceptions - stop() is noexcept
+      suppressException();
     }
   }
 
@@ -2617,25 +2623,36 @@ auto Client::postManagedTask(std::function<void()> task) -> bool
     return false;
   }
 
-  // Wrap task with error reporting
   ErrorReporter reporter = errorReporter_;
-  auto wrappedTask = [task = std::move(task), reporter = std::move(reporter)]() mutable -> void
+  try
   {
-    try
-    {
-      task();
-    }
-    catch (const std::exception &error)
-    {
-      reportError(reporter, "Client::asyncWorkPool", error.what());
-    }
-    catch (...)
-    {
-      reportError(reporter, "Client::asyncWorkPool", "Unknown exception");
-    }
-  };
-
-  boost::asio::post(*asyncWorkPool_, std::move(wrappedTask));
+    boost::asio::post(*asyncWorkPool_,
+                      [task = std::move(task), reporter = std::move(reporter)]() mutable noexcept -> void
+                      {
+                        try
+                        {
+                          task();
+                        }
+                        catch (const std::exception &error)
+                        {
+                          reportError(reporter, "Client::asyncWorkPool", error.what());
+                        }
+                        catch (...)
+                        {
+                          reportError(reporter, "Client::asyncWorkPool", "Unknown exception");
+                        }
+                      });
+  }
+  catch (const std::exception &error)
+  {
+    reportError(reporter, "Client::asyncWorkPool::post", error.what());
+    return false;
+  }
+  catch (...)
+  {
+    reportError(reporter, "Client::asyncWorkPool::post", "Unknown exception");
+    return false;
+  }
 
   return true;
 }
@@ -2648,25 +2665,37 @@ auto Client::postCallbackTask(std::function<void()> task) -> bool
     return false;
   }
 
-  // Wrap task with error reporting
   ErrorReporter reporter = errorReporter_;
-  auto wrappedTask = [task = std::move(task), reporter = std::move(reporter)]() mutable -> void
+  try
   {
-    try
-    {
-      task();
-    }
-    catch (const std::exception &error)
-    {
-      reportError(reporter, "Client::callbackDispatchPool", error.what());
-    }
-    catch (...)
-    {
-      reportError(reporter, "Client::callbackDispatchPool", "Unknown exception");
-    }
-  };
+    boost::asio::post(*callbackDispatchPool_,
+                      [task = std::move(task), reporter = std::move(reporter)]() mutable noexcept -> void
+                      {
+                        try
+                        {
+                          task();
+                        }
+                        catch (const std::exception &error)
+                        {
+                          reportError(reporter, "Client::callbackDispatchPool", error.what());
+                        }
+                        catch (...)
+                        {
+                          reportError(reporter, "Client::callbackDispatchPool", "Unknown exception");
+                        }
+                      });
+  }
+  catch (const std::exception &error)
+  {
+    reportError(reporter, "Client::callbackDispatchPool::post", error.what());
+    return false;
+  }
+  catch (...)
+  {
+    reportError(reporter, "Client::callbackDispatchPool::post", "Unknown exception");
+    return false;
+  }
 
-  boost::asio::post(*callbackDispatchPool_, std::move(wrappedTask));
   return true;
 }
 

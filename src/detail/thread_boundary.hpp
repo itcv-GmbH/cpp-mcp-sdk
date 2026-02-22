@@ -1,8 +1,9 @@
 #pragma once
 
-#include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include <mcp/error_reporter.hpp>
@@ -20,14 +21,17 @@ namespace mcp::detail
  * Usage: auto wrapped = threadBoundary(callable, reporter, "Component");
  */
 template<typename Callable>
-[[nodiscard]] inline auto threadBoundary(Callable callable, ErrorReporter errorReporter, std::string_view component) -> std::function<void()>
+[[nodiscard]] inline auto threadBoundary(Callable callable, ErrorReporter errorReporter, std::string_view component)
 {
-  // Note: Not marked noexcept because std::function construction can throw (bad_alloc)
-  return [callable = std::move(callable), errorReporter = std::move(errorReporter), component = std::string(component)]() mutable noexcept -> void
+  auto callablePtr = std::make_shared<std::decay_t<Callable>>(std::move(callable));
+
+  // Note: Not marked noexcept because closure construction can throw (bad_alloc).
+  // NOLINTNEXTLINE(bugprone-exception-escape) - Exceptions from callable are contained within the boundary try/catch below.
+  return [callable = std::move(callablePtr), errorReporter = std::move(errorReporter), component = std::string(component)]() noexcept -> void
   {
     try
     {
-      callable();
+      (*callable)();
     }
     catch (...)
     {
@@ -42,14 +46,16 @@ template<typename Callable>
  * Similar to threadBoundary, but for thread pool work items.
  */
 template<typename Callable>
-[[nodiscard]] inline auto threadPoolWork(Callable callable, ErrorReporter errorReporter, std::string_view component) -> std::function<void()>
+[[nodiscard]] inline auto threadPoolWork(Callable callable, ErrorReporter errorReporter, std::string_view component)
 {
-  // Note: Not marked noexcept because std::function construction can throw (bad_alloc)
-  return [callable = std::move(callable), errorReporter = std::move(errorReporter), component = std::string(component)]() mutable noexcept -> void
+  auto callablePtr = std::make_shared<std::decay_t<Callable>>(std::move(callable));
+
+  // Note: Not marked noexcept because closure construction can throw (bad_alloc).
+  return [callable = std::move(callablePtr), errorReporter = std::move(errorReporter), component = std::string(component)]() noexcept -> void
   {
     try
     {
-      callable();
+      (*callable)();
     }
     catch (...)
     {

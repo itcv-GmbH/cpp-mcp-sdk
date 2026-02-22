@@ -8,6 +8,13 @@
 namespace mcp
 {
 
+namespace detail
+{
+
+inline auto suppressReporterException() noexcept -> void {}
+
+}  // namespace detail
+
 /**
  * @brief Error event type containing component identifier and error message.
  *
@@ -112,6 +119,7 @@ inline auto reportError(const ErrorReporter &reporter, std::string_view componen
   catch (...)
   {
     // Suppress any exceptions from the error reporter to maintain SDK stability
+    detail::suppressReporterException();
   }
 }
 
@@ -151,6 +159,7 @@ inline auto reportCurrentException(const ErrorReporter &reporter, std::string_vi
   catch (...)
   {
     // Suppress any exceptions from the error reporter to maintain SDK stability
+    detail::suppressReporterException();
   }
 }
 

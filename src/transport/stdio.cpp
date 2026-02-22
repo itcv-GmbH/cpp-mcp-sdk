@@ -31,12 +31,11 @@
 #  include <signal.h>  // NOLINT(hicpp-deprecated-headers,modernize-deprecated-headers)
 #endif
 
+#include <mcp/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/stdio.hpp>
-
-#include "../detail/thread_boundary.hpp"
 
 namespace mcp::transport
 {

@@ -46,14 +46,14 @@ static void deleteThreadPoolWithReporter(boost::asio::thread_pool *pool, const E
   try
   {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    std::thread deletionThread([wrapped = ::mcp::detail::threadBoundary(
-                                  [pool]() noexcept -> void
-                                  {
-                                    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-                                    delete pool;
-                                  },
-                                  errorReporter,
-                                  "Router")]() noexcept -> void { wrapped(); });
+    std::thread deletionThread(::mcp::detail::threadBoundary(
+      [pool]() noexcept -> void
+      {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete pool;
+      },
+      errorReporter,
+      "Router"));
     deletionThread.detach();
   }
   // NOLINTNEXTLINE(bugprone-empty-catch)
@@ -143,6 +143,44 @@ static auto setPromiseValueNoThrow(std::promise<Response> &promise, Response res
   }
 }
 
+static auto invokeProgressCallback(const ProgressCallback &progressCallback,
+                                   const RequestContext &context,
+                                   const std::optional<ProgressUpdate> &progressUpdate,
+                                   const ErrorReporter &errorReporter) -> void
+{
+  if (!progressCallback || !progressUpdate.has_value())
+  {
+    return;
+  }
+
+  try
+  {
+    progressCallback(context, *progressUpdate);
+  }
+  catch (...)
+  {
+    reportCurrentException(errorReporter, "Router::dispatchNotification(progress)");
+  }
+}
+
+static auto invokeNotificationHandler(const NotificationHandler &methodHandler, const RequestContext &context, const Notification &notification, const ErrorReporter &errorReporter)
+  -> void
+{
+  if (!methodHandler)
+  {
+    return;
+  }
+
+  try
+  {
+    methodHandler(context, notification);
+  }
+  catch (...)
+  {
+    reportCurrentException(errorReporter, "Router::dispatchNotification(handler)");
+  }
+}
+
 }  // namespace detail
 
 auto Router::RequestIdHash::operator()(const RequestId &requestId) const noexcept -> std::size_t
@@ -162,7 +200,7 @@ auto Router::RequestIdEqual::operator()(const RequestId &left, const RequestId &
 
 Router::Router(RouterOptions options)
   : inboundState_(std::make_shared<Router::InboundState>())
-  , options_(options)
+  , options_(std::move(options))
   , timeoutPool_(std::make_unique<boost::asio::thread_pool>(1))
 {
   // Create completion pool with custom deleter that ensures destruction
@@ -478,31 +516,8 @@ auto Router::dispatchNotification(const RequestContext &context, const Notificat
     }
   }
 
-  // Invoke progress callback with exception containment
-  if (progressCallback && progressUpdate.has_value())
-  {
-    try
-    {
-      progressCallback(context, *progressUpdate);
-    }
-    catch (...)
-    {
-      reportCurrentException(options_.errorReporter, "Router::dispatchNotification(progress)");
-    }
-  }
-
-  // Invoke notification handler with exception containment
-  if (methodHandler)
-  {
-    try
-    {
-      methodHandler(context, notification);
-    }
-    catch (...)
-    {
-      reportCurrentException(options_.errorReporter, "Router::dispatchNotification(handler)");
-    }
-  }
+  detail::invokeProgressCallback(progressCallback, context, progressUpdate, options_.errorReporter);
+  detail::invokeNotificationHandler(methodHandler, context, notification, options_.errorReporter);
 }
 
 auto Router::addInFlightRequest(const std::shared_ptr<InFlightRequestState> &inFlightRequest) -> std::optional<Response>

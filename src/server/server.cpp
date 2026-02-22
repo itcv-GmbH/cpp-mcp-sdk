@@ -1538,32 +1538,41 @@ auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, cons
   jsonrpc::RequestContext backgroundContext = context;
   const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
   const ErrorReporter errorReporter = configuration_.sessionOptions.errorReporter;
-  std::thread([wrapped = detail::threadBoundary(
-                 [taskId = std::move(taskId),
-                  toolName,
-                  definitionCopy = std::move(definitionCopy),
-                  handlerCopy = std::move(handlerCopy),
-                  argumentsCopy = std::move(argumentsCopy),
-                  backgroundContext = std::move(backgroundContext),
-                  taskReceiver]() mutable -> void
-                 {
-                   const jsonrpc::Response toolResponse = detail::executeToolCall(
-                     backgroundContext, jsonrpc::RequestId {std::string("task-") + taskId}, toolName, definitionCopy, handlerCopy, std::move(argumentsCopy));
+  std::thread(detail::threadBoundary(
+                // NOLINTNEXTLINE(bugprone-exception-escape) - All exceptions are handled inside this lambda and via threadBoundary.
+                [taskId = std::move(taskId),
+                 toolName,
+                 definitionCopy = std::move(definitionCopy),
+                 handlerCopy = std::move(handlerCopy),
+                 argumentsCopy = std::move(argumentsCopy),
+                 backgroundContext = std::move(backgroundContext),
+                 taskReceiver,
+                 errorReporter]() mutable noexcept -> void
+                {
+                  try
+                  {
+                    const jsonrpc::Response toolResponse = detail::executeToolCall(
+                      backgroundContext, jsonrpc::RequestId {std::string("task-") + taskId}, toolName, definitionCopy, handlerCopy, std::move(argumentsCopy));
 
-                   util::TaskStatus successStatus = util::TaskStatus::kCompleted;
-                   if (std::holds_alternative<jsonrpc::SuccessResponse>(toolResponse))
-                   {
-                     const auto &success = std::get<jsonrpc::SuccessResponse>(toolResponse);
-                     if (success.result.contains("isError") && success.result["isError"].is_bool() && success.result["isError"].as<bool>())
-                     {
-                       successStatus = util::TaskStatus::kFailed;
-                     }
-                   }
+                    util::TaskStatus successStatus = util::TaskStatus::kCompleted;
+                    if (std::holds_alternative<jsonrpc::SuccessResponse>(toolResponse))
+                    {
+                      const auto &success = std::get<jsonrpc::SuccessResponse>(toolResponse);
+                      if (success.result.contains("isError") && success.result["isError"].is_bool() && success.result["isError"].as<bool>())
+                      {
+                        successStatus = util::TaskStatus::kFailed;
+                      }
+                    }
 
-                   static_cast<void>(taskReceiver->completeTaskWithResponse(backgroundContext, taskId, toolResponse, successStatus));
-                 },
-                 errorReporter,
-                 "ServerToolTask")]() noexcept -> void { wrapped(); })
+                    static_cast<void>(taskReceiver->completeTaskWithResponse(backgroundContext, taskId, toolResponse, successStatus));
+                  }
+                  catch (...)
+                  {
+                    reportCurrentException(errorReporter, "ServerToolTask");
+                  }
+                },
+                errorReporter,
+                "ServerToolTask"))
     .detach();
 
   jsonrpc::SuccessResponse response;

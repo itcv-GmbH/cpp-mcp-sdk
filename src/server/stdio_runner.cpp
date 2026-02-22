@@ -31,7 +31,7 @@ struct StdioServerRunner::Impl
 {
   explicit Impl(ServerFactory serverFactoryIn, StdioServerRunnerOptions optionsIn)
     : serverFactory(std::move(serverFactoryIn))
-    , options(optionsIn)
+    , options(std::move(optionsIn))
   {
   }
 
@@ -74,7 +74,7 @@ StdioServerRunner::StdioServerRunner(ServerFactory serverFactory)
 }
 
 StdioServerRunner::StdioServerRunner(ServerFactory serverFactory, StdioServerRunnerOptions options)
-  : impl_(std::make_unique<Impl>(std::move(serverFactory), options))
+  : impl_(std::make_unique<Impl>(std::move(serverFactory), std::move(options)))
 {
 }
 
@@ -317,7 +317,7 @@ auto StdioServerRunner::Impl::processMessage(const jsonrpc::Message &message, co
 
 auto StdioServerRunner::startAsync() -> std::thread
 {
-  return std::thread {[wrapped = mcp::detail::threadBoundary([this]() -> void { run(); }, impl_->options.errorReporter, "StdioServerRunner")]() noexcept -> void { wrapped(); }};
+  return std::thread(mcp::detail::threadBoundary([this]() -> void { run(); }, impl_->options.errorReporter, "StdioServerRunner"));
 }
 
 auto StdioServerRunner::stop() noexcept -> void

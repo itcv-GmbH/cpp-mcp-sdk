@@ -1,5 +1,4 @@
 #include <atomic>
-#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -29,6 +28,8 @@ static auto isInitializedNotification(const jsonrpc::Message &message) -> bool
 namespace
 {
 
+inline auto suppressException() noexcept -> void {}  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
+
 class StreamableHttpClientTransport final : public Transport
 {
 public:
@@ -56,6 +57,7 @@ public:
     catch (...)
     {
       // Suppress exceptions from destructor - noexcept guarantee
+      suppressException();
     }
   }
 
@@ -74,55 +76,52 @@ public:
 
   auto stop() noexcept -> void override
   {
-    // Idempotent: check if already stopped
-    const std::scoped_lock lock(mutex_);
-    if (!running_)
+    std::unique_ptr<detail::InboundLoop> inboundLoop;
     {
-      return;
-    }
-    running_ = false;
+      // Idempotent: check if already stopped
+      const std::scoped_lock lock(mutex_);
+      if (!running_)
+      {
+        return;
+      }
 
-    // Signal the listen loop to stop
-    listenLoopRunning_.store(false);
+      running_ = false;
+
+      // Signal the listen loop to stop and detach the loop instance while protected by mutex.
+      listenLoopRunning_.store(false);
+      inboundLoop = std::move(inboundLoop_);
+
+      // Reset the listen loop started flag to allow restart on subsequent start/stop cycles.
+      listenLoopStarted_ = false;
+    }
+
+    if (inboundLoop != nullptr)
+    {
+      try
+      {
+        inboundLoop->stop();
+        inboundLoop->join();
+      }
+      catch (...)
+      {
+        // Suppress exceptions - stop() is noexcept
+        suppressException();
+      }
+    }
 
     try
     {
-      // Stop and join the InboundLoop if it's running
-      if (inboundLoop_ != nullptr)
-      {
-        try
-        {
-          inboundLoop_->stop();
-          inboundLoop_->join();
-        }
-        catch (...)
-        {
-          // Suppress exceptions - stop() is noexcept
-        }
-        inboundLoop_.reset();
-      }
-
-      // Close any active listen stream (client-initiated closure per MCP spec section 6.3)
+      // Close any active listen stream (client-initiated closure per MCP spec section 6.3).
       if (client_.hasActiveListenStream())
       {
-        try
-        {
-          client_.terminateSession();
-        }
-        catch (...)
-        {
-          // Suppress exceptions - stop() is noexcept
-          listenLoopRunning_.store(false);
-        }
+        static_cast<void>(client_.terminateSession());
       }
     }
     catch (...)
     {
       // Suppress all exceptions - stop() is noexcept
+      suppressException();
     }
-
-    // Reset the listen loop started flag to allow restart on subsequent start/stop cycles
-    listenLoopStarted_ = false;
   }
 
   auto isRunning() const noexcept -> bool override
@@ -179,10 +178,16 @@ public:
 private:
   auto startListenLoop() -> void
   {
-    // Set flag BEFORE starting the loop to ensure proper synchronization
+    const std::scoped_lock lock(mutex_);
+    if (!running_ || inboundLoop_ != nullptr)
+    {
+      return;
+    }
+
+    // Set flag before starting the loop to ensure proper synchronization.
     listenLoopRunning_.store(true);
 
-    // Create the InboundLoop with the listen loop body
+    // Create the InboundLoop with the listen loop body.
     auto loopBody = [this]() -> void { runListenLoop(); };
     inboundLoop_ = std::make_unique<detail::InboundLoop>(std::move(loopBody), options_.errorReporter);
     inboundLoop_->start();

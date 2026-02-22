@@ -30,7 +30,7 @@ public:
 
     running_.store(true);
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    thread_ = std::thread([wrapped = threadBoundary([this]() -> void { runLoop(); }, errorReporter_, "InboundLoop")]() noexcept -> void { wrapped(); });
+    thread_ = std::thread(threadBoundary([this]() -> void { runLoop(); }, errorReporter_, "InboundLoop"));
   }
 
   void stop() { running_.store(false); }
