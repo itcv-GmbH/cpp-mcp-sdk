@@ -10,6 +10,9 @@ This task is responsible for converting `include/mcp/schema/validator.hpp` into 
 *   `src/schema/validator.cpp`
 *   `tools/checks/check_public_header_one_type.py`
 
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`.
+
 ## Output / Definition of Done
 *   `include/mcp/schema/validator.hpp` contains zero `class` declarations and zero `struct` declarations.
 *   Per-type headers exist under `include/mcp/schema/` for the top-level `class` and `struct` types formerly defined in `include/mcp/schema/validator.hpp`:

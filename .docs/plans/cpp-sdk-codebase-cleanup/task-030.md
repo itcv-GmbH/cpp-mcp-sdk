@@ -1,5 +1,5 @@
 # Task ID: task-030
-# Task Name: Normalize Detail, Util, and Security Header Basenames
+# Task Name: Normalize `include/mcp/security/limits.hpp`, `include/mcp/util/cancellation.hpp`, `include/mcp/util/progress.hpp`, and `include/mcp/detail/url.hpp` Basenames
 
 ## Context
 This task is responsible for enforcing the per-type header basename rule for detail, util, and security headers that currently define a public `class` or `struct` whose basename does not match the type name.
@@ -11,6 +11,9 @@ This task is responsible for enforcing the per-type header basename rule for det
 *   `include/mcp/util/progress.hpp`
 *   `include/mcp/detail/url.hpp`
 *   `tools/checks/check_public_header_one_type.py`
+
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`.
 
 ## Output / Definition of Done
 *   `include/mcp/security/runtime_limits.hpp` exists and defines the type currently defined in `include/mcp/security/limits.hpp`.

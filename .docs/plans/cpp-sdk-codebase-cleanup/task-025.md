@@ -11,6 +11,9 @@ This task is responsible for converting server runner headers into umbrella head
 *   `include/mcp/server/streamable_http_runner.hpp`
 *   `tools/checks/check_public_header_one_type.py`
 
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`.
+
 ## Output / Definition of Done
 *   Each of the following headers contains zero `class` declarations and zero `struct` declarations:
     *   `include/mcp/server/combined_runner.hpp`

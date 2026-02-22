@@ -8,6 +8,9 @@ This task is responsible for executing the required quality gates after the refa
 *   `.docs/requirements/cpp-sdk-codebase-cleanup.md` (Quality Gates)
 *   `.github/workflows/ci.yml` (CI platform set)
 
+## Dependencies
+*   This task depends on: `task-032`.
+
 ## Output / Definition of Done
 *   All unit tests and conformance tests pass.
 *   `clang-format-check` passes.

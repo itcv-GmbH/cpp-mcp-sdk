@@ -10,6 +10,9 @@ This task is responsible for adding deterministic enforcement scripts that valid
 *   `src/`
 *   `tests/`
 
+## Dependencies
+*   This task depends on no other plan tasks.
+
 ## Output / Definition of Done
 *   `tools/checks/check_public_header_one_type.py` exists and exits non-zero when any file under `include/mcp/` defines more than one top-level `class` or `struct`.
 *   `tools/checks/check_include_policy.py` exists and exits non-zero when any file under `src/` or `tests/` contains a directory-traversing relative include.

@@ -9,6 +9,9 @@ This task is responsible for converting `include/mcp/auth/oauth_server.hpp` into
 *   `include/mcp/auth/oauth_server.hpp`
 *   `tools/checks/check_public_header_one_type.py`
 
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`.
+
 ## Output / Definition of Done
 *   `include/mcp/auth/oauth_server.hpp` contains zero `class` declarations and zero `struct` declarations.
 *   Per-type headers exist for all top-level `class` and `struct` types formerly defined in `include/mcp/auth/oauth_server.hpp`.

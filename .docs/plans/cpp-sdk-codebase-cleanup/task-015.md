@@ -9,6 +9,9 @@ This task is responsible for converting `include/mcp/jsonrpc/messages.hpp` into 
 *   `include/mcp/jsonrpc/messages.hpp`
 *   `tools/checks/check_public_header_one_type.py`
 
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`.
+
 ## Output / Definition of Done
 *   `include/mcp/jsonrpc/messages.hpp` contains zero `class` declarations and zero `struct` declarations.
 *   Per-type headers exist under `include/mcp/jsonrpc/` for all top-level `class` and `struct` types formerly defined in `include/mcp/jsonrpc/messages.hpp`:

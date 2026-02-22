@@ -8,6 +8,9 @@ This task is responsible for enforcing repository hygiene requirements by ensuri
 *   `.docs/requirements/cpp-sdk-codebase-cleanup.md` (Repository Hygiene)
 *   `.gitignore`
 
+## Dependencies
+*   This task depends on no other plan tasks.
+
 ## Output / Definition of Done
 *   The git index contains zero entries matching:
     *   `build/`

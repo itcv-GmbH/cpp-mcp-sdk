@@ -9,6 +9,9 @@ This task is responsible for converting `include/mcp/security/origin_policy.hpp`
 *   `include/mcp/security/origin_policy.hpp`
 *   `tools/checks/check_public_header_one_type.py`
 
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`.
+
 ## Output / Definition of Done
 *   `include/mcp/security/origin_policy.hpp` contains zero `class` declarations and zero `struct` declarations.
 *   Per-type headers exist under `include/mcp/security/` for the top-level `class` and `struct` types formerly defined in `include/mcp/security/origin_policy.hpp`:

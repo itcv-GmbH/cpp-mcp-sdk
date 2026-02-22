@@ -9,6 +9,9 @@ This task is responsible for converting `include/mcp/transport/http.hpp` into an
 *   `include/mcp/transport/http.hpp`
 *   `tools/checks/check_public_header_one_type.py`
 
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`.
+
 ## Output / Definition of Done
 *   `include/mcp/transport/http.hpp` contains zero `class` declarations and zero `struct` declarations.
 *   `include/mcp/transport/http.hpp` remains available at its current include path and re-exports the required types by including per-type headers.

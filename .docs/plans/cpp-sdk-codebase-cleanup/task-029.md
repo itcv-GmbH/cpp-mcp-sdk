@@ -1,5 +1,5 @@
 # Task ID: task-029
-# Task Name: Normalize Base Header Basenames
+# Task Name: Normalize `include/mcp/error_reporter.hpp`, `include/mcp/errors.hpp`, and `include/mcp/version.hpp` Basenames
 
 ## Context
 This task is responsible for enforcing the per-type header basename rule for base headers that currently define a public `class` or `struct` whose basename does not match the type name.
@@ -10,6 +10,9 @@ This task is responsible for enforcing the per-type header basename rule for bas
 *   `include/mcp/errors.hpp`
 *   `include/mcp/version.hpp`
 *   `tools/checks/check_public_header_one_type.py`
+
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`.
 
 ## Output / Definition of Done
 *   `include/mcp/error_event.hpp` exists and defines the type currently defined in `include/mcp/error_reporter.hpp`.

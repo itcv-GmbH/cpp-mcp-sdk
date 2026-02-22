@@ -9,6 +9,9 @@ This task is responsible for ensuring the sampling create-message context type h
 *   `include/mcp/client/sampling.hpp`
 *   `tools/checks/check_public_header_one_type.py`
 
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`.
+
 ## Output / Definition of Done
 *   `include/mcp/client/sampling_create_message_context.hpp` exists and defines the sampling create-message context type.
 *   `include/mcp/client/sampling.hpp` contains zero `class` declarations and zero `struct` declarations and includes `include/mcp/client/sampling_create_message_context.hpp`.

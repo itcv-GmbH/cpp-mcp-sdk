@@ -31,10 +31,10 @@
 - [ ] `task-026`: Split `include/mcp/schema/validator.hpp` (Depends on: `task-002`)
 - [ ] `task-027`: Split `include/mcp/http/sse.hpp` (Depends on: `task-002`)
 - [ ] `task-028`: Split `include/mcp/security/origin_policy.hpp` (Depends on: `task-002`)
-- [ ] `task-029`: Normalize Base Header Basenames (Depends on: `task-002`)
-- [ ] `task-030`: Normalize Detail, Util, and Security Header Basenames (Depends on: `task-002`)
+- [ ] `task-029`: Normalize `include/mcp/error_reporter.hpp`, `include/mcp/errors.hpp`, and `include/mcp/version.hpp` Basenames (Depends on: `task-002`)
+- [ ] `task-030`: Normalize `include/mcp/security/limits.hpp`, `include/mcp/util/cancellation.hpp`, `include/mcp/util/progress.hpp`, and `include/mcp/detail/url.hpp` Basenames (Depends on: `task-002`)
 
 ## Phase 3: Enforcement Wiring and Final Gate (Blocked by Phase 2)
-- [ ] `task-031`: Resolve Remaining Enforcement Violations (Depends on: Phase 2)
+- [ ] `task-031`: Resolve Remaining Enforcement Violations (Depends on: `task-005`, `task-006`, `task-007`, `task-008`, `task-009`, `task-010`, `task-011`, `task-012`, `task-013`, `task-014`, `task-015`, `task-016`, `task-017`, `task-018`, `task-019`, `task-020`, `task-021`, `task-022`, `task-023`, `task-024`, `task-025`, `task-026`, `task-027`, `task-028`, `task-029`, `task-030`)
 - [ ] `task-032`: Wire Enforcement Checks Into CMake and CI (Depends on: `task-031`)
 - [ ] `task-033`: Full Build, Test, and Formatting Gate (Depends on: `task-032`)

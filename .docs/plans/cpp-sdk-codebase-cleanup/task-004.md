@@ -13,6 +13,9 @@ This task is responsible for moving the internal threading boundary header into 
 *   `src/server/stdio_runner.cpp`
 *   `tests/detail/thread_boundary_test.cpp`
 
+## Dependencies
+*   This task depends on: `task-002`.
+
 ## Output / Definition of Done
 *   `src/detail/thread_boundary.hpp` is relocated to `include/mcp/detail/thread_boundary.hpp`.
 *   All call sites include the header via `<mcp/detail/thread_boundary.hpp>`.

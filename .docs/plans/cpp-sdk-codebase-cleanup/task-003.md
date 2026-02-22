@@ -9,6 +9,9 @@ This task is responsible for enforcing module-aligned source placement by reloca
 *   `CMakeLists.txt` (`MCP_SDK_SOURCES`)
 *   Source files listed in the SRS relocation set
 
+## Dependencies
+*   This task depends on: `task-001`.
+
 ## Output / Definition of Done
 *   The following files are relocated:
     *   `src/auth_client_registration.cpp` is moved to `src/auth/client_registration.cpp`

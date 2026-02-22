@@ -10,6 +10,9 @@ This task is responsible for converting `include/mcp/client/client.hpp` into an 
 *   `src/client/client.cpp`
 *   `tools/checks/check_public_header_one_type.py`
 
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`, `task-014`, `task-015`, `task-016`.
+
 ## Output / Definition of Done
 *   `include/mcp/client/client.hpp` contains zero `class` declarations and zero `struct` declarations.
 *   Per-type headers exist under `include/mcp/client/` for all top-level `class` and `struct` types formerly defined in `include/mcp/client/client.hpp`:

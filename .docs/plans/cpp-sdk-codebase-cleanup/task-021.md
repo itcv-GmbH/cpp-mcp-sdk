@@ -10,6 +10,9 @@ This task is responsible for converting `include/mcp/server/server.hpp` into an 
 *   `src/server/server.cpp`
 *   `tools/checks/check_public_header_one_type.py`
 
+## Dependencies
+*   This task depends on: `task-001`, `task-002`, `task-003`, `task-004`, `task-007`, `task-014`, `task-015`, `task-016`.
+
 ## Output / Definition of Done
 *   `include/mcp/server/server.hpp` contains zero `class` declarations and zero `struct` declarations.
 *   Per-type headers exist under `include/mcp/server/` for the top-level `class` and `struct` types formerly defined in `include/mcp/server/server.hpp`:

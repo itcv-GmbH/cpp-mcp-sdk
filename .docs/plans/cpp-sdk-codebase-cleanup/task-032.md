@@ -10,6 +10,9 @@ This task is responsible for ensuring enforcement checks execute in CI and are a
 *   `CMakeLists.txt`
 *   `tools/checks/run_checks.py`
 
+## Dependencies
+*   This task depends on: `task-031`.
+
 ## Output / Definition of Done
 *   `CMakeLists.txt` defines a custom target that runs `python3 tools/checks/run_checks.py`.
 *   `.github/workflows/ci.yml` runs the enforcement checks in CI and fails the workflow when checks fail.
