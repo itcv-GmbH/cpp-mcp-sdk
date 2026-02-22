@@ -90,7 +90,7 @@ namespace mcp
  * The Client class provides the following exception behavior:
  *
  * @subsection Construction
- * - Client(std::shared_ptr<Session>) throws std::invalid_argument if session is null
+ * - Client(std::shared_ptr<Session>, ErrorReporter) throws std::invalid_argument if session is null
  * - create() returns shared_ptr (returns nullptr on failure, including bad_alloc)
  *
  * @subsection Destruction

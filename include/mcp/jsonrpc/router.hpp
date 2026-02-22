@@ -95,8 +95,6 @@ using RequestHandler = std::function<std::future<Response>(const RequestContext 
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;
 using OutboundMessageSender = std::function<void(const RequestContext &, Message)>;
 
-#include <mcp/error_reporter.hpp>
-
 struct RouterOptions
 {
   std::size_t maxConcurrentInFlightRequests = security::kDefaultMaxConcurrentInFlightRequests;
