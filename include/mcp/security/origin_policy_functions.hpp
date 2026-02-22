@@ -4,8 +4,8 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/security/detail/parsed_origin.hpp>
 #include <mcp/security/origin_policy_config.hpp>
-#include <mcp/security/parsed_origin.hpp>
 
 namespace mcp::security
 {
