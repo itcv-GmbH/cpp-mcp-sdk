@@ -1,27 +1,7 @@
 #pragma once
 
-#include <functional>
-#include <optional>
-#include <string>
-#include <vector>
+// Umbrella header for MCP client roots types
 
-#include <mcp/jsonrpc/messages.hpp>
-
-namespace mcp
-{
-
-struct RootEntry
-{
-  std::string uri;
-  std::optional<std::string> name;
-  std::optional<jsonrpc::JsonValue> metadata;
-};
-
-struct RootsListContext
-{
-  jsonrpc::RequestContext requestContext;
-};
-
-using RootsProvider = std::function<std::vector<RootEntry>(const RootsListContext &)>;
-
-}  // namespace mcp
+#include <mcp/client/root_entry.hpp>
+#include <mcp/client/roots_list_context.hpp>
+#include <mcp/client/roots_provider.hpp>
