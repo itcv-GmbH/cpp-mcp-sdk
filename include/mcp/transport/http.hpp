@@ -25,6 +25,42 @@
 namespace mcp::transport
 {
 
+/**
+ * @brief Thread Safety
+ *
+ * This header defines several HTTP transport types with varying thread-safety classifications:
+ *
+ * @par HttpServerRuntime - Thread-safe
+ * - Provides internal synchronization for all public methods
+ * - Thread-safe methods: setRequestHandler(), start(), stop(), isRunning(), localPort()
+ * - start() is idempotent
+ * - stop() is idempotent and noexcept
+ * - Handler callbacks are invoked on HTTP server internal I/O threads
+ *
+ * @par HttpClientRuntime - Thread-compatible
+ * - Designed for single-threaded or externally synchronized use
+ * - execute() must not be called concurrently
+ * - External synchronization required for concurrent use
+ *
+ * @par http::StreamableHttpServer - Thread-safe
+ * - Provides internal synchronization for session management and request handling
+ * - Thread-safe methods: setRequestHandler(), setNotificationHandler(), setResponseHandler(),
+ *   upsertSession(), setSessionState(), handleRequest(), enqueueServerMessage()
+ * - handleRequest() is thread-safe and may be called concurrently from multiple HTTP worker threads
+ * - Handler callbacks are invoked on HTTP server internal I/O threads
+ *
+ * @par http::StreamableHttpClient - Thread-compatible
+ * - Designed for single-threaded or externally synchronized use
+ * - Mutating methods (send(), openListenStream(), pollListenStream(), terminateSession())
+ *   must not be called concurrently
+ * - hasActiveListenStream() is thread-safe for queries
+ * - External synchronization required for concurrent use
+ *
+ * @par http::SharedHeaderState - Thread-safe
+ * - Provides internal synchronization via mutex_
+ * - All accessor and mutator methods are thread-safe
+ */
+
 namespace http
 {
 

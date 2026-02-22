@@ -20,6 +20,47 @@
 namespace mcp::jsonrpc
 {
 
+/**
+ * @brief Thread Safety
+ *
+ * @par Thread-Safety Classification: Thread-safe
+ *
+ * The Router class provides thread-safe access to all its public methods.
+ * Internal synchronization uses separate mutexes for inbound and outbound state.
+ *
+ * @par Thread-Safe Methods (concurrent invocation allowed):
+ * - Router(), ~Router()
+ * - setOutboundMessageSender()
+ * - registerRequestHandler(), registerNotificationHandler(), unregisterHandler()
+ * - dispatchRequest(), dispatchNotification()
+ * - sendRequest(), sendNotification(), dispatchResponse()
+ * - emitProgress() (both overloads)
+ *
+ * @par Concurrency Rules:
+ * 1. Handler registration methods may be called at any time, but handlers set after
+ *    routing begins may miss early messages.
+ * 2. setOutboundMessageSender() must be called before dispatching messages.
+ * 3. Progress callbacks are invoked directly on the router/I/O thread. They must be
+ *    fast and non-blocking.
+ *
+ * @par Internal Lock Ordering:
+ * The Router maintains two separate mutex domains:
+ * 1. Outbound mutex (mutex_): Protects outbound request state, handler maps, and
+ *    outbound message sender
+ * 2. Inbound state mutex (inboundState_->mutex): Protects inbound request state,
+ *    response promises, and completion pool
+ *
+ * Lock ordering when both are needed: acquire outbound mutex first, then inbound
+ * state mutex.
+ *
+ * @par Callback Threading Rules:
+ * Note: Callbacks are invoked on the router/I/O thread. They must be fast and non-blocking.
+ * - RequestHandler: Serial invocation per request, router/I/O thread
+ * - NotificationHandler: Serial invocation per notification, router/I/O thread
+ * - OutboundMessageSender: Serial invocation per message, threading determined by caller
+ * - ProgressCallback: Serial invocation per progress token, router/I/O thread
+ */
+
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;
 using OutboundMessageSender = std::function<void(const RequestContext &, Message)>;

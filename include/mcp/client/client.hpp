@@ -31,6 +31,59 @@
 namespace mcp
 {
 
+/**
+ * @brief Thread Safety
+ *
+ * @par Thread-Safety Classification: Thread-safe
+ *
+ * The Client class provides thread-safe access to all its public methods.
+ * Internal synchronization is provided via mutex_.
+ *
+ * @par Thread-Safe Methods (concurrent invocation allowed):
+ * - All query methods: session(), initializeConfiguration(), negotiatedProtocolVersion(),
+ *   negotiatedParameters(), negotiatedClientCapabilities(), negotiatedServerCapabilities(),
+ *   supportedProtocolVersions()
+ * - All request methods: initialize(), listTools(), callTool(), listResources(),
+ *   readResource(), listResourceTemplates(), listPrompts(), getPrompt()
+ * - All handler configuration methods: setRootsProvider(), clearRootsProvider(),
+ *   setSamplingCreateMessageHandler(), clearSamplingCreateMessageHandler(),
+ *   setFormElicitationHandler(), clearFormElicitationHandler(),
+ *   setUrlElicitationHandler(), clearUrlElicitationHandler(),
+ *   setUrlElicitationCompletionHandler(), clearUrlElicitationCompletionHandler()
+ * - All messaging methods: sendRequest(), sendRequestAsync(), sendNotification(),
+ *   registerRequestHandler(), registerNotificationHandler()
+ *
+ * @par Lifecycle Methods (idempotent, thread-safe):
+ * - attachTransport(), connectStdio(), connectHttp() - Thread-safe, but must not be called after start()
+ * - start() - Thread-safe, NOT idempotent (throws LifecycleError if called when not in kCreated state)
+ * - stop() - Thread-safe, idempotent
+ *
+ * @par Concurrency Rules:
+ * 1. Transport attachment methods (attachTransport, connectStdio, connectHttp) must be called
+ *    before start() or while holding the same external synchronization as start().
+ * 2. Handler registration methods may be called at any time, but handlers set after start()
+ *    may miss early messages.
+ * 3. Configuration methods may be called at any time.
+ *
+ * @par Callback Threading Rules:
+ * Note: SessionOptions::threading is defined but not currently utilized by the runtime.
+ * Actual callback threading behavior:
+ *
+ * - Handler callbacks (RootsProvider, SamplingCreateMessageHandler, FormElicitationHandler,
+ *   UrlElicitationHandler, UrlElicitationCompletionHandler): Invoked directly on the router/I/O
+ *   thread. These callbacks must be fast and non-blocking.
+ * - ResponseCallback (used with sendRequestAsync): Dispatched to an internal single-threaded
+ *   boost::asio::thread_pool to avoid blocking the I/O thread.
+ *
+ * Callback types and their threading:
+ * - RootsProvider - Serial invocation, router/I/O thread
+ * - SamplingCreateMessageHandler - Serial invocation, router/I/O thread
+ * - FormElicitationHandler - Serial invocation, router/I/O thread
+ * - UrlElicitationHandler - Serial invocation, router/I/O thread
+ * - UrlElicitationCompletionHandler - Serial invocation, router/I/O thread
+ * - ResponseCallback (async) - Serial invocation, internal callback dispatch thread pool
+ */
+
 inline constexpr std::size_t kDefaultMaxPaginationPages = 1024U;
 
 struct ClientInitializeConfiguration

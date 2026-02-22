@@ -16,6 +16,34 @@
 namespace mcp::transport
 {
 
+/**
+ * @brief Thread Safety
+ *
+ * This header defines STDIO transport types with the following thread-safety classifications:
+ *
+ * @par StdioTransport - Thread-compatible (deprecated instance methods)
+ *
+ * The StdioTransport class has deprecated instance-based methods in favor of static methods.
+ *
+ * Static methods (thread-safe):
+ * - run() - Blocking, runs until EOF
+ * - attach() - Blocking, runs until EOF
+ * - routeIncomingLine() - Thread-safe
+ * - spawnSubprocess() - Thread-safe
+ *
+ * @par StdioSubprocess - Thread-compatible
+ * - Designed for single-threaded or externally synchronized use
+ * - Methods that modify state (writeLine(), readLine(), closeStdin(), shutdown())
+ *   must not be called concurrently
+ * - Query methods (valid(), isRunning(), exitCode(), capturedStderr()) are thread-safe
+ *
+ * @par Concurrency Rules:
+ * 1. For static StdioTransport::run(), only one invocation should be active per process
+ *    for the same streams.
+ * 2. For StdioSubprocess, external synchronization is required if accessed from multiple
+ *    threads concurrently.
+ */
+
 inline constexpr std::int64_t kDefaultStdioShutdownTimeoutMilliseconds = 1500;
 
 struct StdioServerOptions
