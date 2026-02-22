@@ -3,7 +3,11 @@
 #include <functional>
 #include <future>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/message.hpp>
+#include <mcp/jsonrpc/notification.hpp>
+#include <mcp/jsonrpc/request.hpp>
+#include <mcp/jsonrpc/request_context.hpp>
+#include <mcp/jsonrpc/response.hpp>
 
 namespace mcp::jsonrpc
 {

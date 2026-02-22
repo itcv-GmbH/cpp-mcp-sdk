@@ -13,7 +13,7 @@
 #include <vector>
 
 #include <mcp/client/client.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/http.hpp>
 

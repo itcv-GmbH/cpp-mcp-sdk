@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>

@@ -11,7 +11,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/http/sse.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/transport/http.hpp>
 

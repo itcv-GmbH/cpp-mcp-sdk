@@ -12,7 +12,7 @@
 
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/security/origin_policy_functions.hpp>
 #include <mcp/transport/http.hpp>

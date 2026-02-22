@@ -15,7 +15,7 @@
 #include <mcp/auth/protected_resource_metadata.hpp>
 #include <mcp/detail/ascii.hpp>
 #include <mcp/detail/url.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,

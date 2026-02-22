@@ -4,7 +4,7 @@
 #include <variant>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/util/progress.hpp>
 
 // NOLINTBEGIN(readability-function-cognitive-complexity)

@@ -3,7 +3,7 @@
 #include <optional>
 #include <string_view>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/util/task.hpp>
 
 namespace mcp::util

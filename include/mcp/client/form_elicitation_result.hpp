@@ -3,7 +3,7 @@
 #include <optional>
 
 #include <mcp/client/elicitation_action.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 
 namespace mcp
 {

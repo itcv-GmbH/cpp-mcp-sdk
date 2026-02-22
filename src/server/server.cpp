@@ -25,7 +25,7 @@
 #include <mcp/detail/base64url.hpp>
 #include <mcp/detail/thread_boundary.hpp>
 #include <mcp/jsonrpc/handler_types.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/outbound_request_options.hpp>
 #include <mcp/jsonrpc/router_options.hpp>
 #include <mcp/lifecycle/session.hpp>

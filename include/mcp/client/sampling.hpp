@@ -4,7 +4,7 @@
 #include <optional>
 
 #include <mcp/client/sampling_create_message_context.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 
 namespace mcp
 {

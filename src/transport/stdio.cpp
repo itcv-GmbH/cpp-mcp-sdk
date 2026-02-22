@@ -31,7 +31,7 @@
 #  include <signal.h>  // NOLINT(hicpp-deprecated-headers,modernize-deprecated-headers)
 #endif
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/error_reporter.hpp>

@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>

@@ -6,7 +6,7 @@
 #include <variant>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/stdio.hpp>
 
 #ifndef MCP_TEST_STDIO_SUBPROCESS_HELPER_PATH

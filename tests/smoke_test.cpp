@@ -5,7 +5,7 @@
 
 #include <mcp/auth/provider.hpp>
 #include <mcp/client/client.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/errors.hpp>

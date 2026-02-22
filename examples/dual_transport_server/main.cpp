@@ -13,7 +13,7 @@
 #include <vector>
 
 #include <fcntl.h>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/combined_runner.hpp>
 #include <mcp/server/prompts.hpp>

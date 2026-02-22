@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 
 namespace mcp
 {

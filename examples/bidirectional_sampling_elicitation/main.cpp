@@ -10,7 +10,7 @@
 #include <utility>
 #include <variant>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/server/server.hpp>

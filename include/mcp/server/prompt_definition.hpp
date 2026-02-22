@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/prompt_argument_definition.hpp>
 
 namespace mcp

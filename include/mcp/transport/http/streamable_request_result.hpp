@@ -4,7 +4,7 @@
 #include <optional>
 #include <vector>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 
 namespace mcp::transport::http
 {

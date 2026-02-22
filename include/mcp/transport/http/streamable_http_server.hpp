@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http/request_kind.hpp>
 #include <mcp/transport/http/request_validation_options.hpp>
 #include <mcp/transport/http/server_request.hpp>

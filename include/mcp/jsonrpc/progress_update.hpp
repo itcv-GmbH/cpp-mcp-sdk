@@ -1,9 +1,11 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/request_context.hpp>
+#include <mcp/jsonrpc/types.hpp>
 
 namespace mcp::jsonrpc
 {

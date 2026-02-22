@@ -12,7 +12,7 @@
 #include <mcp/auth/loopback_receiver.hpp>
 #include <mcp/auth/oauth_client.hpp>
 #include <mcp/auth/protected_resource_metadata.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http.hpp>
 
 namespace

@@ -17,7 +17,7 @@
 #include <mcp/auth/oauth_client.hpp>
 #include <mcp/auth/oauth_server.hpp>
 #include <mcp/auth/protected_resource_metadata.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http.hpp>
 #include <openssl/evp.h>
 #include <openssl/sha.h>

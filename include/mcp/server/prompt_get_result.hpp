@@ -3,7 +3,7 @@
 #include <optional>
 #include <vector>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/prompt_message.hpp>
 
 namespace mcp

@@ -15,7 +15,7 @@
 #include <mcp/auth/client_registration.hpp>
 #include <mcp/detail/ascii.hpp>
 #include <mcp/detail/url.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-static-definition-in-anonymous-namespace)

@@ -21,7 +21,7 @@
 #include <vector>
 
 #include <mcp/detail/base64url.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/security/crypto_random.hpp>
 #include <mcp/util/tasks.hpp>

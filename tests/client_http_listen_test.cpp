@@ -15,7 +15,7 @@
 #include <mcp/client/client.hpp>
 #include <mcp/client/roots.hpp>
 #include <mcp/http/sse.hpp>
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/streamable_http_client_transport.hpp>

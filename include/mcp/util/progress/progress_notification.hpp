@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 
 namespace mcp::util::progress
 {

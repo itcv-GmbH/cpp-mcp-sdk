@@ -3,7 +3,7 @@
 #include <functional>
 #include <memory>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/transport.hpp>
 

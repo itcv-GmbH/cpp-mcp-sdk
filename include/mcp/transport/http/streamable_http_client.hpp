@@ -3,7 +3,7 @@
 #include <functional>
 #include <memory>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http/server_request.hpp>
 #include <mcp/transport/http/server_response.hpp>
 #include <mcp/transport/http/streamable_http_client_options.hpp>

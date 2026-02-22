@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/resource_content_kind.hpp>
 
 namespace mcp

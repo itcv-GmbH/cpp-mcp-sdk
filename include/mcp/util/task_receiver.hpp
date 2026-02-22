@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-#include <mcp/jsonrpc/messages.hpp>
+#include <mcp/jsonrpc/all.hpp>
 #include <mcp/util/create_task_result.hpp>
 #include <mcp/util/in_memory_task_store.hpp>
 #include <mcp/util/task_augmentation_request.hpp>

@@ -2,7 +2,7 @@
 
 #include <chrono>
 
-#include <mcp/jsonrpc/progress_types.hpp>
+#include <mcp/jsonrpc/progress_update.hpp>
 
 namespace mcp::jsonrpc
 {
