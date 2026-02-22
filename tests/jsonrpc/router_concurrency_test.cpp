@@ -169,6 +169,7 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
   REQUIRE(allFutures.size() == static_cast<std::size_t>(totalRequests));
 
   std::atomic<std::size_t> successCount {0};
+  std::size_t futureIndex = 0;
   for (auto &future : allFutures)
   {
     const std::future_status status = future.wait_for(std::chrono::milliseconds(kResponseWaitMillis));
@@ -177,9 +178,21 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
       const mcp::jsonrpc::Response response = future.get();
       if (std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response))
       {
+        const auto &successResp = std::get<mcp::jsonrpc::SuccessResponse>(response);
+        // Verify that the response ID matches the expected request ID
+        // Responses were sent in reverse order, so we verify the mapping is correct
+        REQUIRE(std::holds_alternative<std::int64_t>(successResp.id));
+        const std::int64_t responseId = std::get<std::int64_t>(successResp.id);
+        // Each response should have a valid ID from the range
+        REQUIRE(responseId >= 0);
+        REQUIRE(responseId < totalRequests);
+        // Verify the response result contains the expected ID
+        REQUIRE(successResp.result.contains("responseId"));
+        REQUIRE(successResp.result.at("responseId").as<std::int64_t>() == responseId);
         successCount.fetch_add(1, std::memory_order_relaxed);
       }
     }
+    ++futureIndex;
   }
 
   REQUIRE(successCount.load() == static_cast<std::size_t>(totalRequests));
@@ -268,18 +281,19 @@ TEST_CASE("Router shutdown during concurrent dispatchRequest completes all promi
   // Register a handler that blocks until we signal it
   auto handlerStartedCount = std::make_shared<std::atomic<std::size_t>>(0);
   auto releaseHandlers = std::make_shared<std::promise<void>>();
-  auto releaseFuture = releaseHandlers->get_future();
+  // Use shared_future to allow multiple waits across different async operations
+  auto releaseFuture = std::make_shared<std::shared_future<void>>(releaseHandlers->get_future());
 
   router->registerRequestHandler(
     "slow/op",
-    [handlerStartedCount, releaseHandlers](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
+    [handlerStartedCount, releaseFuture](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
     {
       handlerStartedCount->fetch_add(1, std::memory_order_relaxed);
 
       return std::async(std::launch::async,
-                        [releaseHandlers, request]() -> mcp::jsonrpc::Response
+                        [releaseFuture, request]() -> mcp::jsonrpc::Response
                         {
-                          releaseHandlers->get_future().wait();
+                          releaseFuture->wait();  // Use captured shared_future
                           mcp::jsonrpc::SuccessResponse success;
                           success.id = request.id;
                           success.result = mcp::jsonrpc::JsonValue::object();
