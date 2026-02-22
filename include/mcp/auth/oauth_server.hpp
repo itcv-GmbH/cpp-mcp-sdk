@@ -1,91 +1,30 @@
 #pragma once
 
-#include <cstdint>
-#include <functional>
-#include <memory>
-#include <optional>
-#include <string>
-#include <vector>
+/**
+ * @file oauth_server.hpp
+ * @brief Umbrella header for OAuth server types.
+ *
+ * This header provides backward compatibility by including all individual
+ * OAuth server component headers. New code may include specific headers
+ * directly for faster compile times.
+ */
+
+#include <mcp/auth/oauth_authorization_context.hpp>
+#include <mcp/auth/oauth_authorization_request_context.hpp>
+#include <mcp/auth/oauth_protected_resource_metadata.hpp>
+#include <mcp/auth/oauth_protected_resource_metadata_publication.hpp>
+#include <mcp/auth/oauth_required_scope_resolver.hpp>
+#include <mcp/auth/oauth_scope_set.hpp>
+#include <mcp/auth/oauth_server_authorization_options.hpp>
+#include <mcp/auth/oauth_token_verification_request.hpp>
+#include <mcp/auth/oauth_token_verification_result.hpp>
+#include <mcp/auth/oauth_token_verification_status.hpp>
+#include <mcp/auth/oauth_token_verifier.hpp>
 
 namespace mcp::auth
 {
 
-struct OAuthScopeSet
-{
-  std::vector<std::string> values;
-};
-
-struct OAuthProtectedResourceMetadata
-{
-  std::string resource;
-  std::vector<std::string> authorizationServers;
-  OAuthScopeSet scopesSupported;
-};
-
-struct OAuthProtectedResourceMetadataPublication
-{
-  bool publishAtPathBasedWellKnownUri = true;
-  bool publishAtRootWellKnownUri = true;
-  std::optional<std::string> challengeResourceMetadataUrl;
-};
-
-struct OAuthAuthorizationRequestContext
-{
-  std::string httpMethod;
-  std::string httpPath;
-  std::optional<std::string> sessionId;
-};
-
-struct OAuthTokenVerificationRequest
-{
-  std::string bearerToken;
-  std::string expectedAudience;
-  OAuthAuthorizationRequestContext request;
-  OAuthScopeSet requiredScopes;
-};
-
-struct OAuthAuthorizationContext
-{
-  std::string taskIsolationKey;
-  std::optional<std::string> subject;
-  OAuthScopeSet grantedScopes;
-};
-
-enum class OAuthTokenVerificationStatus : std::uint8_t
-{
-  kValid,
-  kInvalidToken,
-  kInsufficientScope,
-};
-
-struct OAuthTokenVerificationResult
-{
-  OAuthTokenVerificationStatus status = OAuthTokenVerificationStatus::kInvalidToken;
-  bool audienceBound = false;
-  OAuthAuthorizationContext authorizationContext;
-};
-
-class OAuthTokenVerifier
-{
-public:
-  OAuthTokenVerifier() = default;
-  OAuthTokenVerifier(const OAuthTokenVerifier &) = delete;
-  OAuthTokenVerifier(OAuthTokenVerifier &&) = delete;
-  auto operator=(const OAuthTokenVerifier &) -> OAuthTokenVerifier & = delete;
-  auto operator=(OAuthTokenVerifier &&) -> OAuthTokenVerifier & = delete;
-  virtual ~OAuthTokenVerifier() = default;
-  virtual auto verifyToken(const OAuthTokenVerificationRequest &request) const -> OAuthTokenVerificationResult = 0;
-};
-
-using OAuthRequiredScopeResolver = std::function<OAuthScopeSet(const OAuthAuthorizationRequestContext &)>;
-
-struct OAuthServerAuthorizationOptions
-{
-  std::shared_ptr<const OAuthTokenVerifier> tokenVerifier;
-  OAuthProtectedResourceMetadata protectedResourceMetadata;
-  OAuthProtectedResourceMetadataPublication metadataPublication;
-  OAuthRequiredScopeResolver requiredScopesResolver;
-  OAuthScopeSet defaultRequiredScopes;
-};
+// This namespace re-exports all types from the individual headers
+// for backward compatibility.
 
 }  // namespace mcp::auth
