@@ -138,7 +138,9 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
           auto future = router.sendRequest(context, std::move(request));
           {
             const std::scoped_lock lock(futuresMutex);
-            futuresByRequestId.emplace(requestId, std::move(future));
+            auto [it, inserted] = futuresByRequestId.emplace(requestId, std::move(future));
+            static_cast<void>(it);
+            REQUIRE(inserted);
           }
         }
       });
@@ -181,7 +183,8 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
         response.result["thread"] = t;
         response.result["request"] = r;
 
-        router.dispatchResponse(context, mcp::jsonrpc::Response {response});
+        const bool matched = router.dispatchResponse(context, mcp::jsonrpc::Response {response});
+        REQUIRE(matched);
       }
     });
 
@@ -190,28 +193,35 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
   // Verify each response is routed to the future created for that request ID.
   REQUIRE(futuresByRequestId.size() == static_cast<std::size_t>(totalRequests));
 
-  for (auto &[requestId, future] : futuresByRequestId)
+  for (std::int64_t t = 0; t < numThreads; ++t)
   {
-    const std::future_status status = future.wait_for(std::chrono::milliseconds(kResponseWaitMillis));
-    REQUIRE(status == std::future_status::ready);
+    for (std::int64_t r = 0; r < requestsPerThread; ++r)
+    {
+      const std::int64_t requestId = t * requestsPerThread + r;
+      auto futureIt = futuresByRequestId.find(requestId);
+      REQUIRE(futureIt != futuresByRequestId.end());
 
-    const mcp::jsonrpc::Response response = future.get();
-    REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
+      const std::future_status status = futureIt->second.wait_for(std::chrono::milliseconds(kResponseWaitMillis));
+      REQUIRE(status == std::future_status::ready);
 
-    const auto &successResp = std::get<mcp::jsonrpc::SuccessResponse>(response);
+      const mcp::jsonrpc::Response response = futureIt->second.get();
+      REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
 
-    // Verify the response delivered to this future carries the matching request ID.
-    REQUIRE(std::holds_alternative<std::int64_t>(successResp.id));
-    REQUIRE(std::get<std::int64_t>(successResp.id) == requestId);
+      const auto &successResp = std::get<mcp::jsonrpc::SuccessResponse>(response);
 
-    const auto expectedIt = expectedContentByRequestId.find(requestId);
-    REQUIRE(expectedIt != expectedContentByRequestId.end());
+      // Verify the response delivered to this future carries the matching request ID.
+      REQUIRE(std::holds_alternative<std::int64_t>(successResp.id));
+      REQUIRE(std::get<std::int64_t>(successResp.id) == requestId);
 
-    // Verify response payload still matches the content expected for this request.
-    REQUIRE(successResp.result.contains("thread"));
-    REQUIRE(successResp.result.contains("request"));
-    REQUIRE(successResp.result.at("thread").as<std::int64_t>() == expectedIt->second.first);
-    REQUIRE(successResp.result.at("request").as<std::int64_t>() == expectedIt->second.second);
+      const auto expectedIt = expectedContentByRequestId.find(requestId);
+      REQUIRE(expectedIt != expectedContentByRequestId.end());
+
+      // Verify response payload still matches the content expected for this request.
+      REQUIRE(successResp.result.contains("thread"));
+      REQUIRE(successResp.result.contains("request"));
+      REQUIRE(successResp.result.at("thread").as<std::int64_t>() == expectedIt->second.first);
+      REQUIRE(successResp.result.at("request").as<std::int64_t>() == expectedIt->second.second);
+    }
   }
 }
 
