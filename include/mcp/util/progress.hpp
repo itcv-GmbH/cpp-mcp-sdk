@@ -7,20 +7,12 @@
 #include <string_view>
 
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/util/progress/progress_notification.hpp>
 
 namespace mcp::util::progress
 {
 
 inline constexpr std::string_view kProgressNotificationMethod = "notifications/progress";
-
-struct ProgressNotification
-{
-  jsonrpc::RequestId progressToken;
-  double progress = 0.0;
-  std::optional<double> total;
-  std::optional<std::string> message;
-  jsonrpc::JsonValue additionalProperties = jsonrpc::JsonValue::object();
-};
 
 inline auto jsonToRequestId(const jsonrpc::JsonValue &value) -> std::optional<jsonrpc::RequestId>
 {
