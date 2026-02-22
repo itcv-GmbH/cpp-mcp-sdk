@@ -45,6 +45,10 @@ namespace mcp::jsonrpc
  * 2. setOutboundMessageSender() must be called before dispatching messages.
  * 3. Progress callbacks are invoked directly on the router/I/O thread. They must be
  *    fast and non-blocking.
+ * 4. All public methods may be called concurrently from multiple threads without
+ *    external synchronization.
+ * 5. Concurrent sendRequest() calls are supported and responses are correctly routed
+ *    to their respective futures regardless of completion order.
  *
  * @par Internal Lock Ordering:
  * The Router maintains two separate mutex domains:
@@ -69,7 +73,7 @@ namespace mcp::jsonrpc
  *
  * @subsection Construction and Destruction
  * - Router(RouterOptions) does not throw
- * - ~Router() is declared noexcept
+ * - ~Router() is declared noexcept and will not throw even with in-flight requests
  *
  * @subsection Handler Registration
  * - registerRequestHandler(), registerNotificationHandler(), unregisterHandler() do not throw
@@ -77,7 +81,8 @@ namespace mcp::jsonrpc
  * @subsection Dispatch Operations
  * - dispatchRequest() catches exceptions from user-provided RequestHandler callbacks and
  *   converts them to JSON-RPC error responses with code -32603 (Internal Error)
- * - dispatchNotification() returns void; callback exceptions propagate to caller
+ * - dispatchNotification() catches exceptions from user-provided NotificationHandler and
+ *   ProgressCallback; exceptions are contained and reported via the error reporter
  * - dispatchResponse() returns bool; does not throw directly
  *
  * @subsection Request Operations
@@ -87,9 +92,24 @@ namespace mcp::jsonrpc
  * @subsection Progress Operations
  * - emitProgress() returns bool; does not throw directly
  *
- * @subsection Background Thread Behavior
- * Work posted to internal thread pools may have exceptions caught in some cases, but
- * this is not a guaranteed contract. Wrap your posted work in try-catch.
+ * @subsection Background Thread Behavior (No-Throw Guarantee)
+ * All work posted to internal thread pools (completion pool, timeout pool) is wrapped
+ * in exception boundaries that:
+ * 1. Catch all exceptions thrown by the work item
+ * 2. Report failures via the unified error reporting mechanism (ErrorReporter)
+ * 3. Never allow exceptions to propagate and terminate the worker thread
+ *
+ * User-provided callbacks (RequestHandler, NotificationHandler, ProgressCallback) that
+ * throw exceptions will have those exceptions caught and reported via the error reporter
+ * configured in RouterOptions. The router continues operating after reporting the error.
+ *
+ * @subsection Shutdown Behavior
+ * When the router is destroyed:
+ * - All in-flight outbound requests receive an internal error response
+ * - All pending inbound request handlers have their promises completed with an error
+ * - Shutdown is guaranteed not to throw exceptions (destructor is noexcept)
+ * - All futures associated with in-flight requests will be resolved (either successfully
+ *   or with an error) before destruction completes
  */
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;

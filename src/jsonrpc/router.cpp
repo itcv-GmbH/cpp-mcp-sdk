@@ -477,14 +477,30 @@ auto Router::dispatchNotification(const RequestContext &context, const Notificat
     }
   }
 
+  // Invoke progress callback with exception containment
   if (progressCallback && progressUpdate.has_value())
   {
-    progressCallback(context, *progressUpdate);
+    try
+    {
+      progressCallback(context, *progressUpdate);
+    }
+    catch (...)
+    {
+      reportCurrentException(options_.errorReporter, "Router::dispatchNotification(progress)");
+    }
   }
 
+  // Invoke notification handler with exception containment
   if (methodHandler)
   {
-    methodHandler(context, notification);
+    try
+    {
+      methodHandler(context, notification);
+    }
+    catch (...)
+    {
+      reportCurrentException(options_.errorReporter, "Router::dispatchNotification(handler)");
+    }
   }
 }
 
