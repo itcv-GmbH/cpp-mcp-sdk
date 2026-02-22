@@ -421,6 +421,7 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
   {
     completeInboundRequest(context, request.id);
     detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), request.id)});
+    reportCurrentException(options_.errorReporter, "Router::dispatchRequest(sync handler)");
     return responseFuture;
   }
 }
@@ -581,14 +582,21 @@ auto Router::armRequestTimeout(const std::shared_ptr<InFlightRequestState> &inFl
   }
 
   timeoutTimer->async_wait(
-    [this, requestId = inFlightRequest->request.id](const auto &errorCode) -> void
+    [this, requestId = inFlightRequest->request.id, errorReporter = options_.errorReporter](const auto &errorCode) -> void
     {
-      if (errorCode)
+      try
       {
-        return;
-      }
+        if (errorCode)
+        {
+          return;
+        }
 
-      handleRequestTimeout(requestId);
+        handleRequestTimeout(requestId);
+      }
+      catch (...)
+      {
+        reportCurrentException(errorReporter, "Router::timeout callback");
+      }
     });
 }
 
