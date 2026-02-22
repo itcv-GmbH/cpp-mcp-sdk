@@ -131,13 +131,18 @@ def strip_preprocessor_directives(content: str) -> str:
     with spaces. Properly handles conditional compilation by tracking
     #if/#ifdef/#ifndef/#elif/#else/#endif blocks and excluding content
     from inactive branches.
+
+    Only the first true branch in a conditional chain (#if/#elif/#else)
+    is active. Once a branch is taken, subsequent branches are inactive.
     """
     lines = content.splitlines(keepends=True)
     sanitized_lines = []
 
     # Track preprocessor conditional state
-    # Each element is True if the branch is active, False otherwise
-    conditional_stack: List[bool] = []
+    # Each element is a tuple (is_active, was_taken) where:
+    # - is_active: whether current branch is active
+    # - was_taken: whether any branch in this conditional chain was already taken
+    conditional_stack: List[Tuple[bool, bool]] = []
     current_branch_active = True
 
     for line in lines:
@@ -158,46 +163,69 @@ def strip_preprocessor_directives(content: str) -> str:
                         # Check for #if 0 or #if (0)
                         rest = stripped[directive_match.end() :].strip()
                         if rest == "0" or rest == "(0)":
-                            conditional_stack.append(False)
+                            conditional_stack.append((False, False))
                         else:
-                            conditional_stack.append(True)
+                            conditional_stack.append((True, True))
                     elif directive == "ifdef" or directive == "ifndef":
                         # For #ifdef 0 or #ifndef 0, 0 is not a defined macro
                         rest = stripped[directive_match.end() :].strip()
                         if rest == "0":
                             # #ifdef 0 is always false, #ifndef 0 is always true
-                            conditional_stack.append(directive == "ifndef")
+                            is_active = directive == "ifndef"
+                            conditional_stack.append((is_active, is_active))
                         else:
-                            conditional_stack.append(True)
-                    else:
-                        conditional_stack.append(True)
+                            conditional_stack.append((True, True))
 
                     # Update current branch state
-                    current_branch_active = all(conditional_stack)
+                    current_branch_active = all(
+                        active for active, _ in conditional_stack
+                    )
 
                 elif directive == "elif":
-                    # Pop the previous if/elif and push new state
+                    # Pop the previous if/elif and check if a branch was taken
+                    was_taken = False
                     if conditional_stack:
-                        conditional_stack.pop()
+                        _, was_taken = conditional_stack.pop()
+
+                    # If a previous branch was taken, this elif is inactive
+                    if was_taken:
+                        conditional_stack.append((False, True))
+                    else:
                         # Check for #elif 0
                         rest = stripped[directive_match.end() :].strip()
                         if rest == "0" or rest == "(0)":
-                            conditional_stack.append(False)
+                            conditional_stack.append((False, False))
                         else:
-                            conditional_stack.append(True)
-                    current_branch_active = all(conditional_stack)
+                            conditional_stack.append((True, True))
+
+                    current_branch_active = all(
+                        active for active, _ in conditional_stack
+                    )
 
                 elif directive == "else":
-                    # Invert the current branch
+                    # Pop the previous if/elif and check if a branch was taken
+                    was_taken = False
                     if conditional_stack:
-                        conditional_stack[-1] = not conditional_stack[-1]
-                    current_branch_active = all(conditional_stack)
+                        _, was_taken = conditional_stack.pop()
+
+                    # If a previous branch was taken, else is inactive
+                    # Otherwise, else is always active (inverse of previous)
+                    if was_taken:
+                        conditional_stack.append((False, True))
+                    else:
+                        conditional_stack.append((True, True))
+
+                    current_branch_active = all(
+                        active for active, _ in conditional_stack
+                    )
 
                 elif directive == "endif":
                     # Pop the conditional
                     if conditional_stack:
                         conditional_stack.pop()
-                    current_branch_active = all(conditional_stack)
+                    current_branch_active = all(
+                        active for active, _ in conditional_stack
+                    )
 
             # Replace the directive line with spaces (preserving newlines)
             sanitized_line = "".join("\n" if ch == "\n" else " " for ch in line)

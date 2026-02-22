@@ -277,6 +277,171 @@ class Public {};
     print("✓ test_complex_nested_with_preprocessor passed")
 
 
+def test_elif_after_true_if():
+    """Test that #elif is inactive when previous #if was true."""
+    content = """
+#if 1
+namespace mcp { class Active {}; }
+#elif 1
+namespace wrong { class ShouldBeInactive {}; }
+#endif
+"""
+    expected = ["mcp"]
+    violations = find_namespace_violations(content, expected)
+    # ShouldBeInactive should not be detected since elif is inactive
+    inactive_violations = [v for v in violations if v[1] == "ShouldBeInactive"]
+    assert len(inactive_violations) == 0, (
+        f"ShouldBeInactive should not be detected: {inactive_violations}"
+    )
+    # Active should not be a violation since it's in correct namespace
+    active_violations = [v for v in violations if v[1] == "Active"]
+    assert len(active_violations) == 0, (
+        f"Active should not be a violation: {active_violations}"
+    )
+    print("✓ test_elif_after_true_if passed")
+
+
+def test_elif_chain():
+    """Test that only first true #elif is active."""
+    content = """
+#if 0
+namespace wrong { class Inactive1 {}; }
+#elif 1
+namespace mcp { class Active {}; }
+#elif 1
+namespace wrong { class Inactive2 {}; }
+#endif
+"""
+    expected = ["mcp"]
+    violations = find_namespace_violations(content, expected)
+    # Only Active should exist and it should not be a violation
+    assert len(violations) == 0, f"Expected no violations, got: {violations}"
+    # Verify stripping
+    result = strip_preprocessor_directives(content)
+    assert "Inactive1" not in result, "Inactive1 should be stripped"
+    assert "Inactive2" not in result, "Inactive2 should be stripped"
+    assert "Active" in result, "Active should be preserved"
+    print("✓ test_elif_chain passed")
+
+
+def test_elif_after_false_if():
+    """Test that #elif is active when previous #if was false."""
+    content = """
+#if 0
+namespace wrong { class Inactive1 {}; }
+#elif 1
+namespace mcp { class Active {}; }
+#else
+namespace wrong { class Inactive2 {}; }
+#endif
+"""
+    expected = ["mcp"]
+    violations = find_namespace_violations(content, expected)
+    # Only Active should exist and it should not be a violation
+    assert len(violations) == 0, f"Expected no violations, got: {violations}"
+    print("✓ test_elif_after_false_if passed")
+
+
+def test_else_after_true_if():
+    """Test that #else is inactive when previous branch was taken."""
+    content = """
+#if 1
+namespace mcp { class Active {}; }
+#else
+namespace wrong { class ShouldBeInactive {}; }
+#endif
+"""
+    expected = ["mcp"]
+    violations = find_namespace_violations(content, expected)
+    # ShouldBeInactive should not be detected
+    inactive_violations = [v for v in violations if v[1] == "ShouldBeInactive"]
+    assert len(inactive_violations) == 0, (
+        f"ShouldBeInactive should not be detected: {inactive_violations}"
+    )
+    print("✓ test_else_after_true_if passed")
+
+
+def test_elif_multiple_false_then_true():
+    """Test multiple #elif branches with middle one being true."""
+    content = """
+#if 0
+namespace wrong { class Inactive1 {}; }
+#elif 0
+namespace wrong { class Inactive2 {}; }
+#elif 1
+namespace mcp { class Active {}; }
+#elif 1
+namespace wrong { class Inactive3 {}; }
+#else
+namespace wrong { class Inactive4 {}; }
+#endif
+"""
+    expected = ["mcp"]
+    violations = find_namespace_violations(content, expected)
+    assert len(violations) == 0, f"Expected no violations, got: {violations}"
+    # Verify stripping
+    result = strip_preprocessor_directives(content)
+    assert "Inactive1" not in result, "Inactive1 should be stripped"
+    assert "Inactive2" not in result, "Inactive2 should be stripped"
+    assert "Inactive3" not in result, "Inactive3 should be stripped"
+    assert "Inactive4" not in result, "Inactive4 should be stripped"
+    assert "Active" in result, "Active should be preserved"
+    print("✓ test_elif_multiple_false_then_true passed")
+
+
+def test_nested_elif():
+    """Test #elif inside nested conditionals."""
+    content = """
+#if 1
+namespace mcp {
+#if 0
+class Bad1 {};
+#elif 1
+class Good {};
+#else
+class Bad2 {};
+#endif
+}
+#endif
+"""
+    expected = ["mcp"]
+    violations = find_namespace_violations(content, expected)
+    # Good is in namespace mcp, which matches expected, so no violation
+    assert len(violations) == 0, f"Expected no violations, got: {violations}"
+    # Verify stripping
+    result = strip_preprocessor_directives(content)
+    assert "Bad1" not in result, "Bad1 should be stripped"
+    assert "Bad2" not in result, "Bad2 should be stripped"
+    assert "Good" in result, "Good should be preserved"
+    print("✓ test_nested_elif passed")
+
+
+def test_elif_inside_false_block():
+    """Test that #elif inside a false #if block is also inactive."""
+    content = """
+#if 0
+namespace wrong {
+#if 0
+class Bad1 {};
+#elif 1
+class Bad2 {};
+#endif
+}
+#endif
+namespace mcp { class Good {}; }
+"""
+    expected = ["mcp"]
+    violations = find_namespace_violations(content, expected)
+    # Good should not be a violation
+    assert len(violations) == 0, f"Expected no violations, got: {violations}"
+    # Verify stripping
+    result = strip_preprocessor_directives(content)
+    assert "Bad1" not in result, "Bad1 should be stripped"
+    assert "Bad2" not in result, "Bad2 should be stripped"
+    assert "Good" in result, "Good should be preserved"
+    print("✓ test_elif_inside_false_block passed")
+
+
 def run_all_tests():
     """Run all regression tests."""
     print("Running namespace layout check regression tests...")
@@ -294,6 +459,13 @@ def run_all_tests():
         test_mixed_namespace_styles,
         test_scope_balance_multiple_files,
         test_complex_nested_with_preprocessor,
+        test_elif_after_true_if,
+        test_elif_chain,
+        test_elif_after_false_if,
+        test_else_after_true_if,
+        test_elif_multiple_false_then_true,
+        test_nested_elif,
+        test_elif_inside_false_block,
     ]
 
     passed = 0
