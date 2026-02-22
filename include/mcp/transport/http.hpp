@@ -24,6 +24,61 @@
 
 namespace mcp::transport
 {
+/**
+ * @brief HTTP transport implementation for MCP SDK.
+ *
+ * @section Exceptions
+ *
+ * @subsection StreamableHttpServer
+ * - Constructor: Does not throw
+ * - Destructor: Standard destructor behavior
+ * - Move operations: noexcept
+ * - setRequestHandler(), setNotificationHandler(), setResponseHandler(): Do not throw
+ * - upsertSession(), setSessionState(): Do not throw
+ * - handleRequest(): Returns ServerResponse; errors encoded in response
+ * - enqueueServerMessage(): Returns bool success
+ *
+ * @subsection StreamableHttpClient
+ * - Constructor: May throw std::invalid_argument for invalid options
+ * - Destructor: Standard destructor behavior
+ * - Move operations: noexcept
+ * - send(): Throws std::runtime_error on HTTP error or serialization failure
+ * - openListenStream(): Throws std::runtime_error on connection failure
+ * - pollListenStream(): Returns StreamableHttpListenResult
+ * - hasActiveListenStream() noexcept
+ * - terminateSession(): Returns bool
+ *
+ * @subsection HttpServerRuntime
+ * - Constructor: Does not throw
+ * - Destructor: Standard destructor behavior
+ * - Move operations: noexcept
+ * - setRequestHandler(): Does not throw
+ * - start(): Throws std::runtime_error on server startup failure
+ * - stop() noexcept
+ * - isRunning() const noexcept
+ * - localPort() const noexcept
+ *
+ * @subsection HttpClientRuntime
+ * - Constructor: Does not throw
+ * - Destructor: Standard destructor behavior
+ * - Move operations: noexcept
+ * - execute() const: Throws std::runtime_error on HTTP request failure
+ *
+ * @subsection Header Operations
+ * - setHeader(), getHeader(): Inline helpers; may throw on memory allocation
+ * - isValidSessionId(), isValidProtocolVersion(): noexcept
+ * - isSupportedProtocolVersion(): noexcept
+ *
+ * @subsection State Classes
+ * - SessionHeaderState, ProtocolVersionHeaderState, SharedHeaderState:
+ *   - clear() noexcept
+ *   - Accessor methods: noexcept or simple returns
+ *   - captureFromInitializeResponse(), setNegotiatedProtocolVersion(): Return bool success
+ *
+ * @subsection Request Validation
+ * - rejectRequest(): Returns RequestValidationResult
+ * - validateServerRequest(): Returns RequestValidationResult; errors encoded in result
+ */
 
 /**
  * @brief Thread Safety
@@ -152,7 +207,7 @@ inline auto getHeader(const HeaderList &headers, std::string_view name) -> std::
   return existing->value;
 }
 
-inline auto isValidSessionId(std::string_view sessionId) -> bool
+inline auto isValidSessionId(std::string_view sessionId) noexcept -> bool
 {
   if (sessionId.empty())
   {
@@ -168,7 +223,7 @@ inline auto isValidSessionId(std::string_view sessionId) -> bool
                      });
 }
 
-inline auto isValidProtocolVersion(std::string_view version) -> bool
+inline auto isValidProtocolVersion(std::string_view version) noexcept -> bool
 {
   if (version.size() != detail::kProtocolVersionLength || version[detail::kProtocolVersionFirstDash] != '-' || version[detail::kProtocolVersionSecondDash] != '-')
   {
@@ -191,7 +246,7 @@ inline auto isValidProtocolVersion(std::string_view version) -> bool
   return true;
 }
 
-inline auto isSupportedProtocolVersion(std::string_view version, const std::vector<std::string> &supportedVersions) -> bool
+inline auto isSupportedProtocolVersion(std::string_view version, const std::vector<std::string> &supportedVersions) noexcept -> bool
 {
   if (supportedVersions.empty())
   {

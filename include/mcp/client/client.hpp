@@ -32,7 +32,9 @@ namespace mcp
 {
 
 /**
- * @brief Thread Safety
+ * @brief Client component for MCP SDK.
+ *
+ * @section Thread Safety
  *
  * @par Thread-Safety Classification: Thread-safe
  *
@@ -82,8 +84,40 @@ namespace mcp
  * - UrlElicitationHandler - Serial invocation, router/I/O thread
  * - UrlElicitationCompletionHandler - Serial invocation, router/I/O thread
  * - ResponseCallback (async) - Serial invocation, internal callback dispatch thread pool
+ *
+ * @section Exceptions
+ *
+ * The Client class provides the following exception behavior:
+ *
+ * @subsection Construction
+ * - Client(std::shared_ptr<Session>) throws std::invalid_argument if session is null
+ * - create() returns shared_ptr (returns nullptr on failure, including bad_alloc)
+ *
+ * @subsection Destruction
+ * - ~Client() is declared noexcept
+ *
+ * @subsection Connection Methods (throwing)
+ * - attachTransport() throws std::runtime_error on transport error
+ * - connectStdio() throws std::invalid_argument (bad options) or std::runtime_error (spawn failure)
+ * - connectHttp() throws std::invalid_argument (bad options) or std::runtime_error (connection failure)
+ *
+ * @subsection Operation Methods (throwing)
+ * - initialize() throws std::runtime_error on session or protocol failure
+ * - listTools(), callTool(), listResources(), readResource(), etc. throw CapabilityError if
+ *   server capability is missing, or std::runtime_error on request failure
+ * - forEachPage(), collectAllPages() throw std::runtime_error on pagination cycle or limit exceeded
+ * - start(), stop() may throw on failure
+ *
+ * @subsection Operation Methods (noexcept)
+ * - session() noexcept
+ * - negotiatedProtocolVersion() noexcept
+ *
+ * @subsection Callback Exception Behavior
+ * User-provided callbacks should handle their own exceptions:
+ * - RootsProvider: Exceptions may propagate through the returned future; wrap in try-catch
+ * - SamplingCreateMessageHandler: Exceptions may propagate through the returned future; wrap in try-catch
+ * - FormElicitationHandler and UrlElicitationHandler: Exceptions may propagate; wrap in try-catch
  */
-
 inline constexpr std::size_t kDefaultMaxPaginationPages = 1024U;
 
 struct ClientInitializeConfiguration

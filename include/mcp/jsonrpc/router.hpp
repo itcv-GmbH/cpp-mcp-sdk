@@ -21,7 +21,9 @@ namespace mcp::jsonrpc
 {
 
 /**
- * @brief Thread Safety
+ * @brief JSON-RPC message routing and dispatch.
+ *
+ * @section Thread Safety
  *
  * @par Thread-Safety Classification: Thread-safe
  *
@@ -59,8 +61,35 @@ namespace mcp::jsonrpc
  * - NotificationHandler: Serial invocation per notification, router/I/O thread
  * - OutboundMessageSender: Serial invocation per message, threading determined by caller
  * - ProgressCallback: Serial invocation per progress token, router/I/O thread
+ *
+ * @section Exceptions
+ *
+ * The Router class provides the following exception behavior:
+ *
+ * @subsection Construction and Destruction
+ * - Router(RouterOptions) does not throw
+ * - ~Router() is declared noexcept
+ *
+ * @subsection Handler Registration
+ * - registerRequestHandler(), registerNotificationHandler(), unregisterHandler() do not throw
+ *
+ * @subsection Dispatch Operations
+ * - dispatchRequest() catches exceptions from user-provided RequestHandler callbacks and
+ *   converts them to JSON-RPC error responses with code -32603 (Internal Error)
+ * - dispatchNotification() returns void; callback exceptions propagate to caller
+ * - dispatchResponse() returns bool; does not throw directly
+ *
+ * @subsection Request Operations
+ * - sendRequest() may throw std::runtime_error on transport or serialization failure
+ * - sendNotification() returns void; does not throw directly
+ *
+ * @subsection Progress Operations
+ * - emitProgress() returns bool; does not throw directly
+ *
+ * @subsection Background Thread Behavior
+ * Work posted to internal thread pools may have exceptions caught in some cases, but
+ * this is not a guaranteed contract. Wrap your posted work in try-catch.
  */
-
 using RequestHandler = std::function<std::future<Response>(const RequestContext &, const Request &)>;
 using NotificationHandler = std::function<void(const RequestContext &, const Notification &)>;
 using OutboundMessageSender = std::function<void(const RequestContext &, Message)>;

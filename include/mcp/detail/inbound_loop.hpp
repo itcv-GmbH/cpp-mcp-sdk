@@ -6,15 +6,45 @@
 
 namespace mcp::detail
 {
-
-/// A unified abstraction for transport inbound loops (reader threads).
-/// Provides consistent lifecycle management (start, stop, join) and error containment.
-///
-/// This class ensures:
-/// - Exception containment: Loop body exceptions must not escape the thread
-/// - Clean shutdown: stop() signals termination, join() waits for thread
-/// - Thread-safe state: isRunning() is safe to call from any thread
-/// - Idempotent: Multiple start/stop calls are safe
+/**
+ * @brief A unified abstraction for transport inbound loops (reader threads).
+ *
+ * Provides consistent lifecycle management (start, stop, join) and error containment.
+ *
+ * @section Exceptions
+ *
+ * @subsection Construction
+ * - InboundLoop(LoopBody) may throw std::bad_alloc on memory allocation failure
+ *
+ * @subsection Destruction
+ * - ~InboundLoop() default destructor
+ *
+ * @subsection Lifecycle Operations
+ * - start() may throw std::runtime_error if thread creation fails
+ * - stop() sets atomic flag
+ * - join() waits for thread completion
+ * - isRunning() noexcept - atomic state check
+ *
+ * @subsection Loop Body Behavior
+ * The LoopBody function is invoked in a background thread. The current implementation
+ * may catch exceptions from the loop body, but this is not a guaranteed contract.
+ * Write loop bodies that handle their own exceptions.
+ *
+ * Recommended pattern for loop body:
+ * @code
+ * InboundLoop loop([]() {
+ *     try {
+ *         // Read and process messages
+ *     } catch (const std::exception& e) {
+ *         // Log or report error, but keep loop running if possible
+ *     }
+ * });
+ * @endcode
+ *
+ * @subsection Thread Safety
+ * - stop(), join(), isRunning() are safe to call from any thread
+ * - Multiple start/stop calls are handled safely
+ */
 class InboundLoop
 {
 public:
