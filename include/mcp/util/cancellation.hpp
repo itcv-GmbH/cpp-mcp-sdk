@@ -7,18 +7,13 @@
 #include <string_view>
 
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/util/cancellation/cancelled_notification.hpp>
 
 namespace mcp::util::cancellation
 {
 
 inline constexpr std::string_view kCancelledNotificationMethod = "notifications/cancelled";
 inline constexpr std::string_view kTasksCancelMethod = "tasks/cancel";
-
-struct CancelledNotification
-{
-  jsonrpc::RequestId requestId;
-  std::optional<std::string> reason;
-};
 
 inline auto requestIdToJson(const jsonrpc::RequestId &requestId) -> jsonrpc::JsonValue
 {

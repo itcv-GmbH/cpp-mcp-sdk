@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/detail/parsed_absolute_url.hpp>
+
 namespace mcp::detail
 {
 
@@ -17,24 +19,6 @@ constexpr std::uint16_t kPortHttp = 80;
 constexpr std::uint16_t kPortHttps = 443;
 constexpr std::uint16_t kPortFtp = 21;
 constexpr std::uint16_t kPortFtps = 990;
-
-/**
- * Parsed representation of an absolute URL.
- * Provides a structured view of scheme, host, port, path, and query components
- * along with metadata flags for parsing characteristics.
- */
-struct ParsedAbsoluteUrl
-{
-  std::string scheme;
-  std::string host;
-  std::uint16_t port = 0;
-  std::string path;
-  std::optional<std::string> query;
-
-  bool ipv6Literal = false;
-  bool hasExplicitPort = false;
-  bool hasQuery = false;
-};
 
 namespace detail
 {
