@@ -29,7 +29,7 @@ if(CLANG_TIDY_EXE)
     message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
     set(CMAKE_CXX_CLANG_TIDY
         ${CLANG_TIDY_EXE}
-        "--header-filter=^(.*\\/)?(src|include)\\/.*"
+        "--header-filter=^(.*\/)?(src|include)\/.*"
         "--exclude-header-filter=.*/(build/.*/vcpkg_installed|vcpkg_installed|third_party|external)/.*"
     )
 else()
