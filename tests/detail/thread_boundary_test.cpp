@@ -1,3 +1,5 @@
+#include <atomic>
+#include <chrono>
 #include <exception>
 #include <functional>
 #include <mutex>
@@ -9,6 +11,8 @@
 #include <mcp/error_reporter.hpp>
 
 // Include the thread_boundary implementation directly since it's in src/
+#include <mcp/detail/inbound_loop.hpp>
+
 #include "../../src/detail/thread_boundary.hpp"
 
 // NOLINTBEGIN(readability-function-cognitive-complexity, misc-const-correctness, misc-include-cleaner)
@@ -173,6 +177,45 @@ TEST_CASE_METHOD(ThreadBoundaryTestFixture, "Multiple thread boundaries report i
 
   REQUIRE(waitForErrors(kNumThreads));
   REQUIRE(getRecordedErrors().size() == kNumThreads);
+}
+
+TEST_CASE_METHOD(ThreadBoundaryTestFixture, "InboundLoop reports exception through error reporter", "[thread_boundary]")
+{
+  std::atomic<bool> throwException {true};
+  std::atomic<bool> loopRan {false};
+
+  auto loopBody = [&throwException, &loopRan]() -> void
+  {
+    loopRan.store(true);
+    if (throwException.load())
+    {
+      throw std::runtime_error("Exception in InboundLoop body");
+    }
+  };
+
+  mcp::detail::InboundLoop loop(loopBody, errorReporter);
+  loop.start();
+
+  // Wait for the loop to run and throw
+  const auto start = std::chrono::steady_clock::now();
+  while (!loopRan.load() && std::chrono::steady_clock::now() - start < std::chrono::milliseconds {500})
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds {1});
+  }
+
+  // Give time for error to be reported
+  std::this_thread::sleep_for(std::chrono::milliseconds {50});
+
+  loop.stop();
+  loop.join();
+
+  REQUIRE(loopRan.load());
+  REQUIRE(waitForErrors(1));
+
+  const auto errors = getRecordedErrors();
+  REQUIRE(errors.size() == 1);
+  REQUIRE(errors[0].first == "InboundLoop");
+  REQUIRE(errors[0].second.find("Exception in InboundLoop body") != std::string::npos);
 }
 
 // NOLINTEND(readability-function-cognitive-complexity, misc-const-correctness, misc-include-cleaner)

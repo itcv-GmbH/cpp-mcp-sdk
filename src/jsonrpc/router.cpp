@@ -44,7 +44,7 @@ static void deleteThreadPoolNoexcept(boost::asio::thread_pool *pool) noexcept
   try
   {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    std::thread deletionThread([pool]() noexcept -> void { delete pool; });
+    std::thread deletionThread([pool]() -> void { delete pool; });
     deletionThread.detach();
   }
   // NOLINTNEXTLINE(bugprone-empty-catch)

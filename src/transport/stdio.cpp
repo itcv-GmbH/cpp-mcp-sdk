@@ -727,6 +727,7 @@ auto StdioTransport::spawnSubprocess(const StdioSubprocessSpawnOptions &options)
 
   auto impl = std::make_unique<StdioSubprocess::Impl>();
   impl->stderrMode = options.stderrMode;
+  impl->errorReporter = options.errorReporter;
 
   const bool useStartDir = !options.cwd.empty();
   auto spawnChild = [&](auto &&...ioOptions) -> bp::child

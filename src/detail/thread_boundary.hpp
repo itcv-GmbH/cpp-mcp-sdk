@@ -20,9 +20,10 @@ namespace mcp::detail
  * Usage: auto wrapped = threadBoundary(callable, reporter, "Component");
  */
 template<typename Callable>
-[[nodiscard]] inline auto threadBoundary(Callable callable, ErrorReporter errorReporter, std::string_view component) noexcept -> std::function<void()>
+[[nodiscard]] inline auto threadBoundary(Callable callable, ErrorReporter errorReporter, std::string_view component) -> std::function<void()>
 {
-  return [callable = std::move(callable), errorReporter = std::move(errorReporter), component = std::string(component)]() noexcept -> void
+  // Note: Not marked noexcept because std::function construction can throw (bad_alloc)
+  return [callable = std::move(callable), errorReporter = std::move(errorReporter), component = std::string(component)]() mutable noexcept -> void
   {
     try
     {
@@ -41,8 +42,9 @@ template<typename Callable>
  * Similar to threadBoundary, but for thread pool work items.
  */
 template<typename Callable>
-[[nodiscard]] inline auto threadPoolWork(Callable callable, ErrorReporter errorReporter, std::string_view component) noexcept -> std::function<void()>
+[[nodiscard]] inline auto threadPoolWork(Callable callable, ErrorReporter errorReporter, std::string_view component) -> std::function<void()>
 {
+  // Note: Not marked noexcept because std::function construction can throw (bad_alloc)
   return [callable = std::move(callable), errorReporter = std::move(errorReporter), component = std::string(component)]() mutable noexcept -> void
   {
     try
