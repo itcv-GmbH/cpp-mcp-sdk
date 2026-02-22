@@ -394,19 +394,25 @@ struct StdioSubprocess::Impl
       return;
     }
 
-    stderrReader = std::thread([wrapped = ::mcp::detail::threadBoundary(
-                                  [this]() -> void
-                                  {
-                                    std::string line;
-                                    while (std::getline(stderrPipe, line))
-                                    {
-                                      const std::scoped_lock lock(stderrMutex);
-                                      capturedStderr.append(line);
-                                      capturedStderr.push_back('\n');
-                                    }
-                                  },
-                                  errorReporter,
-                                  "StdioSubprocess")]() noexcept -> void { wrapped(); });
+    stderrReader = std::thread(
+      [this]() noexcept -> void
+      {
+        try
+        {
+          std::string line;
+          while (std::getline(stderrPipe, line))
+          {
+            const std::scoped_lock lock(stderrMutex);
+            capturedStderr.append(line);
+            capturedStderr.push_back('\n');
+          }
+        }
+        catch (...)
+        {
+          // Suppress all exceptions from background thread
+          reportCurrentException(errorReporter, "StdioSubprocess::stderrReader");
+        }
+      });
   }
 
   auto joinStderrCapture() noexcept -> void

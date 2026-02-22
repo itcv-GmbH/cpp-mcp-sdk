@@ -27,6 +27,32 @@ struct StreamableHttpServerRunnerOptions
   transport::http::StreamableHttpServerOptions transportOptions;
 };
 
+/// @section Exceptions
+///
+/// The StreamableHttpServerRunner provides the following exception guarantees:
+/// - Constructor: Does not throw
+/// - Destructor: noexcept (guaranteed not to throw; calls stop() internally)
+/// - Move operations: noexcept
+/// - start(): Idempotent; may throw std::runtime_error on server startup failure
+/// - stop() noexcept: Idempotent; never throws; blocks until server stops
+/// - isRunning() noexcept: Safe to call from any thread
+/// - localPort() noexcept: Safe to call from any thread
+/// - options() noexcept: Safe to call from any thread
+///
+/// @par Threading Guarantees
+/// - start() is thread-safe and idempotent
+/// - stop() is thread-safe, idempotent, and noexcept
+/// - stop() joins the server thread deterministically without deadlock
+/// - The background thread has a noexcept entrypoint
+/// - All exceptions in the background thread are caught and reported via ErrorReporter
+///
+/// @par Lifecycle
+/// 1. Create the runner with a ServerFactory and options
+/// 2. Call start() to begin accepting connections (idempotent)
+/// 3. Use isRunning() and localPort() to check status
+/// 4. Call stop() to shut down (idempotent, noexcept)
+/// 5. Destroy the runner (destructor is noexcept)
+
 /// Runner for serving MCP over Streamable HTTP.
 ///
 /// This runner provides a start/stop API for running an MCP server

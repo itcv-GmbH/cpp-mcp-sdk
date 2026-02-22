@@ -47,51 +47,82 @@ public:
   StreamableHttpClientTransport(StreamableHttpClientTransport &&) = delete;
   auto operator=(StreamableHttpClientTransport &&) -> StreamableHttpClientTransport & = delete;
 
-  ~StreamableHttpClientTransport() override { stop(); }
+  ~StreamableHttpClientTransport() noexcept override
+  {
+    try
+    {
+      stop();
+    }
+    catch (...)
+    {
+      // Suppress exceptions from destructor - noexcept guarantee
+    }
+  }
 
   auto attach(std::weak_ptr<Session> session) -> void override { static_cast<void>(session); }
 
   auto start() -> void override
   {
     const std::scoped_lock lock(mutex_);
+    if (running_)
+    {
+      // Idempotent: already running
+      return;
+    }
     running_ = true;
   }
 
-  auto stop() -> void override
+  auto stop() noexcept -> void override
   {
+    // Idempotent: check if already stopped
+    const std::scoped_lock lock(mutex_);
+    if (!running_)
+    {
+      return;
+    }
+    running_ = false;
+
     // Signal the listen loop to stop
     listenLoopRunning_.store(false);
 
-    // Stop and join the InboundLoop if it's running
-    if (inboundLoop_ != nullptr)
+    try
     {
-      inboundLoop_->stop();
-      inboundLoop_->join();
-      inboundLoop_.reset();
-    }
+      // Stop and join the InboundLoop if it's running
+      if (inboundLoop_ != nullptr)
+      {
+        try
+        {
+          inboundLoop_->stop();
+          inboundLoop_->join();
+        }
+        catch (...)
+        {
+          // Suppress exceptions - stop() is noexcept
+        }
+        inboundLoop_.reset();
+      }
 
-    // Close any active listen stream (client-initiated closure per MCP spec section 6.3)
-    if (client_.hasActiveListenStream())
+      // Close any active listen stream (client-initiated closure per MCP spec section 6.3)
+      if (client_.hasActiveListenStream())
+      {
+        try
+        {
+          client_.terminateSession();
+        }
+        catch (...)
+        {
+          // Suppress exceptions - stop() is noexcept
+          listenLoopRunning_.store(false);
+        }
+      }
+    }
+    catch (...)
     {
-      try
-      {
-        client_.terminateSession();
-      }
-      catch (const std::exception &)
-      {
-        listenLoopRunning_.store(false);
-      }
-      catch (...)
-      {
-        listenLoopRunning_.store(false);
-      }
+      // Suppress all exceptions - stop() is noexcept
     }
 
     // Reset the listen loop started flag to allow restart on subsequent start/stop cycles
     listenLoopStarted_ = false;
-
-    const std::scoped_lock lock(mutex_);
-    running_ = false;
   }
 
   auto isRunning() const noexcept -> bool override

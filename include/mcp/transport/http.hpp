@@ -32,7 +32,7 @@ namespace mcp::transport
  *
  * @subsection StreamableHttpServer
  * - Constructor: Does not throw
- * - Destructor: Standard destructor behavior
+ * - Destructor: noexcept (guaranteed not to throw)
  * - Move operations: noexcept
  * - setRequestHandler(), setNotificationHandler(), setResponseHandler(): Do not throw
  * - upsertSession(), setSessionState(): Do not throw
@@ -41,7 +41,7 @@ namespace mcp::transport
  *
  * @subsection StreamableHttpClient
  * - Constructor: May throw std::invalid_argument for invalid options
- * - Destructor: Standard destructor behavior
+ * - Destructor: noexcept (guaranteed not to throw)
  * - Move operations: noexcept
  * - send(): Throws std::runtime_error on HTTP error or serialization failure
  * - openListenStream(): Throws std::runtime_error on connection failure
@@ -51,17 +51,17 @@ namespace mcp::transport
  *
  * @subsection HttpServerRuntime
  * - Constructor: Does not throw
- * - Destructor: Standard destructor behavior
+ * - Destructor: noexcept (guaranteed not to throw; calls stop() internally)
  * - Move operations: noexcept
  * - setRequestHandler(): Does not throw
- * - start(): Throws std::runtime_error on server startup failure
- * - stop() noexcept
+ * - start(): Idempotent; throws std::runtime_error on server startup failure
+ * - stop() noexcept: Idempotent; blocks until server thread joins
  * - isRunning() const noexcept
  * - localPort() const noexcept
  *
  * @subsection HttpClientRuntime
  * - Constructor: Does not throw
- * - Destructor: Standard destructor behavior
+ * - Destructor: noexcept (guaranteed not to throw)
  * - Move operations: noexcept
  * - execute() const: Throws std::runtime_error on HTTP request failure
  *
@@ -79,6 +79,12 @@ namespace mcp::transport
  * @subsection Request Validation
  * - rejectRequest(): Returns RequestValidationResult
  * - validateServerRequest(): Returns RequestValidationResult; errors encoded in result
+ *
+ * @subsection Threading Guarantees
+ * HttpServerRuntime creates a background thread on start(). This thread:
+ * - Has a noexcept entrypoint (all exceptions are caught and reported via ErrorReporter)
+ * - Is joined deterministically in stop()
+ * - Never allows exceptions to escape to std::terminate
  */
 
 /**

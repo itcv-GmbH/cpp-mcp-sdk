@@ -33,6 +33,25 @@ struct StdioServerRunnerOptions
   ErrorReporter errorReporter;
 };
 
+/// @section Exceptions
+///
+/// The StdioServerRunner provides the following exception guarantees:
+/// - Constructor: Does not throw
+/// - Destructor: noexcept (guaranteed not to throw)
+/// - Move operations: noexcept
+/// - run(): May throw std::runtime_error on fatal errors (typically not recoverable)
+/// - run(istream, ostream, ostream): May throw std::runtime_error on fatal errors
+/// - startAsync(): Does not throw; returns std::thread which may throw on join
+/// - stop() noexcept: Idempotent; never throws
+/// - options() noexcept: Safe to call from any thread
+///
+/// @par Threading Guarantees
+/// - run() is blocking and runs on the calling thread
+/// - startAsync() creates a background thread
+/// - stop() can be called from any thread to signal termination
+/// - The background thread created by startAsync() has a noexcept entrypoint
+/// - All exceptions in the background thread are caught and reported via ErrorReporter
+
 /// Runner for serving MCP over STDIO.
 ///
 /// This runner provides a simple blocking API for running an MCP server
