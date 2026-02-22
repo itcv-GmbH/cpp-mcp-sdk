@@ -1,0 +1,23 @@
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <string>
+
+#include <mcp/util/task_status.hpp>
+
+namespace mcp::util
+{
+
+struct Task
+{
+  std::string taskId;
+  TaskStatus status = TaskStatus::kWorking;
+  std::optional<std::string> statusMessage;
+  std::string createdAt;
+  std::string lastUpdatedAt;
+  std::optional<std::int64_t> ttl;
+  std::optional<std::int64_t> pollInterval;
+};
+
+}  // namespace mcp::util
