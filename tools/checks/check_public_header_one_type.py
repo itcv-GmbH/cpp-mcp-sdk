@@ -131,6 +131,10 @@ def count_top_level_types(content: str) -> List[Tuple[str, int]]:
     # Track the scope stack: each entry is ('namespace'|'type'|'other', name)
     scope_stack = []
 
+    # Track pending type declaration to handle Allman-style braces
+    # Format: (type_name, line_number, namespace_depth_at_declaration)
+    pending_type = None
+
     # Pattern to detect namespace keyword
     namespace_pattern = re.compile(r"\bnamespace\b")
     # Pattern to match class or struct keyword followed by name
@@ -164,7 +168,7 @@ def count_top_level_types(content: str) -> List[Tuple[str, int]]:
         # Find all type keywords on this line
         type_matches = list(type_keyword_pattern.finditer(line))
 
-        # Process each type keyword in order, tracking brace depth at each position
+        # Process each type keyword
         for match in type_matches:
             keyword = match.group(1)  # 'class' or 'struct'
             type_name = match.group(2)
@@ -197,15 +201,16 @@ def count_top_level_types(content: str) -> List[Tuple[str, int]]:
             # Total type depth at this position = base depth + types that opened braces
             total_type_depth = base_type_depth + types_with_braces_before
 
-            # Count only top-level types (not nested inside another type)
+            # If at type depth 0, mark as pending - we'll finalize when we see the opening brace
+            # This handles both K&R and Allman brace styles correctly
             if total_type_depth == 0:
-                types.append((type_name, line_num))
+                pending_type = (type_name, line_num)
 
-        # After processing all type keywords, update scope stack based on all braces
+        # Process opening braces - finalize pending types and update scope
         open_braces = line.count("{")
         close_braces = line.count("}")
 
-        # Process opening braces - determine if they belong to types or other constructs
+        # Process opening braces
         brace_positions = [i for i, c in enumerate(line) if c == "{"]
 
         for brace_pos in brace_positions:
@@ -222,8 +227,22 @@ def count_top_level_types(content: str) -> List[Tuple[str, int]]:
                         matched_type_name = match.group(2)
                         break
 
-            if matched_type_name:
-                scope_stack.append(("type", matched_type_name))
+            # Determine the type name for this brace
+            brace_type_name = matched_type_name
+            if not brace_type_name and pending_type:
+                # This brace belongs to the pending type (Allman style)
+                brace_type_name = pending_type[0]
+
+            if brace_type_name:
+                # This brace opens a type definition
+                # Finalize the pending type if it matches
+                if pending_type and pending_type[0] == brace_type_name:
+                    # Check if we're at namespace level only (no type scope)
+                    current_type_depth = sum(1 for s in scope_stack if s[0] == "type")
+                    if current_type_depth == 0:
+                        types.append(pending_type)
+                    pending_type = None
+                scope_stack.append(("type", brace_type_name))
             else:
                 scope_stack.append(("other", None))
 
@@ -231,6 +250,8 @@ def count_top_level_types(content: str) -> List[Tuple[str, int]]:
         for _ in range(close_braces):
             if scope_stack:
                 scope_stack.pop()
+            # Clear pending type on any closing brace (it was a forward declaration or invalid)
+            pending_type = None
 
     return types
 
