@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include <mcp/http/sse.hpp>
+#include <mcp/http/all.hpp>
 
 namespace mcp::transport::http
 {

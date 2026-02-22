@@ -20,7 +20,7 @@
 #include <vector>
 
 #include <mcp/auth/oauth_server.hpp>
-#include <mcp/http/sse.hpp>
+#include <mcp/http/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/security/crypto_random.hpp>
 #include <mcp/transport/http.hpp>

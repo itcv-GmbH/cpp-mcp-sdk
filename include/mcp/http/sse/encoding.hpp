@@ -6,9 +6,9 @@
 #include <string_view>
 #include <vector>
 
-#include <mcp/http/detail.hpp>
-#include <mcp/http/event.hpp>
-#include <mcp/http/event_id_cursor.hpp>
+#include <mcp/http/sse/detail/internal.hpp>
+#include <mcp/http/sse/event.hpp>
+#include <mcp/http/sse/event_id_cursor.hpp>
 
 namespace mcp::http::sse
 {

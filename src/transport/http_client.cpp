@@ -14,7 +14,7 @@
 #include <vector>
 
 #include <mcp/detail/url.hpp>
-#include <mcp/http/sse.hpp>
+#include <mcp/http/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http.hpp>
 

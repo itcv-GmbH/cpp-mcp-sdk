@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-#include <mcp/http/event.hpp>
+#include <mcp/http/sse/event.hpp>
 
 namespace mcp::http::sse::detail
 {
