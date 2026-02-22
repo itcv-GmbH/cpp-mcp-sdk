@@ -21,11 +21,40 @@
 #include <mcp/server/tools.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/transport.hpp>
+#include <mcp/version.hpp>
 
 namespace
 {
 
 constexpr auto kWaitTimeout = std::chrono::seconds {2};
+
+namespace mcp_http = mcp::transport::http;
+
+auto makeInitializeRequestJson() -> std::string
+{
+  return R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":")" + std::string(mcp::kLatestProtocolVersion)
+    + R"(","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}})";
+}
+
+auto makeInitializedNotificationJson() -> std::string
+{
+  return R"({"jsonrpc":"2.0","method":"notifications/initialized"})";
+}
+
+auto makeBlockingRequestJson() -> std::string
+{
+  return R"({"jsonrpc":"2.0","id":2,"method":"test/blocking","params":{}})";
+}
+
+auto makeJsonPostRequest(std::string body) -> mcp_http::ServerRequest
+{
+  mcp_http::ServerRequest request;
+  request.method = mcp_http::ServerRequestMethod::kPost;
+  request.path = "/mcp";
+  request.body = std::move(body);
+  mcp_http::setHeader(request.headers, mcp_http::kHeaderContentType, "application/json");
+  return request;
+}
 
 class CapturingTransport final : public mcp::transport::Transport
 {
@@ -183,17 +212,72 @@ TEST_CASE("Client destructor is bounded with in-flight async work", "[concurrenc
 
 TEST_CASE("Destroying active StreamableHttpServerRunner is bounded and releases HTTP resources", "[concurrency][destructor][server_runner]")
 {
-  auto runner = std::make_unique<mcp::StreamableHttpServerRunner>(makeMinimalServer);
+  std::promise<void> handlerEnteredPromise;
+  std::future<void> handlerEnteredFuture = handlerEnteredPromise.get_future();
+  std::once_flag handlerEnteredOnce;
+
+  std::promise<void> releaseHandlerPromise;
+  std::shared_future<void> releaseHandlerFuture = releaseHandlerPromise.get_future().share();
+
+  auto makeBlockingServer = [&handlerEnteredPromise, &handlerEnteredOnce, releaseHandlerFuture]() -> std::shared_ptr<mcp::Server>
+  {
+    auto server = makeMinimalServer();
+    server->registerRequestHandler("test/blocking",
+                                   [&handlerEnteredPromise, &handlerEnteredOnce, releaseHandlerFuture](const mcp::jsonrpc::RequestContext &,
+                                                                                                       const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
+                                   {
+                                     std::call_once(handlerEnteredOnce, [&handlerEnteredPromise]() -> void { handlerEnteredPromise.set_value(); });
+
+                                     return std::async(std::launch::async,
+                                                       [releaseHandlerFuture, request]() -> mcp::jsonrpc::Response
+                                                       {
+                                                         releaseHandlerFuture.wait();
+
+                                                         mcp::jsonrpc::SuccessResponse success;
+                                                         success.id = request.id;
+                                                         success.result = mcp::jsonrpc::JsonValue::object();
+                                                         success.result["completed"] = true;
+                                                         return mcp::jsonrpc::Response {std::move(success)};
+                                                       });
+                                   });
+
+    return server;
+  };
+
+  auto runner = std::make_unique<mcp::StreamableHttpServerRunner>(makeBlockingServer);
   runner->start();
 
   REQUIRE(runner->isRunning());
   const std::uint16_t boundPort = runner->localPort();
   REQUIRE(boundPort != 0);
 
+  mcp::transport::HttpClientOptions clientOptions;
+  clientOptions.endpointUrl = "http://127.0.0.1:" + std::to_string(boundPort) + "/mcp";
+  mcp::transport::HttpClientRuntime client(clientOptions);
+
+  const mcp_http::ServerResponse initializeResponse = client.execute(makeJsonPostRequest(makeInitializeRequestJson()));
+  REQUIRE(initializeResponse.statusCode == 200);
+
+  const mcp_http::ServerResponse initializedResponse = client.execute(makeJsonPostRequest(makeInitializedNotificationJson()));
+  REQUIRE(initializedResponse.statusCode == 202);
+
+  std::future<mcp_http::ServerResponse> blockingRequestFuture =
+    std::async(std::launch::async, [&client]() -> mcp_http::ServerResponse { return client.execute(makeJsonPostRequest(makeBlockingRequestJson())); });
+
+  REQUIRE(handlerEnteredFuture.wait_for(kWaitTimeout) == std::future_status::ready);
+
   std::future<void> destroyFuture = std::async(std::launch::async, [&runner]() -> void { runner.reset(); });
+
+  REQUIRE(destroyFuture.wait_for(std::chrono::milliseconds {100}) == std::future_status::timeout);
+
+  releaseHandlerPromise.set_value();
 
   REQUIRE(destroyFuture.wait_for(kWaitTimeout) == std::future_status::ready);
   REQUIRE_NOTHROW(destroyFuture.get());
+
+  REQUIRE(blockingRequestFuture.wait_for(kWaitTimeout) == std::future_status::ready);
+  const mcp_http::ServerResponse blockingResponse = blockingRequestFuture.get();
+  REQUIRE(blockingResponse.statusCode == 200);
 
   REQUIRE(waitUntilPortRebindable(boundPort, std::chrono::seconds {2}));
 }

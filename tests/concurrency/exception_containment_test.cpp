@@ -3,6 +3,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -161,6 +162,12 @@ TEST_CASE("HttpServerRuntime thread boundary reports failure and supports restar
 
   REQUIRE_THROWS(failingClient.execute(request));
   REQUIRE(errorReportedFuture.wait_for(kWaitTimeout) == std::future_status::ready);
+
+  const auto shutdownDeadline = std::chrono::steady_clock::now() + kWaitTimeout;
+  while (runtime.isRunning() && std::chrono::steady_clock::now() < shutdownDeadline)
+  {
+    std::this_thread::sleep_for(std::chrono::milliseconds {10});
+  }
   REQUIRE_FALSE(runtime.isRunning());
 
   REQUIRE_NOTHROW(runtime.stop());

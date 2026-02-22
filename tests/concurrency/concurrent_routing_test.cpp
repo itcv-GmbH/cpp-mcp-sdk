@@ -22,6 +22,24 @@ constexpr std::size_t kThreadCount = 8;
 constexpr std::size_t kRequestsPerThread = 16;
 constexpr std::size_t kTotalRequests = kThreadCount * kRequestsPerThread;
 
+struct ConcurrentFailureCollector
+{
+  auto record(std::string failure) -> void
+  {
+    const std::scoped_lock lock(mutex);
+    failures.push_back(std::move(failure));
+  }
+
+  [[nodiscard]] auto snapshot() const -> std::vector<std::string>
+  {
+    const std::scoped_lock lock(mutex);
+    return failures;
+  }
+
+  mutable std::mutex mutex;
+  std::vector<std::string> failures;
+};
+
 }  // namespace
 
 TEST_CASE("Router deterministically routes responses for concurrent senders", "[concurrency][routing]")
@@ -34,14 +52,23 @@ TEST_CASE("Router deterministically routes responses for concurrent senders", "[
   std::future<void> allOutboundFuture = allOutboundPromise.get_future();
   std::once_flag allOutboundOnce;
   std::atomic<std::size_t> outboundCount {0};
+  ConcurrentFailureCollector failureCollector;
 
   router.setOutboundMessageSender(
-    [&allOutboundPromise, &allOutboundOnce, &outboundCount](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
+    [&allOutboundPromise, &allOutboundOnce, &outboundCount, &failureCollector](const mcp::jsonrpc::RequestContext &, mcp::jsonrpc::Message message) -> void
     {
-      REQUIRE(std::holds_alternative<mcp::jsonrpc::Request>(message));
-
-      const auto &request = std::get<mcp::jsonrpc::Request>(message);
-      REQUIRE(std::holds_alternative<std::int64_t>(request.id));
+      if (!std::holds_alternative<mcp::jsonrpc::Request>(message))
+      {
+        failureCollector.record("Outbound sender received non-request message.");
+      }
+      else
+      {
+        const auto &request = std::get<mcp::jsonrpc::Request>(message);
+        if (!std::holds_alternative<std::int64_t>(request.id))
+        {
+          failureCollector.record("Outbound sender received request with non-int64 id.");
+        }
+      }
 
       const std::size_t sent = outboundCount.fetch_add(1, std::memory_order_relaxed) + 1;
       if (sent == kTotalRequests)
@@ -59,9 +86,13 @@ TEST_CASE("Router deterministically routes responses for concurrent senders", "[
   for (std::size_t threadIndex = 0; threadIndex < kThreadCount; ++threadIndex)
   {
     workers.emplace_back(
-      [&router, &releaseWorkers, &responseFutures, threadIndex]() -> void
+      [&router, &releaseWorkers, &responseFutures, &failureCollector, threadIndex]() -> void
       {
-        REQUIRE(releaseWorkers.wait_for(kWaitTimeout) == std::future_status::ready);
+        if (releaseWorkers.wait_for(kWaitTimeout) != std::future_status::ready)
+        {
+          failureCollector.record("Worker timed out waiting for release barrier.");
+          return;
+        }
 
         mcp::jsonrpc::RequestContext context;
         context.sessionId = std::string("sender-") + std::to_string(threadIndex);
@@ -93,6 +124,13 @@ TEST_CASE("Router deterministically routes responses for concurrent senders", "[
   REQUIRE(allOutboundFuture.wait_for(kWaitTimeout) == std::future_status::ready);
   allOutboundFuture.get();
   REQUIRE(outboundCount.load(std::memory_order_relaxed) == kTotalRequests);
+
+  const std::vector<std::string> concurrentFailures = failureCollector.snapshot();
+  for (const std::string &failure : concurrentFailures)
+  {
+    INFO(failure);
+  }
+  REQUIRE(concurrentFailures.empty());
 
   // Resolve responses in deterministic scrambled order (reverse, split by parity)
   const mcp::jsonrpc::RequestContext responseContext;
