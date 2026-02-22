@@ -7,6 +7,8 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -154,10 +156,16 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
       // Send responses in scrambled order
       for (std::int64_t i = totalRequests - 1; i >= 0; --i)
       {
+        // Calculate the original thread and request indices from the requestId
+        // requestId = t * requestsPerThread + r
+        const std::int64_t t = i / requestsPerThread;
+        const std::int64_t r = i % requestsPerThread;
+
         mcp::jsonrpc::SuccessResponse response;
         response.id = i;
         response.result = mcp::jsonrpc::JsonValue::object();
-        response.result["responseId"] = i;
+        response.result["thread"] = t;
+        response.result["request"] = r;
 
         router.dispatchResponse(context, mcp::jsonrpc::Response {response});
       }
@@ -168,34 +176,60 @@ TEST_CASE("Concurrent sendRequest calls from multiple threads", "[jsonrpc][route
   // Verify all futures are resolved
   REQUIRE(allFutures.size() == static_cast<std::size_t>(totalRequests));
 
-  std::atomic<std::size_t> successCount {0};
-  std::size_t futureIndex = 0;
+  // Build a map from requestId to the expected response content for that request
+  // Each request was created with: requestId = t * requestsPerThread + r
+  // where t is thread index and r is request index within thread
+  // Expected response content: response.result["thread"] = t, response.result["request"] = r
+  std::unordered_map<std::int64_t, std::pair<std::int64_t, std::int64_t>> expectedContentByRequestId;
+  for (std::int64_t t = 0; t < numThreads; ++t)
+  {
+    for (std::int64_t r = 0; r < requestsPerThread; ++r)
+    {
+      const std::int64_t requestId = t * requestsPerThread + r;
+      expectedContentByRequestId[requestId] = {t, r};
+    }
+  }
+
+  // Track which request IDs we've verified
+  std::unordered_set<std::int64_t> verifiedRequestIds;
+  verifiedRequestIds.reserve(static_cast<std::size_t>(totalRequests));
+
   for (auto &future : allFutures)
   {
     const std::future_status status = future.wait_for(std::chrono::milliseconds(kResponseWaitMillis));
-    if (status == std::future_status::ready)
-    {
-      const mcp::jsonrpc::Response response = future.get();
-      if (std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response))
-      {
-        const auto &successResp = std::get<mcp::jsonrpc::SuccessResponse>(response);
-        // Verify that the response ID matches the expected request ID
-        // Responses were sent in reverse order, so we verify the mapping is correct
-        REQUIRE(std::holds_alternative<std::int64_t>(successResp.id));
-        const std::int64_t responseId = std::get<std::int64_t>(successResp.id);
-        // Each response should have a valid ID from the range
-        REQUIRE(responseId >= 0);
-        REQUIRE(responseId < totalRequests);
-        // Verify the response result contains the expected ID
-        REQUIRE(successResp.result.contains("responseId"));
-        REQUIRE(successResp.result.at("responseId").as<std::int64_t>() == responseId);
-        successCount.fetch_add(1, std::memory_order_relaxed);
-      }
-    }
-    ++futureIndex;
+    REQUIRE(status == std::future_status::ready);
+
+    const mcp::jsonrpc::Response response = future.get();
+    REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
+
+    const auto &successResp = std::get<mcp::jsonrpc::SuccessResponse>(response);
+
+    // Verify response has correct ID type
+    REQUIRE(std::holds_alternative<std::int64_t>(successResp.id));
+    const std::int64_t responseId = std::get<std::int64_t>(successResp.id);
+
+    // Verify this ID is in our expected range and hasn't been verified yet
+    REQUIRE(responseId >= 0);
+    REQUIRE(responseId < totalRequests);
+    REQUIRE(verifiedRequestIds.find(responseId) == verifiedRequestIds.end());
+
+    // Look up the expected content for this request ID
+    const auto expectedIt = expectedContentByRequestId.find(responseId);
+    REQUIRE(expectedIt != expectedContentByRequestId.end());
+
+    // Verify the response contains the correct thread and request values
+    // The router should route each response to the future that was created
+    // for the request with the matching ID
+    REQUIRE(successResp.result.contains("thread"));
+    REQUIRE(successResp.result.contains("request"));
+    REQUIRE(successResp.result.at("thread").as<std::int64_t>() == expectedIt->second.first);
+    REQUIRE(successResp.result.at("request").as<std::int64_t>() == expectedIt->second.second);
+
+    verifiedRequestIds.insert(responseId);
   }
 
-  REQUIRE(successCount.load() == static_cast<std::size_t>(totalRequests));
+  // Verify we verified all request IDs
+  REQUIRE(verifiedRequestIds.size() == static_cast<std::size_t>(totalRequests));
 }
 
 TEST_CASE("Router shutdown with in-flight requests completes without throwing", "[jsonrpc][router][concurrency][shutdown]")
