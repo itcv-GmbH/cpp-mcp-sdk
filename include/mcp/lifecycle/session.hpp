@@ -99,7 +99,8 @@ namespace mcp
  *
  * @subsection Handler Registration
  * - registerRequestHandler(), registerNotificationHandler() do not throw
- *   (handler exceptions are caught and converted to JSON-RPC error responses by Router)
+ *   (request handler exceptions are caught and converted to JSON-RPC error responses by Router;
+ *   notification handler exceptions propagate to the caller since notifications have no response)
  *
  * @subsection State Accessors
  * - state() noexcept
@@ -115,50 +116,8 @@ namespace mcp
  * @subsection Initialize Handling
  * - handleInitializeRequest() may throw on protocol violation
  * - handleInitializeResponse() may throw on invalid response
- * - handleInitializedNotification() noexcept
+ * - handleInitializedNotification() does not throw
  * - configureServerInitialization() does not throw
- */
-
-/**
- * @brief Thread Safety
- *
- * @par Thread-Safety Classification: Thread-safe
- *
- * The Session class provides thread-safe access to all its public methods.
- * Internal synchronization is provided via mutex_.
- *
- * @par Thread-Safe Methods (concurrent invocation allowed):
- * - Session()
- * - registerRequestHandler(), registerNotificationHandler()
- * - enforceOutboundRequestLifecycle(), sendRequest(), sendRequestAsync(), sendNotification()
- * - attachTransport()
- * - state(), negotiatedProtocolVersion(), supportedProtocolVersions()
- * - negotiatedParameters() - Returns reference to internal state; NOT thread-safe for
- *   concurrent mutation. External synchronization required if used concurrently with
- *   operations that may mutate session state.
- * - setRole(), role()
- * - handleInitializeRequest(), handleInitializeResponse(), handleInitializedNotification()
- * - configureServerInitialization()
- * - canHandleRequest(), canSendRequest(), canSendNotification()
- * - checkCapability()
- *
- * @par Lifecycle Methods (thread-safe):
- * - start() - Thread-safe. Not idempotent - throws LifecycleError if called when state
- *   is not kCreated. Must only be called once per session instance.
- * - stop() - Thread-safe, idempotent
- *
- * @par Concurrency Rules:
- * 1. attachTransport() must be called before start() or while holding external synchronization.
- * 2. Handler registration may be called at any time, but handlers set after the session
- *    enters kOperating state may miss early messages.
- * 3. State transitions are atomic and thread-safe.
- *
- * @par Session State Threading:
- * The SessionState enum tracks the lifecycle state:
- * - kCreated -> kInitializing -> kInitialized -> kOperating
- * - -> kStopping -> kStopped
- *
- * State transitions are performed atomically under mutex_. All state queries are atomic.
  */
 
 namespace transport
