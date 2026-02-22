@@ -19,7 +19,7 @@
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/security/limits.hpp>
-#include <mcp/security/origin_policy.hpp>
+#include <mcp/security/origin_policy_functions.hpp>
 #include <mcp/transport/transport.hpp>
 #include <mcp/sdk/version.hpp>
 
