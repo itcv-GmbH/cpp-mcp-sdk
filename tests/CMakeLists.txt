@@ -486,6 +486,16 @@ target_link_libraries(mcp_sdk_test_server_combined_runner
 
 add_test(NAME mcp_sdk_server_combined_runner_test COMMAND mcp_sdk_test_server_combined_runner)
 
+add_executable(mcp_sdk_test_transport_threading transport_threading_test.cpp)
+
+target_link_libraries(mcp_sdk_test_transport_threading
+    PRIVATE
+        Catch2::Catch2WithMain
+        mcp::sdk
+)
+
+add_test(NAME mcp_sdk_transport_threading_test COMMAND mcp_sdk_test_transport_threading)
+
 if(MCP_SDK_INTEGRATION_TESTS)
     add_subdirectory(integration)
 endif()

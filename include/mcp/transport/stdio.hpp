@@ -49,7 +49,7 @@ namespace mcp::transport
  *
  * @subsection StdioSubprocess
  * - Constructor: Does not throw
- * - Destructor: Standard destructor behavior
+ * - Destructor: noexcept (guaranteed not to throw)
  * - Move operations: noexcept
  * - valid() noexcept
  * - writeLine(): Throws std::runtime_error on write failure or broken pipe
@@ -86,6 +86,13 @@ namespace mcp::transport
  * - User-provided router handlers (suppressed, may be logged)
  * - Message parsing errors (logged, loop continues)
  * - Subprocess I/O errors (terminates loop)
+ *
+ * @subsection Threading and Error Reporting
+ * StdioSubprocess creates a background thread for stderr capture when
+ * StdioClientStderrMode::kCapture is used. This thread:
+ * - Has a noexcept entrypoint (all exceptions are caught and reported)
+ * - Reports errors via the ErrorReporter callback if configured
+ * - Never allows exceptions to escape to std::terminate
  *
  * @subsection Thread Safety Notes
  * - StdioSubprocess: Not thread-safe; external synchronization required

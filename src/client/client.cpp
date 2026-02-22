@@ -972,7 +972,17 @@ public:
     }
   }
 
-  ~SubprocessStdioClientTransport() override { stop(); }
+  ~SubprocessStdioClientTransport() noexcept override
+  {
+    try
+    {
+      stop();
+    }
+    catch (...)
+    {
+      // Suppress exceptions from destructor - noexcept guarantee
+    }
+  }
 
   SubprocessStdioClientTransport(const SubprocessStdioClientTransport &) = delete;
   auto operator=(const SubprocessStdioClientTransport &) -> SubprocessStdioClientTransport & = delete;
@@ -988,8 +998,9 @@ public:
   auto start() -> void override
   {
     const std::scoped_lock lock(mutex_);
-    if (running_.load())
+    if (running_.exchange(true))
     {
+      // Already running - idempotent start()
       return;
     }
 
@@ -1003,34 +1014,68 @@ public:
     subprocess_ = transport::StdioTransport::spawnSubprocess(spawnOptions);
     if (!subprocess_.valid())
     {
+      running_.store(false);
       throw std::runtime_error("Failed to spawn stdio subprocess transport");
     }
 
-    running_.store(true);
-    readerLoop_ = std::make_unique<detail::InboundLoop>([this]() -> void { readerLoop(); }, errorReporter_);
+    readerLoop_ = std::make_unique<detail::InboundLoop>(
+      [this]() noexcept -> void
+      {
+        try
+        {
+          readerLoop();
+        }
+        catch (...)
+        {
+          reportCurrentException(errorReporter_, "SubprocessStdioClientTransport::readerLoop");
+        }
+      });
     readerLoop_->start();
   }
 
-  auto stop() -> void override
+  auto stop() noexcept -> void override
   {
+    // Idempotent: only stop if currently running
+    const bool wasRunning = running_.exchange(false);
+    if (!wasRunning)
     {
-      const std::scoped_lock lock(mutex_);
-      running_.store(false);
+      return;
     }
 
-    if (readerLoop_)
+    try
     {
-      readerLoop_->stop();
+      if (readerLoop_)
+      {
+        readerLoop_->stop();
+      }
+    }
+    catch (...)
+    {
+      // Suppress exceptions - stop() is noexcept
     }
 
-    if (subprocess_.valid())
+    try
     {
-      static_cast<void>(subprocess_.shutdown());
+      if (subprocess_.valid())
+      {
+        static_cast<void>(subprocess_.shutdown());
+      }
+    }
+    catch (...)
+    {
+      // Suppress exceptions - stop() is noexcept
     }
 
-    if (readerLoop_)
+    try
     {
-      readerLoop_->join();
+      if (readerLoop_)
+      {
+        readerLoop_->join();
+      }
+    }
+    catch (...)
+    {
+      // Suppress exceptions - stop() is noexcept
     }
   }
 
