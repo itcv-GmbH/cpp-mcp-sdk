@@ -5,16 +5,16 @@
 
 #include <mcp/auth/provider.hpp>
 #include <mcp/client/client.hpp>
-#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/sdk/errors.hpp>
+#include <mcp/sdk/version.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
 #include <mcp/transport/transport.hpp>
-#include <mcp/sdk/version.hpp>
 
 auto main() -> int
 {

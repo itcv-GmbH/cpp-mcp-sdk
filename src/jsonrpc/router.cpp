@@ -18,9 +18,9 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <mcp/detail/thread_boundary.hpp>
-#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/util/cancellation.hpp>
 #include <mcp/util/progress.hpp>
 

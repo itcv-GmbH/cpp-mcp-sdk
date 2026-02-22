@@ -11,8 +11,8 @@
 #include <mcp/client/client.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
-#include <mcp/transport/http.hpp>
 #include <mcp/sdk/version.hpp>
+#include <mcp/transport/http.hpp>
 
 namespace
 {

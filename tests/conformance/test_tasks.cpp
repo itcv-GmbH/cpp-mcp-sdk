@@ -5,8 +5,8 @@
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/sdk/errors.hpp>
 #include <mcp/util/tasks.hpp>
 
 namespace

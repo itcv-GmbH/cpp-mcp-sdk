@@ -15,11 +15,11 @@
 
 #include <mcp/client/client.hpp>
 #include <mcp/client/roots.hpp>
-#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
+#include <mcp/transport/http.hpp>
 
 namespace
 {

@@ -11,9 +11,9 @@
 #include <mcp/auth/oauth_server.hpp>
 #include <mcp/http/sse.hpp>
 #include <mcp/jsonrpc/messages.hpp>
+#include <mcp/sdk/version.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/transport/http.hpp>
-#include <mcp/sdk/version.hpp>
 
 namespace
 {

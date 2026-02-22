@@ -12,8 +12,8 @@
 
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/server/server.hpp>
 #include <mcp/sdk/version.hpp>
+#include <mcp/server/server.hpp>
 
 namespace
 {

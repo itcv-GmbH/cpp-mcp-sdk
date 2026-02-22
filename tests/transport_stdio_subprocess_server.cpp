@@ -4,8 +4,8 @@
 
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
-#include <mcp/transport/stdio.hpp>
 #include <mcp/sdk/version.hpp>
+#include <mcp/transport/stdio.hpp>
 
 namespace
 {

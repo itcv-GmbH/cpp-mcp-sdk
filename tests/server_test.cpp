@@ -10,13 +10,13 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/sdk/errors.hpp>
+#include <mcp/sdk/version.hpp>
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/sdk/version.hpp>
 
 namespace
 {

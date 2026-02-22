@@ -13,9 +13,9 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
+#include <mcp/sdk/errors.hpp>
 
 static constexpr std::int64_t kDuplicateRequestId = 7;
 static constexpr std::int64_t kSharedRequestIdAcrossSenders = 11;

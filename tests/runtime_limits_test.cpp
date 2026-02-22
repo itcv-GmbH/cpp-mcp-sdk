@@ -11,9 +11,9 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/sdk/errors.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
+#include <mcp/sdk/errors.hpp>
 #include <mcp/transport/http.hpp>
 #include <mcp/transport/stdio.hpp>
 #include <mcp/util/tasks.hpp>

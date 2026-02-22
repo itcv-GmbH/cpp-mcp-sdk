@@ -14,9 +14,9 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/jsonrpc/messages.hpp>
 #include <mcp/jsonrpc/router.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 
 static constexpr std::int64_t kResponseWaitMillis = 500;
 static constexpr std::int64_t kConcurrentRequestCount = 100;
