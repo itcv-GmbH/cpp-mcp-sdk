@@ -26,11 +26,13 @@
 #include <mcp/client/sampling.hpp>
 #include <mcp/detail/inbound_loop.hpp>
 #include <mcp/detail/initialize_codec.hpp>
-#include <mcp/sdk/error_reporter.hpp>
+#include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/messages.hpp>
-#include <mcp/jsonrpc/router.hpp>
+#include <mcp/jsonrpc/router_options.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/schema/validator.hpp>
+#include <mcp/sdk/error_reporter.hpp>
+#include <mcp/sdk/version.hpp>
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
@@ -39,7 +41,6 @@
 #include <mcp/transport/streamable_http_client_transport.hpp>
 #include <mcp/transport/transport.hpp>
 #include <mcp/util/tasks.hpp>
-#include <mcp/sdk/version.hpp>
 
 namespace mcp
 {

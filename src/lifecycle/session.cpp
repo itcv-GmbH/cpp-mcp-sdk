@@ -13,12 +13,13 @@
 
 #include <jsoncons/basic_json.hpp>
 #include <mcp/detail/initialize_codec.hpp>
-#include <mcp/sdk/errors.hpp>
+#include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/messages.hpp>
-#include <mcp/jsonrpc/router.hpp>
+#include <mcp/jsonrpc/router_options.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/transport/transport.hpp>
+#include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
+#include <mcp/transport/transport.hpp>
 
 namespace mcp
 {

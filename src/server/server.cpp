@@ -24,18 +24,20 @@
 #include <jsoncons_ext/jsonschema/validation_message.hpp>
 #include <mcp/detail/base64url.hpp>
 #include <mcp/detail/thread_boundary.hpp>
-#include <mcp/sdk/error_reporter.hpp>
-#include <mcp/sdk/errors.hpp>
+#include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/messages.hpp>
-#include <mcp/jsonrpc/router.hpp>
+#include <mcp/jsonrpc/outbound_request_options.hpp>
+#include <mcp/jsonrpc/router_options.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/schema/validator.hpp>
+#include <mcp/sdk/error_reporter.hpp>
+#include <mcp/sdk/errors.hpp>
+#include <mcp/sdk/version.hpp>
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/tools.hpp>
 #include <mcp/util/tasks.hpp>
-#include <mcp/sdk/version.hpp>
 
 namespace mcp
 {
