@@ -14,19 +14,20 @@
 #include <mcp/server/all.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/transport/all.hpp>
-#include "mcp/auth/oauth_token_verifier.hpp"
+
+#include "mcp/auth/oauth_server_authorization_options.hpp"
 #include "mcp/auth/oauth_token_verification_request.hpp"
 #include "mcp/auth/oauth_token_verification_result.hpp"
 #include "mcp/auth/oauth_token_verification_status.hpp"
-#include "mcp/server/server.hpp"
-#include "mcp/lifecycle/session/tools_capability.hpp"
+#include "mcp/auth/oauth_token_verifier.hpp"
 #include "mcp/lifecycle/session/prompts_capability.hpp"
-#include "mcp/server/server_configuration.hpp"
-#include "mcp/server/tool_definition.hpp"
-#include "mcp/server/tool_call_context.hpp"
+#include "mcp/lifecycle/session/tools_capability.hpp"
 #include "mcp/server/call_tool_result.hpp"
+#include "mcp/server/server.hpp"
+#include "mcp/server/server_configuration.hpp"
 #include "mcp/server/streamable_http_server_runner_options.hpp"
-#include "mcp/auth/oauth_server_authorization_options.hpp"
+#include "mcp/server/tool_call_context.hpp"
+#include "mcp/server/tool_definition.hpp"
 #include "mcp/transport/http/server_tls_configuration.hpp"
 
 namespace

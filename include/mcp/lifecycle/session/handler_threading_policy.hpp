@@ -2,8 +2,6 @@
 
 #include <cstdint>
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -16,6 +14,4 @@ enum class HandlerThreadingPolicy : std::uint8_t
   kExecutor,  ///< Handlers are dispatched to the configured Executor.
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

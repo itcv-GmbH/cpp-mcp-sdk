@@ -4,8 +4,6 @@
 
 #include <mcp/jsonrpc/router.hpp>
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -14,6 +12,4 @@ namespace mcp::lifecycle::session
  */
 using ResponseCallback = std::function<void(const jsonrpc::Response &)>;
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

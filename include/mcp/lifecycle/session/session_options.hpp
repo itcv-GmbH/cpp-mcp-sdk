@@ -7,8 +7,6 @@
 #include <mcp/sdk/error_reporter.hpp>
 #include <mcp/sdk/version.hpp>
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -27,6 +25,4 @@ struct SessionOptions
   ErrorReporter errorReporter;
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

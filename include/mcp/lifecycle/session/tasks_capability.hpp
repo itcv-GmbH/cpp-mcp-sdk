@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -17,6 +15,4 @@ struct TasksCapability
   bool toolsCall = false;
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

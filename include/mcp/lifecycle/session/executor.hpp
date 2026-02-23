@@ -2,8 +2,6 @@
 
 #include <functional>
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -22,6 +20,4 @@ public:
   virtual auto post(std::function<void()> task) -> void = 0;
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

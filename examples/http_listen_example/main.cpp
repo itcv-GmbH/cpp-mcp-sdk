@@ -19,20 +19,21 @@
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/transport/all.hpp>
-#include "mcp/jsonrpc/types.hpp"
-#include "mcp/transport/http/streamable_http_server.hpp"
-#include "mcp/jsonrpc/response.hpp"
-#include "mcp/jsonrpc/request_context.hpp"
-#include "mcp/jsonrpc/request.hpp"
-#include "mcp/transport/http/streamable_request_result.hpp"
-#include "mcp/jsonrpc/success_response.hpp"
+
+#include "mcp/client/client.hpp"
 #include "mcp/jsonrpc/error_response.hpp"
 #include "mcp/jsonrpc/notification.hpp"
+#include "mcp/jsonrpc/request.hpp"
+#include "mcp/jsonrpc/request_context.hpp"
+#include "mcp/jsonrpc/response.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/lifecycle/session/roots_capability.hpp"
 #include "mcp/transport/http/server_request.hpp"
 #include "mcp/transport/http/server_response.hpp"
-#include "mcp/client/client.hpp"
 #include "mcp/transport/http/streamable_http_client_options.hpp"
-#include "mcp/lifecycle/session/roots_capability.hpp"
+#include "mcp/transport/http/streamable_http_server.hpp"
+#include "mcp/transport/http/streamable_request_result.hpp"
 
 namespace
 {

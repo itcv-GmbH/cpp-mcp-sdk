@@ -2,8 +2,6 @@
 
 #include <stdexcept>
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -16,6 +14,4 @@ public:
   using std::runtime_error::runtime_error;
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

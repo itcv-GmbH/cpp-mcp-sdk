@@ -5,8 +5,6 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/session.hpp>
 
-
-
 // Session is now defined in <mcp/session.hpp> as an alias for lifecycle::Session
 
 namespace mcp::transport
@@ -68,5 +66,4 @@ public:
   virtual auto send(jsonrpc::Message message) -> void = 0;
 };
 
-} // namespace mcp::transport
-
+}  // namespace mcp::transport

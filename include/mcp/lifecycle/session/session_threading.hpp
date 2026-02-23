@@ -5,8 +5,6 @@
 #include <mcp/lifecycle/session/executor.hpp>
 #include <mcp/lifecycle/session/handler_threading_policy.hpp>
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -19,6 +17,4 @@ struct SessionThreading
   std::shared_ptr<Executor> handlerExecutor;
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

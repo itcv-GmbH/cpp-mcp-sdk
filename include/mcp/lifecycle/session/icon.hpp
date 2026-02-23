@@ -4,8 +4,6 @@
 #include <string>
 #include <vector>
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -33,6 +31,4 @@ private:
   std::optional<std::string> theme_;
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

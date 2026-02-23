@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -13,6 +11,4 @@ struct RootsCapability
   bool listChanged = false;
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

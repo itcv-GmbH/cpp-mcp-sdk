@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -13,6 +11,4 @@ struct LoggingCapability
   // Empty struct - presence indicates support.
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

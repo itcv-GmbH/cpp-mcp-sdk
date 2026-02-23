@@ -2,8 +2,6 @@
 
 #include <chrono>
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -16,6 +14,4 @@ struct RequestOptions
   bool cancelOnTimeout = true;
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session

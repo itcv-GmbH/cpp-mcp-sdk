@@ -18,27 +18,28 @@
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 #include <unistd.h>
+
 #include "mcp/jsonrpc/types.hpp"
-#include "mcp/server/server.hpp"
-#include "mcp/lifecycle/session/tools_capability.hpp"
-#include "mcp/lifecycle/session/resources_capability.hpp"
 #include "mcp/lifecycle/session/prompts_capability.hpp"
+#include "mcp/lifecycle/session/resources_capability.hpp"
 #include "mcp/lifecycle/session/tasks_capability.hpp"
-#include "mcp/server/server_configuration.hpp"
-#include "mcp/server/tool_definition.hpp"
-#include "mcp/server/tool_call_context.hpp"
+#include "mcp/lifecycle/session/tools_capability.hpp"
 #include "mcp/server/call_tool_result.hpp"
-#include "mcp/server/resource_definition.hpp"
-#include "mcp/server/resource_read_context.hpp"
-#include "mcp/server/resource_content.hpp"
-#include "mcp/server/prompt_definition.hpp"
+#include "mcp/server/combined_server_runner_options.hpp"
 #include "mcp/server/prompt_argument_definition.hpp"
+#include "mcp/server/prompt_definition.hpp"
 #include "mcp/server/prompt_get_context.hpp"
 #include "mcp/server/prompt_get_result.hpp"
 #include "mcp/server/prompt_message.hpp"
+#include "mcp/server/resource_content.hpp"
+#include "mcp/server/resource_definition.hpp"
+#include "mcp/server/resource_read_context.hpp"
+#include "mcp/server/server.hpp"
+#include "mcp/server/server_configuration.hpp"
 #include "mcp/server/server_factory.hpp"
-#include "mcp/server/combined_server_runner_options.hpp"
 #include "mcp/server/stdio_server_runner_options.hpp"
+#include "mcp/server/tool_call_context.hpp"
+#include "mcp/server/tool_definition.hpp"
 
 namespace
 {

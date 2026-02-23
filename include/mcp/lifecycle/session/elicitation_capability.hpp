@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 namespace mcp::lifecycle::session
 {
 
@@ -14,6 +12,4 @@ struct ElicitationCapability
   bool url = false;
 };
 
-} // namespace mcp::lifecycle::session
-
-
+}  // namespace mcp::lifecycle::session
