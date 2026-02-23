@@ -24,7 +24,7 @@ Minimal pattern:
 
 ```cpp
 #include <mcp/client/client.hpp>
-#include <mcp/transport/stdio.hpp>
+#include <mcp/transport/all.hpp>
 
 auto client = mcp::Client::create();
 

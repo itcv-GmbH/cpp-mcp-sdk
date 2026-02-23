@@ -4,7 +4,8 @@
 #include <memory>
 
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/transport/all.hpp>
+#include <mcp/transport/http/streamable_http_client.hpp>
+#include <mcp/transport/http/streamable_http_client_options.hpp>
 #include <mcp/transport/transport.hpp>
 
 namespace mcp::transport
