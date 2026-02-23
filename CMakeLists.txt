@@ -51,7 +51,7 @@ set(MCP_SDK_SOURCES
     src/lifecycle/session.cpp
     src/detail/initialize_codec.cpp
     src/security/crypto_random.cpp
-    src/server/server.cpp
+    src/server/detail/server.cpp
     src/server/stdio_runner.cpp
     src/server/streamable_http_runner.cpp
     src/server/combined_runner.cpp
