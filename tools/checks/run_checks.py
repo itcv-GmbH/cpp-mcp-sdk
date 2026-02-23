@@ -15,6 +15,7 @@ from typing import List, Tuple
 # List of check scripts to run (in deterministic order)
 CHECK_SCRIPTS = [
     "check_public_header_one_type.py",
+    "check_public_header_namespace_layout.py",
     "check_include_policy.py",
     "check_git_index_hygiene.py",
 ]
