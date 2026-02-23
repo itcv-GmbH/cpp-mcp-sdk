@@ -50,14 +50,14 @@ Use a staged compatibility window when adding or removing protocol revisions.
 Strict latest-only mode:
 
 ```cpp
-mcp::SessionOptions options;
+mcp::lifecycle::session::SessionOptions options;
 options.supportedProtocolVersions = {"2025-11-25"};
 ```
 
 Compatibility mode during migration:
 
 ```cpp
-mcp::SessionOptions options;
+mcp::lifecycle::session::SessionOptions options;
 options.supportedProtocolVersions = {
   "2025-11-25",
   "2024-11-05",

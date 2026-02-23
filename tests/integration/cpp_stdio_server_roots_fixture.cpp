@@ -16,7 +16,7 @@
 #include <variant>
 #include <vector>
 
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
 
 namespace
@@ -147,7 +147,8 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       mcp::lifecycle::session::PromptsCapability promptsCapability;
 
       mcp::server::ServerConfiguration configuration;
-      configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
+      configuration.capabilities =
+        mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-stdio-server-roots", "1.0.0");
       configuration.instructions = "STDIO integration fixture server for reference SDK roots tests.";
 

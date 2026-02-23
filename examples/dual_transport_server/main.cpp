@@ -15,11 +15,11 @@
 #include <fcntl.h>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/server.hpp>
+#include <mcp/server/all.hpp>
 #include <mcp/server/combined_runner.hpp>
-#include <mcp/server/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
-#include <mcp/server/all.hpp>
 #include <unistd.h>
 
 namespace
@@ -66,7 +66,8 @@ auto makeServer() -> std::shared_ptr<mcp::server::Server>
   tasksCapability.cancel = true;
 
   mcp::server::ServerConfiguration configuration;
-  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
+  configuration.capabilities =
+    mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
   configuration.serverInfo = mcp::lifecycle::session::Implementation("example-dual-transport-server", "1.0.0");
   configuration.instructions = "Use tools for generated output and read resources for static context.";
 

@@ -17,11 +17,11 @@
 #include <variant>
 #include <vector>
 
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
+#include <mcp/util/all.hpp>
 #include <mcp/util/cancellation.hpp>
 #include <mcp/util/progress.hpp>
-#include <mcp/util/all.hpp>
 
 namespace
 {
@@ -131,12 +131,12 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       tasksCapability.toolsCall = true;  // Enable task-augmented tool calls
 
       mcp::lifecycle::session::ServerCapabilities capabilities(std::nullopt,  // logging
-                                           std::nullopt,  // completions
-                                           promptsCapability,  // prompts
-                                           resourcesCapability,  // resources
-                                           toolsCapability,  // tools
-                                           tasksCapability,  // tasks
-                                           std::nullopt  // experimental
+                                                               std::nullopt,  // completions
+                                                               promptsCapability,  // prompts
+                                                               resourcesCapability,  // resources
+                                                               toolsCapability,  // tools
+                                                               tasksCapability,  // tasks
+                                                               std::nullopt  // experimental
       );
 
       mcp::server::ServerConfiguration configuration;

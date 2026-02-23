@@ -13,7 +13,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 
 namespace
 {

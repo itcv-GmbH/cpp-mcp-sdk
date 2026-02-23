@@ -16,13 +16,17 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/client/client.hpp>
-#include <mcp/client/elicitation.hpp>
+#include <mcp/client.hpp>
+#include <mcp/client/elicitation_action.hpp>
+#include <mcp/client/elicitation_context.hpp>
+#include <mcp/client/form_elicitation_handler.hpp>
+#include <mcp/client/form_elicitation_request.hpp>
+#include <mcp/client/form_elicitation_result.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/all.hpp>
 #include <mcp/transport/transport.hpp>
 
@@ -2285,7 +2289,8 @@ TEST_CASE("Client pagination helpers pass and honor cursors for list endpoints",
   mcp::lifecycle::session::PromptsCapability promptsCapability;
 
   mcp::server::ServerConfiguration configuration;
-  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
+  configuration.capabilities =
+    mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
 
   auto server = mcp::server::Server::create(std::move(configuration));
 
@@ -2440,7 +2445,8 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
   mcp::lifecycle::session::PromptsCapability promptsCapability;
 
   mcp::server::ServerConfiguration configuration;
-  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
+  configuration.capabilities =
+    mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
 
   auto server = mcp::server::Server::create(std::move(configuration));
 
@@ -2508,7 +2514,7 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
 
   const auto allTools =
     client->collectAllPages<mcp::server::ToolDefinition>([&client](const std::optional<std::string> &cursor) -> mcp::client::ListToolsResult { return client->listTools(cursor); },
-                                                 [](const mcp::client::ListToolsResult &page) -> const std::vector<mcp::server::ToolDefinition> & { return page.tools; });
+                                                         [](const mcp::client::ListToolsResult &page) -> const std::vector<mcp::server::ToolDefinition> & { return page.tools; });
   REQUIRE(allTools.size() == kRoundTripItemCount);
 
   std::size_t resourcePages = 0;
@@ -2533,9 +2539,9 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
     [](const mcp::client::ListResourceTemplatesResult &page) -> const std::vector<mcp::server::ResourceTemplateDefinition> & { return page.resourceTemplates; });
   REQUIRE(allTemplates.size() == kRoundTripItemCount);
 
-  const auto allPrompts =
-    client->collectAllPages<mcp::server::PromptDefinition>([&client](const std::optional<std::string> &cursor) -> mcp::client::ListPromptsResult { return client->listPrompts(cursor); },
-                                                   [](const mcp::client::ListPromptsResult &page) -> const std::vector<mcp::server::PromptDefinition> & { return page.prompts; });
+  const auto allPrompts = client->collectAllPages<mcp::server::PromptDefinition>(
+    [&client](const std::optional<std::string> &cursor) -> mcp::client::ListPromptsResult { return client->listPrompts(cursor); },
+    [](const mcp::client::ListPromptsResult &page) -> const std::vector<mcp::server::PromptDefinition> & { return page.prompts; });
   REQUIRE(allPrompts.size() == kRoundTripItemCount);
 
   mcp::jsonrpc::JsonValue toolArgs = mcp::jsonrpc::JsonValue::object();

@@ -2,17 +2,17 @@
 
 This quickstart covers runnable server paths in this repository using the runner-based API:
 
-- stdio server: `examples/stdio_server/` — uses `mcp::StdioServerRunner`
-- Streamable HTTP + auth server: `examples/http_server_auth/` — uses `mcp::StreamableHttpServerRunner`
-- dual transport server: `examples/dual_transport_server/` — uses `mcp::CombinedServerRunner`
+- stdio server: `examples/stdio_server/` — uses `mcp::server::StdioServerRunner`
+- Streamable HTTP + auth server: `examples/http_server_auth/` — uses `mcp::server::StreamableHttpServerRunner`
+- dual transport server: `examples/dual_transport_server/` — uses `mcp::server::CombinedServerRunner`
 
 ## Runner Overview
 
 The SDK provides three high-level runners that handle transport lifecycle and session management:
 
-- **STDIO Runner** (`mcp::StdioServerRunner`): Guarantees no logs to stdout (logs go to stderr). Creates one `Server` instance per `run()` call.
-- **HTTP Runner** (`mcp::StreamableHttpServerRunner`): Provides `start()`/`stop()` methods and creates one `mcp::Server` per `MCP-Session-Id` via a `ServerFactory`. Supports multi-client isolation when `requireSessionId=true`.
-- **Combined Runner** (`mcp::CombinedServerRunner`): Supports starting STDIO, HTTP, or both in a single process. Shares a `ServerFactory` across transports.
+- **STDIO Runner** (`mcp::server::StdioServerRunner`): Guarantees no logs to stdout (logs go to stderr). Creates one `Server` instance per `run()` call.
+- **HTTP Runner** (`mcp::server::StreamableHttpServerRunner`): Provides `start()`/`stop()` methods and creates one `mcp::Server` per `MCP-Session-Id` via a `ServerFactory`. Supports multi-client isolation when `requireSessionId=true`.
+- **Combined Runner** (`mcp::server::CombinedServerRunner`): Supports starting STDIO, HTTP, or both in a single process. Shares a `ServerFactory` across transports.
 
 ## Prerequisites
 
@@ -33,7 +33,7 @@ cmake --build build/vcpkg-unix-release --target mcp_sdk_example_stdio_server mcp
 
 ## Run a stdio server
 
-The stdio server example uses `mcp::StdioServerRunner`, which guarantees no logs go to stdout (they're written to stderr). The runner creates one `Server` instance per `run()` call and calls `start()` before processing messages.
+The stdio server example uses `mcp::server::StdioServerRunner`, which guarantees no logs go to stdout (they're written to stderr). The runner creates one `Server` instance per `run()` call and calls `start()` before processing messages.
 
 Start the example:
 
@@ -55,7 +55,7 @@ printf '%s\n' \
 
 ## Run an HTTPS Streamable HTTP server with bearer auth
 
-The HTTP server example uses `mcp::StreamableHttpServerRunner`, which provides `start()`/`stop()` methods and creates one `mcp::Server` per `MCP-Session-Id` via a `ServerFactory` (when `requireSessionId=true`).
+The HTTP server example uses `mcp::server::StreamableHttpServerRunner`, which provides `start()`/`stop()` methods and creates one `mcp::Server` per `MCP-Session-Id` via a `ServerFactory` (when `requireSessionId=true`).
 
 Generate local certificates:
 
@@ -143,7 +143,7 @@ Demo bearer tokens in this example:
 
 ## Run a dual transport server (STDIO + HTTP)
 
-The dual transport example uses `mcp::CombinedServerRunner` to run both STDIO and HTTP transports in a single process. Both transports share a `ServerFactory` that creates fresh `mcp::Server` instances per session.
+The dual transport example uses `mcp::server::CombinedServerRunner` to run both STDIO and HTTP transports in a single process. Both transports share a `ServerFactory` that creates fresh `mcp::Server` instances per session.
 
 Start the example:
 

@@ -17,7 +17,7 @@
 #include <vector>
 
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
 
 namespace
@@ -110,12 +110,12 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
 
       mcp::server::ServerConfiguration configuration;
       configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(loggingCapability,
-                                                           completionsCapability,
-                                                           std::nullopt,  // prompts
-                                                           std::nullopt,  // resources
-                                                           std::nullopt,  // tools
-                                                           std::nullopt,  // tasks
-                                                           std::nullopt  // experimental
+                                                                               completionsCapability,
+                                                                               std::nullopt,  // prompts
+                                                                               std::nullopt,  // resources
+                                                                               std::nullopt,  // tools
+                                                                               std::nullopt,  // tasks
+                                                                               std::nullopt  // experimental
       );
 
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-stdio-server-utilities", "1.0.0");

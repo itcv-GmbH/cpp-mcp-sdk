@@ -9,7 +9,7 @@
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 
 namespace
 {

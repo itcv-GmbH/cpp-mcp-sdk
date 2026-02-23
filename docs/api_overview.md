@@ -16,8 +16,9 @@ This document defines the initial public API surface and module boundaries for t
   - `include/mcp/transport/stdio_transport.hpp` defines stdio transport options and type.
   - `include/mcp/transport/streamable_http_client_transport.hpp` defines Streamable HTTP transport options and type.
 - Role facades:
-  - `include/mcp/server/server.hpp` defines `mcp::Server` as a server-facing facade over a shared session.
-  - `include/mcp/client/client.hpp` defines `mcp::Client` as a client-facing facade over a shared session.
+  - `include/mcp/server.hpp` defines `mcp::Server` as a server-facing facade over a shared session.
+  - `include/mcp/client.hpp` defines `mcp::Client` as a client-facing facade over a shared session.
+  - `include/mcp/session.hpp` defines `mcp::Session` for lifecycle session management.
 - Runners:
   - `include/mcp/server/streamable_http_runner.hpp` defines `ServerFactory` contract and session isolation rules for HTTP runners.
   - `ServerFactory = std::function<std::shared_ptr<mcp::Server>()>` - a session-agnostic factory for creating Server instances.
@@ -108,38 +109,39 @@ Server runners provide high-level APIs for running MCP servers over various tran
 
 | Runner | Header | Use Case |
 |--------|--------|----------|
-| `mcp::StdioServerRunner` | `include/mcp/server/stdio_runner.hpp` | CLI tools, local processes |
-| `mcp::StreamableHttpServerRunner` | `include/mcp/server/streamable_http_runner.hpp` | HTTP clients, web integrations |
-| `mcp::CombinedServerRunner` | `include/mcp/server/combined_runner.hpp` | Servers supporting multiple transports |
+| `mcp::server::StdioServerRunner` | `include/mcp/server/stdio_runner.hpp` | CLI tools, local processes |
+| `mcp::server::StreamableHttpServerRunner` | `include/mcp/server/streamable_http_runner.hpp` | HTTP clients, web integrations |
+| `mcp::server::CombinedServerRunner` | `include/mcp/server/combined_runner.hpp` | Servers supporting multiple transports |
 
 ### ServerFactory Contract
 
 All runners use a `ServerFactory` to create `mcp::Server` instances:
 
 ```cpp
-using mcp::ServerFactory = std::function<std::shared_ptr<mcp::Server>()>;
+using mcp::server::ServerFactory = std::function<std::shared_ptr<mcp::Server>()>;
 ```
 
 The factory is invoked by the runner to create Server instances:
-- `mcp::StdioServerRunner`: creates one Server instance per `run()` call.
-- `mcp::StreamableHttpServerRunner`: creates one Server per session (when `requireSessionId=true`).
-- `mcp::CombinedServerRunner`: creates one Server for STDIO and one per HTTP session.
+- `mcp::server::StdioServerRunner`: creates one Server instance per `run()` call.
+- `mcp::server::StreamableHttpServerRunner`: creates one Server per session (when `requireSessionId=true`).
+- `mcp::server::CombinedServerRunner`: creates one Server for STDIO and one per HTTP session.
 
 ### STDIO Runner
 
 The STDIO runner provides a blocking `run()` method that reads JSON-RPC messages from stdin and writes responses to stdout. Log messages are written to stderr by default to avoid polluting the JSON-RPC protocol stream.
 
 ```cpp
+#include <mcp/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
 
 // Create a ServerFactory that produces configured Server instances
-mcp::ServerFactory makeServer = [] {
+mcp::server::ServerFactory makeServer = [] {
   auto server = mcp::Server::create();
   server->registerTool(/* ... */);
   return server;
 };
 
-mcp::StdioServerRunner runner(makeServer);
+mcp::server::StdioServerRunner runner(makeServer);
 runner.run();
 ```
 
@@ -150,10 +152,10 @@ runner.run(customInput, customOutput, customError);
 
 Options can be configured via `mcp::StdioServerRunnerOptions`:
 ```cpp
-mcp::StdioServerRunnerOptions options;
+mcp::server::StdioServerRunnerOptions options;
 options.transportOptions.allowStderrLogs = true;
 options.transportOptions.limits.maxMessageSizeBytes = 1024 * 1024;
-mcp::StdioServerRunner runner(makeServer, options);
+mcp::server::StdioServerRunner runner(makeServer, options);
 ```
 
 ### Streamable HTTP Runner
@@ -161,16 +163,17 @@ mcp::StdioServerRunner runner(makeServer, options);
 The HTTP runner provides `start()`/`stop()` methods for non-blocking operation. It manages an underlying `mcp::transport::HttpServerRuntime` and handles SSE streaming for notifications.
 
 ```cpp
+#include <mcp/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 
 // Create a ServerFactory
-mcp::ServerFactory makeServer = [] {
+mcp::server::ServerFactory makeServer = [] {
   auto server = mcp::Server::create();
   server->registerTool(/* ... */);
   return server;
 };
 
-mcp::StreamableHttpServerRunner runner(makeServer);
+mcp::server::StreamableHttpServerRunner runner(makeServer);
 runner.start();
 std::cout << "Running on port " << runner.localPort() << std::endl;
 // ... handle requests ...
@@ -189,18 +192,18 @@ This ensures each client receives a unique session ID, enabling proper request r
 The combined runner supports running multiple transports simultaneously:
 
 ```cpp
-mcp::ServerFactory makeServer = [] {
+mcp::server::ServerFactory makeServer = [] {
   auto server = mcp::Server::create();
   server->registerTool(/* ... */);
   return server;
 };
 
-mcp::CombinedServerRunnerOptions options;
+mcp::server::CombinedServerRunnerOptions options;
 options.enableStdio = true;
 options.enableHttp = true;
 options.httpOptions.transportOptions.http.requireSessionId = true;
 
-mcp::CombinedServerRunner runner(makeServer, options);
+mcp::server::CombinedServerRunner runner(makeServer, options);
 runner.start();  // Starts HTTP in background, runs STDIO in foreground
 runner.stop();   // Stops HTTP
 ```

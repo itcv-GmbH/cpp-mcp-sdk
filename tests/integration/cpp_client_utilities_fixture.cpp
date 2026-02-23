@@ -12,7 +12,7 @@
 #include <variant>
 #include <vector>
 
-#include <mcp/client/client.hpp>
+#include <mcp/client.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/transport/all.hpp>

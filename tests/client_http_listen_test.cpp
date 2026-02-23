@@ -12,8 +12,10 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/client/client.hpp>
-#include <mcp/client/roots.hpp>
+#include <mcp/client.hpp>
+#include <mcp/client/root_entry.hpp>
+#include <mcp/client/roots_list_context.hpp>
+#include <mcp/client/roots_provider.hpp>
 #include <mcp/http/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/version.hpp>

@@ -1,19 +1,25 @@
-#pragma once
-
-/**
- * @brief MCP Client umbrella header.
- *
- * This header includes all client-related headers for convenience.
- * For finer-grained includes, use individual headers.
- */
-
 #include <mcp/client/client.hpp>
 #include <mcp/client/client_initialize_configuration.hpp>
-#include <mcp/client/elicitation.hpp>
+#include <mcp/client/elicitation_action.hpp>
+#include <mcp/client/elicitation_context.hpp>
+#include <mcp/client/form_elicitation_handler.hpp>
+#include <mcp/client/form_elicitation_request.hpp>
+#include <mcp/client/form_elicitation_result.hpp>
 #include <mcp/client/list_prompts_result.hpp>
 #include <mcp/client/list_resource_templates_result.hpp>
 #include <mcp/client/list_resources_result.hpp>
 #include <mcp/client/list_tools_result.hpp>
 #include <mcp/client/read_resource_result.hpp>
-#include <mcp/client/roots.hpp>
+#include <mcp/client/root_entry.hpp>
+#include <mcp/client/roots_list_context.hpp>
+#include <mcp/client/roots_provider.hpp>
 #include <mcp/client/sampling.hpp>
+#include <mcp/client/sampling_create_message_context.hpp>
+#include <mcp/client/url_elicitation_completion.hpp>
+#include <mcp/client/url_elicitation_display_info.hpp>
+#include <mcp/client/url_elicitation_handler.hpp>
+#include <mcp/client/url_elicitation_request.hpp>
+#include <mcp/client/url_elicitation_required_error_data.hpp>
+#include <mcp/client/url_elicitation_required_item.hpp>
+#include <mcp/client/url_elicitation_result.hpp>
+#include <mcp/client/url_elicitation_utils.hpp>

@@ -17,7 +17,7 @@
 #include <variant>
 #include <vector>
 
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 
 namespace

@@ -11,9 +11,9 @@
 
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/server/server.hpp>
-#include <mcp/server/stdio_runner.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/all.hpp>
+#include <mcp/server/stdio_runner.hpp>
 
 namespace
 {
@@ -106,13 +106,14 @@ auto createServer() -> std::shared_ptr<mcp::server::Server>
   resource.description = "Server metadata";
   resource.mimeType = "text/plain";
 
-  server->registerResource(std::move(resource),
-                           [](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>
-                           {
-                             return {
-                               mcp::server::ResourceContent::text("resource://server/about", "Example stdio server with tools/resources/prompts/tasks support.", std::string("text/plain")),
-                             };
-                           });
+  server->registerResource(
+    std::move(resource),
+    [](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>
+    {
+      return {
+        mcp::server::ResourceContent::text("resource://server/about", "Example stdio server with tools/resources/prompts/tasks support.", std::string("text/plain")),
+      };
+    });
 
   mcp::server::PromptDefinition prompt;
   prompt.name = "explain-topic";

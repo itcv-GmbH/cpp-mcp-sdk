@@ -8,9 +8,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/server/server.hpp>
-#include <mcp/server/stdio_runner.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/all.hpp>
+#include <mcp/server/stdio_runner.hpp>
 
 namespace
 {

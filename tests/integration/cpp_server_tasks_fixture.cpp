@@ -19,7 +19,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/util/all.hpp>
 
@@ -294,7 +294,8 @@ auto main(int argc, char **argv) -> int
       tasksCapability.toolsCall = true;
 
       mcp::server::ServerConfiguration configuration;
-      configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
+      configuration.capabilities =
+        mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-server-tasks", "1.0.0");
       configuration.instructions = "Integration fixture server for reference SDK tasks tests.";
       configuration.emitTaskStatusNotifications = true;

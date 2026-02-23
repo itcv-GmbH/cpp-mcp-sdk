@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-#include <mcp/client/url_elicitation.hpp>
+#include <mcp/client/url_elicitation_display_info.hpp>
 
 namespace mcp::client
 {

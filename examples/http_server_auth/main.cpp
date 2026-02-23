@@ -14,9 +14,9 @@
 #include <mcp/auth/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/server/server.hpp>
-#include <mcp/server/streamable_http_runner.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/all.hpp>
+#include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/transport/all.hpp>
 
 namespace
@@ -182,7 +182,8 @@ auto createServer() -> std::shared_ptr<mcp::server::Server>
   promptsCapability.listChanged = true;
 
   mcp::server::ServerConfiguration configuration;
-  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
+  configuration.capabilities =
+    mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
   configuration.serverInfo = mcp::lifecycle::session::Implementation("example-http-auth-server", "1.0.0");
   configuration.instructions = "Send a bearer token to call tools.";
 

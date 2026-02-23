@@ -17,7 +17,7 @@
 #include <variant>
 #include <vector>
 
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 
 namespace
@@ -191,12 +191,12 @@ auto main(int argc, char **argv) -> int
 
       mcp::server::ServerConfiguration configuration;
       configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt,  // logging
-                                                           std::nullopt,  // completions
-                                                           std::nullopt,  // prompts
-                                                           resourcesCapability,  // resources
-                                                           std::nullopt,  // tools
-                                                           std::nullopt,  // tasks
-                                                           std::nullopt  // experimental
+                                                                               std::nullopt,  // completions
+                                                                               std::nullopt,  // prompts
+                                                                               resourcesCapability,  // resources
+                                                                               std::nullopt,  // tools
+                                                                               std::nullopt,  // tasks
+                                                                               std::nullopt  // experimental
       );
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-server-resources-advanced", "1.0.0");
       configuration.instructions = "Advanced resources fixture server for reference SDK tests with templates and subscriptions.";

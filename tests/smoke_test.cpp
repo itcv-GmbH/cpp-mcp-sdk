@@ -4,23 +4,22 @@
 #include <string>
 
 #include <mcp/auth/all.hpp>
-#include <mcp/client/client.hpp>
+#include <mcp/client.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/security/origin_policy.hpp>
-#include <mcp/server/server.hpp>
+#include <mcp/server.hpp>
 #include <mcp/transport/all.hpp>
-
 #include <mcp/transport/transport.hpp>
 
 auto main() -> int
 {
   const std::size_t apiSurfaceSanity = sizeof(mcp::auth::AuthProvider *) + sizeof(mcp::client::Client *) + sizeof(mcp::JsonRpcError) + sizeof(mcp::jsonrpc::Message)
-    + sizeof(mcp::jsonrpc::Router) + sizeof(mcp::lifecycle::Session *) + sizeof(mcp::server::Server *) + sizeof(mcp::transport::StdioTransport *) + sizeof(mcp::transport::Transport *)
-    + sizeof(mcp::security::OriginPolicy);
+    + sizeof(mcp::jsonrpc::Router) + sizeof(mcp::lifecycle::Session *) + sizeof(mcp::server::Server *) + sizeof(mcp::transport::StdioTransport *)
+    + sizeof(mcp::transport::Transport *) + sizeof(mcp::security::OriginPolicy);
 
   if (apiSurfaceSanity == 0)
   {
