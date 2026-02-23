@@ -3,11 +3,11 @@
 #include <functional>
 #include <memory>
 
+#include <mcp/auth/authorization_server_metadata.hpp>
 #include <mcp/auth/client_credentials_store.hpp>
 #include <mcp/auth/client_registration_http_request.hpp>
 #include <mcp/auth/client_registration_http_response.hpp>
 #include <mcp/auth/client_registration_strategy_configuration.hpp>
-#include <mcp/auth/protected_resource_metadata.hpp>
 
 namespace mcp::auth
 {
@@ -21,5 +21,8 @@ struct ResolveClientRegistrationRequest
   std::shared_ptr<ClientCredentialsStore> credentialsStore = std::make_shared<InMemoryClientCredentialsStore>();
   ClientRegistrationHttpExecutor httpExecutor;
 };
+
+// Free function for client registration resolution
+auto resolveClientRegistration(const ResolveClientRegistrationRequest &request) -> ClientRegistrationResult;
 
 }  // namespace mcp::auth

@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <string>
 
-#include <mcp/auth/provider.hpp>
+#include <mcp/auth/all.hpp>
 #include <mcp/client/client.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/router.hpp>

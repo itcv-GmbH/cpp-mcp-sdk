@@ -4,6 +4,8 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/auth/authorization_discovery_result.hpp>
+#include <mcp/auth/authorization_server_metadata.hpp>
 #include <mcp/auth/in_memory_oauth_token_storage.hpp>
 #include <mcp/auth/oauth_access_token.hpp>
 #include <mcp/auth/oauth_authorization_url_request.hpp>
@@ -24,7 +26,6 @@
 #include <mcp/auth/oauth_token_request_execution_request.hpp>
 #include <mcp/auth/oauth_token_storage.hpp>
 #include <mcp/auth/pkce_code_pair.hpp>
-#include <mcp/auth/protected_resource_metadata.hpp>
 
 namespace mcp::auth
 {

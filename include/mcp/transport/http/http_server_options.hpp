@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include <mcp/auth/oauth_server.hpp>
+#include <mcp/auth/oauth_server_authorization_options.hpp>
 #include <mcp/error_reporter.hpp>
 #include <mcp/security/limits.hpp>
 #include <mcp/security/origin_policy.hpp>

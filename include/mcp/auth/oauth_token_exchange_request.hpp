@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <mcp/auth/authorization_server_metadata.hpp>
 #include <mcp/auth/oauth_query_parameter.hpp>
-#include <mcp/auth/protected_resource_metadata.hpp>
 
 namespace mcp::auth
 {

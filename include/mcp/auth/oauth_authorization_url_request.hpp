@@ -4,8 +4,9 @@
 #include <string>
 #include <vector>
 
+#include <mcp/auth/authorization_server_metadata.hpp>
 #include <mcp/auth/oauth_query_parameter.hpp>
-#include <mcp/auth/protected_resource_metadata.hpp>
+#include <mcp/auth/oauth_scope_set.hpp>
 
 namespace mcp::auth
 {

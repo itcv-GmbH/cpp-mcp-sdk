@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include <mcp/auth/oauth_server.hpp>
+#include <mcp/auth/oauth_authorization_context.hpp>
 #include <mcp/transport/http/header.hpp>
 #include <mcp/transport/http/header_utils.hpp>
 #include <mcp/transport/http/request_kind.hpp>

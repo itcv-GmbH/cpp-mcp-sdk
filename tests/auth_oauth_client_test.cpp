@@ -9,7 +9,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/auth/loopback_receiver.hpp>
+#include <mcp/auth/all.hpp>
 #include <mcp/auth/oauth_client.hpp>
 #include <mcp/transport/http.hpp>
 

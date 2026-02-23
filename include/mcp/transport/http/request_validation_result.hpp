@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include <mcp/auth/oauth_server.hpp>
+#include <mcp/auth/oauth_authorization_context.hpp>
 
 namespace mcp::transport::http
 {

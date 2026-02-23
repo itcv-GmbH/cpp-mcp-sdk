@@ -4,7 +4,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/auth/client_registration.hpp>
+#include <mcp/auth/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 
 namespace

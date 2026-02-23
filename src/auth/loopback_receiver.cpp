@@ -11,7 +11,7 @@
 #include <string_view>
 #include <utility>
 
-#include <mcp/auth/loopback_receiver.hpp>
+#include <mcp/auth/all.hpp>
 #include <mcp/detail/ascii.hpp>
 #include <mcp/transport/http.hpp>
 

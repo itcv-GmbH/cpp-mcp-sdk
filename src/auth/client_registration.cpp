@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-#include <mcp/auth/client_registration.hpp>
+#include <mcp/auth/all.hpp>
 #include <mcp/detail/ascii.hpp>
 #include <mcp/detail/url.hpp>
 #include <mcp/jsonrpc/all.hpp>

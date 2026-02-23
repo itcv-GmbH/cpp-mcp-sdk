@@ -10,7 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include <mcp/auth/oauth_server.hpp>
 #include <mcp/detail/ascii.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/transport/http/header.hpp>

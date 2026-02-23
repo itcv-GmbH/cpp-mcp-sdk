@@ -7,7 +7,7 @@
 #include <mcp/auth/in_memory_oauth_token_storage.hpp>
 #include <mcp/auth/oauth_protected_resource_request.hpp>
 #include <mcp/auth/oauth_protected_resource_request_executor.hpp>
-#include <mcp/auth/oauth_server.hpp>
+#include <mcp/auth/oauth_scope_set.hpp>
 #include <mcp/auth/oauth_step_up_authorizer.hpp>
 #include <mcp/auth/oauth_token_storage.hpp>
 

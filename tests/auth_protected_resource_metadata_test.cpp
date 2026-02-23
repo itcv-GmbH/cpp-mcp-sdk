@@ -8,7 +8,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/auth/protected_resource_metadata.hpp>
+#include <mcp/auth/all.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
 // readability-magic-numbers, misc-const-correctness)

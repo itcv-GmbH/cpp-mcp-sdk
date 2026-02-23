@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 
-#include <mcp/auth/oauth_server.hpp>
+#include <mcp/auth/oauth_scope_set.hpp>
 
 namespace mcp::auth
 {

@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include <mcp/auth/oauth_server.hpp>
+#include <mcp/auth/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/server.hpp>

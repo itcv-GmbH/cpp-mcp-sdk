@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include <mcp/auth/oauth_server.hpp>
+#include <mcp/auth/oauth_scope_set.hpp>
 
 namespace mcp::auth
 {

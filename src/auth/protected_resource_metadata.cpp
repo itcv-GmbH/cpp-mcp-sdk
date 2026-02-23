@@ -12,7 +12,7 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <mcp/auth/protected_resource_metadata.hpp>
+#include <mcp/auth/all.hpp>
 #include <mcp/detail/ascii.hpp>
 #include <mcp/detail/url.hpp>
 #include <mcp/jsonrpc/all.hpp>

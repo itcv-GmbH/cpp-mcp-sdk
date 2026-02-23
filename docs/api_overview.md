@@ -67,7 +67,7 @@ The SDK provides runners for different transport types. The following rules defi
 - **Start**: The runner must call `mcp::Server::start()` for every `Server` instance it creates before handling any messages.
 - **Stop**: The runner must call `mcp::Server::stop()` before dropping a `Server` instance due to HTTP DELETE, HTTP 404 cleanup, runner stop, or runner destruction.
 - Auth:
-  - `include/mcp/auth/provider.hpp` defines async auth provider and verifier interfaces for HTTP authorization integration.
+  - `include/mcp/auth/all.hpp` is the umbrella header for all auth types including async auth providers, verifiers, OAuth server/client types, and protected resource metadata.
 - Core constants and protocol errors:
   - `include/mcp/version.hpp` defines protocol and SDK version constants and negotiated-version accessors.
   - `include/mcp/errors.hpp` defines structured JSON-RPC error data (`code`, `message`, `data`).
