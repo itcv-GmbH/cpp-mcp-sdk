@@ -13,8 +13,8 @@ This document defines the initial public API surface and module boundaries for t
   - `include/mcp/schema/validator.hpp` contains pinned MCP schema loading and validation APIs for method messages and tool schemas.
 - Transports:
   - `include/mcp/transport/transport.hpp` defines the base transport contract (`attach`, `start`, `stop`, `send`).
-  - `include/mcp/transport/stdio.hpp` defines stdio transport options and type.
-  - `include/mcp/transport/http.hpp` defines Streamable HTTP transport options and type.
+  - `include/mcp/transport/stdio_transport.hpp` defines stdio transport options and type.
+  - `include/mcp/transport/streamable_http_client_transport.hpp` defines Streamable HTTP transport options and type.
 - Role facades:
   - `include/mcp/server/server.hpp` defines `mcp::Server` as a server-facing facade over a shared session.
   - `include/mcp/client/client.hpp` defines `mcp::Client` as a client-facing facade over a shared session.
