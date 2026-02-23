@@ -11,9 +11,18 @@
 #include <string_view>
 #include <utility>
 
-#include <mcp/auth/all.hpp>  // NOLINT(misc-include-cleaner)
-#include <mcp/detail/ascii.hpp>
-#include <mcp/transport/all.hpp>
+#include "mcp/auth/loopback_authorization_code.hpp"
+#include "mcp/auth/loopback_receiver_error.hpp"
+#include "mcp/auth/loopback_receiver_options.hpp"
+#include "mcp/auth/loopback_redirect_receiver.hpp"
+#include "mcp/detail/ascii.hpp"
+#include "mcp/transport/http/header.hpp"
+#include "mcp/transport/http/http_client_options.hpp"
+#include "mcp/transport/http/http_client_runtime.hpp"
+#include "mcp/transport/http/http_server_options.hpp"
+#include "mcp/transport/http/http_server_runtime.hpp"
+#include "mcp/transport/http/server_request.hpp"
+#include "mcp/transport/http/server_response.hpp"
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
 // hicpp-signed-bitwise, misc-const-correctness, misc-include-cleaner)

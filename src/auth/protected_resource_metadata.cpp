@@ -12,11 +12,27 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <mcp/auth/all.hpp>  // NOLINT(misc-include-cleaner)
-#include <mcp/detail/ascii.hpp>
-#include <mcp/detail/url.hpp>
-#include <mcp/jsonrpc/all.hpp>  // NOLINT(misc-include-cleaner)
-#include <mcp/transport/all.hpp>
+
+#include "mcp/auth/authorization_discovery_error.hpp"
+#include "mcp/auth/authorization_discovery_request.hpp"
+#include "mcp/auth/authorization_discovery_result.hpp"
+#include "mcp/auth/authorization_server_metadata.hpp"
+#include "mcp/auth/bearer_www_authenticate_challenge.hpp"
+#include "mcp/auth/bearer_www_authenticate_parameter.hpp"
+#include "mcp/auth/discovery_header.hpp"
+#include "mcp/auth/discovery_http_request.hpp"
+#include "mcp/auth/discovery_http_response.hpp"
+#include "mcp/auth/discovery_http_types.hpp"
+#include "mcp/auth/discovery_security_policy.hpp"
+#include "mcp/auth/oauth_scope_set.hpp"
+#include "mcp/auth/protected_resource_metadata_data.hpp"
+#include "mcp/detail/ascii.hpp"
+#include "mcp/detail/url.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/transport/http/header.hpp"
+#include "mcp/transport/http/http_client_options.hpp"
+#include "mcp/transport/http/http_client_runtime.hpp"
+#include "mcp/transport/http/server_request.hpp"
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
 // readability-magic-numbers, bugprone-argument-comment, misc-const-correctness, performance-unnecessary-value-param, performance-no-automatic-move,
