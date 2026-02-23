@@ -6,11 +6,9 @@
 
 #include <mcp/lifecycle/session/icon.hpp>
 
-namespace mcp
-{
-namespace lifecycle
-{
-namespace session
+
+
+namespace mcp::lifecycle::session
 {
 
 /**
@@ -43,6 +41,6 @@ private:
   std::optional<std::vector<Icon>> icons_;
 };
 
-}  // namespace session
-}  // namespace lifecycle
-}  // namespace mcp
+} // namespace mcp::lifecycle::session
+
+

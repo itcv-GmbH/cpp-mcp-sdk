@@ -2,11 +2,9 @@
 
 #include <cstdint>
 
-namespace mcp
-{
-namespace lifecycle
-{
-namespace session
+
+
+namespace mcp::lifecycle::session
 {
 
 /**
@@ -18,6 +16,6 @@ enum class SessionRole : std::uint8_t
   kServer,
 };
 
-}  // namespace session
-}  // namespace lifecycle
-}  // namespace mcp
+} // namespace mcp::lifecycle::session
+
+

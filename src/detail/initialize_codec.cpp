@@ -5,7 +5,11 @@
 
 #include <jsoncons/json.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/detail/initialize_codec.hpp>
-#include <mcp/lifecycle/session.hpp>
+#include "mcp/lifecycle/session/implementation.hpp"
+#include "mcp/lifecycle/session/client_capabilities.hpp"
+#include "mcp/lifecycle/session/server_capabilities.hpp"
+#include "mcp/lifecycle/session/logging_capability.hpp"
+#include "mcp/lifecycle/session/completions_capability.hpp"
 
 namespace mcp::detail
 {

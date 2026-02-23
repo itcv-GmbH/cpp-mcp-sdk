@@ -14,9 +14,26 @@
 #include <vector>
 
 #include <mcp/detail/url.hpp>
-#include <mcp/http/all.hpp>
-#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/all.hpp>
+#include "mcp/transport/http/server_response.hpp"
+#include "mcp/transport/http/header_utils.hpp"
+#include "mcp/detail/parsed_absolute_url.hpp"
+#include "mcp/jsonrpc/message.hpp"
+#include "mcp/jsonrpc/request.hpp"
+#include "mcp/jsonrpc/notification.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/jsonrpc/error_response.hpp"
+#include "mcp/jsonrpc/response.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/http/sse/event.hpp"
+#include "mcp/http/sse/encoding.hpp"
+#include "mcp/jsonrpc/message_functions.hpp"
+#include "mcp/transport/http/streamable_http_client.hpp"
+#include "mcp/transport/http/streamable_http_client_options.hpp"
+#include "mcp/transport/http/header.hpp"
+#include "mcp/transport/http/server_request.hpp"
+#include "mcp/transport/http/streamable_http_send_result.hpp"
+#include "mcp/transport/http/streamable_http_listen_result.hpp"
 
 #ifndef MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK
 #  define MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK 0

@@ -2,11 +2,9 @@
 
 #include <cstdint>
 
-namespace mcp
-{
-namespace lifecycle
-{
-namespace session
+
+
+namespace mcp::lifecycle::session
 {
 
 /**
@@ -22,6 +20,6 @@ enum class SessionState : std::uint8_t
   kStopped,  ///< Session stopped.
 };
 
-}  // namespace session
-}  // namespace lifecycle
-}  // namespace mcp
+} // namespace mcp::lifecycle::session
+
+

@@ -11,7 +11,7 @@
 #include <string_view>
 #include <utility>
 
-#include <mcp/auth/all.hpp>
+#include <mcp/auth/all.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/detail/ascii.hpp>
 #include <mcp/transport/all.hpp>
 

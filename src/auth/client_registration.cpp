@@ -12,11 +12,28 @@
 #include <utility>
 #include <vector>
 
-#include <mcp/auth/all.hpp>
 #include <mcp/detail/ascii.hpp>
 #include <mcp/detail/url.hpp>
-#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/all.hpp>
+#include "mcp/transport/http/server_request.hpp"
+#include "mcp/auth/client_registration_error.hpp"
+#include "mcp/auth/client_authentication_method.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/auth/client_registration_http_request.hpp"
+#include "mcp/auth/client_registration_http_response.hpp"
+#include "mcp/transport/http/http_client_options.hpp"
+#include "mcp/transport/http/http_client_runtime.hpp"
+#include "mcp/auth/client_registration_header.hpp"
+#include "mcp/transport/http/header.hpp"
+#include "mcp/transport/http/server_response.hpp"
+#include "mcp/auth/pre_registered_client_configuration.hpp"
+#include "mcp/auth/client_registration_result.hpp"
+#include "mcp/auth/client_registration_strategy.hpp"
+#include "mcp/auth/client_id_metadata_document_configuration.hpp"
+#include "mcp/auth/dynamic_client_registration_configuration.hpp"
+#include "mcp/auth/resolve_client_registration_request.hpp"
+#include "mcp/auth/client_credentials_store.hpp"
+#include "mcp/auth/in_memory_client_credentials_store.hpp"
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-static-definition-in-anonymous-namespace)
 

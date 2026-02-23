@@ -12,10 +12,10 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <mcp/auth/all.hpp>
+#include <mcp/auth/all.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/detail/ascii.hpp>
 #include <mcp/detail/url.hpp>
-#include <mcp/jsonrpc/all.hpp>
+#include <mcp/jsonrpc/all.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/transport/all.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,

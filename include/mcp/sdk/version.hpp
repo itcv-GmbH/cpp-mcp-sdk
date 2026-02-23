@@ -41,9 +41,16 @@ private:
 
 auto getLibraryVersion() noexcept -> const char *;
 
-inline auto get_version() noexcept -> const char *
+inline auto getVersion() noexcept -> const char *
 {
   return getLibraryVersion();
+}
+
+// Deprecated compatibility wrapper.
+// NOLINTNEXTLINE(readability-identifier-naming)
+inline auto get_version() noexcept -> const char *
+{
+  return getVersion();
 }
 
 }  // namespace sdk

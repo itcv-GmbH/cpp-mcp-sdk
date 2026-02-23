@@ -9,10 +9,30 @@
 #include <string_view>
 #include <vector>
 
-#include <mcp/auth/all.hpp>
 #include <mcp/auth/oauth_client.hpp>
-#include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/all.hpp>
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/transport/http/server_response.hpp"
+#include "mcp/transport/http/header_utils.hpp"
+#include "mcp/auth/oauth_token_http_request.hpp"
+#include "mcp/auth/oauth_http_response.hpp"
+#include "mcp/transport/http/header.hpp"
+#include "mcp/auth/oauth_http_header.hpp"
+#include "mcp/auth/discovery_http_request.hpp"
+#include "mcp/auth/discovery_http_response.hpp"
+#include "mcp/auth/discovery_header.hpp"
+#include "mcp/auth/authorization_discovery_request.hpp"
+#include "mcp/auth/authorization_discovery_result.hpp"
+#include "mcp/auth/loopback_receiver_options.hpp"
+#include "mcp/auth/loopback_redirect_receiver.hpp"
+#include "mcp/auth/pkce_code_pair.hpp"
+#include "mcp/auth/oauth_authorization_url_request.hpp"
+#include "mcp/transport/http/http_client_options.hpp"
+#include "mcp/transport/http/http_client_runtime.hpp"
+#include "mcp/transport/http/server_request.hpp"
+#include "mcp/auth/loopback_authorization_code.hpp"
+#include "mcp/auth/oauth_token_exchange_request.hpp"
+#include "mcp/auth/oauth_token_request_execution_request.hpp"
 
 namespace
 {

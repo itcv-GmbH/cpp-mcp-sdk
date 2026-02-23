@@ -5,6 +5,7 @@
 #include <string>
 
 #include <mcp/transport/http/header.hpp>
+#include <mcp/transport/http/header_utils.hpp>
 #include <mcp/transport/http/sse_stream_response.hpp>
 
 namespace mcp::transport::http

@@ -13,7 +13,6 @@
 
 #include <jsoncons/basic_json.hpp>
 #include <mcp/detail/initialize_codec.hpp>
-#include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/router_options.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -21,13 +20,40 @@
 #include <mcp/sdk/version.hpp>
 #include <mcp/transport/transport.hpp>
 
-namespace mcp
-{
-namespace lifecycle
+#include "mcp/jsonrpc/error_factories.hpp"
+#include "mcp/jsonrpc/error_response.hpp"
+#include "mcp/jsonrpc/notification.hpp"
+#include "mcp/jsonrpc/request.hpp"
+#include "mcp/jsonrpc/response.hpp"
+#include "mcp/jsonrpc/response_factories.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/lifecycle/session/client_capabilities.hpp"
+#include "mcp/lifecycle/session/completions_capability.hpp"
+#include "mcp/lifecycle/session/elicitation_capability.hpp"
+#include "mcp/lifecycle/session/icon.hpp"
+#include "mcp/lifecycle/session/implementation.hpp"
+#include "mcp/lifecycle/session/lifecycle_error.hpp"
+#include "mcp/lifecycle/session/logging_capability.hpp"
+#include "mcp/lifecycle/session/negotiated_parameters.hpp"
+#include "mcp/lifecycle/session/prompts_capability.hpp"
+#include "mcp/lifecycle/session/request_options.hpp"
+#include "mcp/lifecycle/session/resources_capability.hpp"
+#include "mcp/lifecycle/session/response_callback.hpp"
+#include "mcp/lifecycle/session/roots_capability.hpp"
+#include "mcp/lifecycle/session/sampling_capability.hpp"
+#include "mcp/lifecycle/session/server_capabilities.hpp"
+#include "mcp/lifecycle/session/session_options.hpp"
+#include "mcp/lifecycle/session/session_role.hpp"
+#include "mcp/lifecycle/session/session_state.hpp"
+#include "mcp/lifecycle/session/tasks_capability.hpp"
+#include "mcp/lifecycle/session/tools_capability.hpp"
+
+namespace mcp::lifecycle
 {
 
 // Bring session types into lifecycle namespace for implementation
-using namespace session;
+using namespace session;  // NOLINT(google-build-using-namespace)
 
 static constexpr std::string_view kInitializeMethod = "initialize";
 static constexpr std::string_view kPingMethod = "ping";
@@ -812,5 +838,4 @@ auto Session::checkCapability(std::string_view capability) const -> bool
   return false;
 }
 
-}  // namespace lifecycle
-}  // namespace mcp
+}  // namespace mcp::lifecycle

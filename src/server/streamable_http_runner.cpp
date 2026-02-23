@@ -11,10 +11,23 @@
 #include <utility>
 #include <variant>
 
-#include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/transport/all.hpp>
+#include "mcp/server/server_factory.hpp"
+#include "mcp/server/streamable_http_server_runner_options.hpp"
+#include "mcp/jsonrpc/request_context.hpp"
+#include "mcp/jsonrpc/request.hpp"
+#include "mcp/transport/http/streamable_request_result.hpp"
+#include "mcp/jsonrpc/response_factories.hpp"
+#include "mcp/jsonrpc/error_factories.hpp"
+#include "mcp/jsonrpc/message.hpp"
+#include "mcp/jsonrpc/error_response.hpp"
+#include "mcp/jsonrpc/notification.hpp"
+#include "mcp/jsonrpc/response.hpp"
+#include "mcp/transport/http/server_request.hpp"
+#include "mcp/transport/http/server_response.hpp"
+#include "mcp/transport/http/header_utils.hpp"
 
 namespace
 {

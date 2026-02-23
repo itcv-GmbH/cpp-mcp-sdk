@@ -11,11 +11,9 @@
 #include <mcp/lifecycle/session/tasks_capability.hpp>
 #include <mcp/lifecycle/session/tools_capability.hpp>
 
-namespace mcp
-{
-namespace lifecycle
-{
-namespace session
+
+
+namespace mcp::lifecycle::session
 {
 
 /**
@@ -53,6 +51,6 @@ private:
   std::optional<jsoncons::json> experimental_;  // Passthrough for experimental features.
 };
 
-}  // namespace session
-}  // namespace lifecycle
-}  // namespace mcp
+} // namespace mcp::lifecycle::session
+
+

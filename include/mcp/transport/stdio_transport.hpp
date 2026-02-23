@@ -5,6 +5,7 @@
 
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/transport/stdio_attach_options.hpp>
+#include <mcp/transport/stdio_client_options.hpp>
 #include <mcp/transport/stdio_server_options.hpp>
 #include <mcp/transport/stdio_subprocess.hpp>
 #include <mcp/transport/stdio_subprocess_spawn_options.hpp>

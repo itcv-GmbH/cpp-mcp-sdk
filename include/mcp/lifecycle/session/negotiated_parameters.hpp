@@ -8,11 +8,9 @@
 #include <mcp/lifecycle/session/implementation.hpp>
 #include <mcp/lifecycle/session/server_capabilities.hpp>
 
-namespace mcp
-{
-namespace lifecycle
-{
-namespace session
+
+
+namespace mcp::lifecycle::session
 {
 
 /**
@@ -45,6 +43,6 @@ private:
   std::optional<std::string> instructions_;
 };
 
-}  // namespace session
-}  // namespace lifecycle
-}  // namespace mcp
+} // namespace mcp::lifecycle::session
+
+

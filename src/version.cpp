@@ -1,8 +1,7 @@
 #include <mcp/sdk/version.hpp>
 
-namespace mcp
-{
-namespace sdk
+
+namespace mcp::sdk
 {
 
 auto getLibraryVersion() noexcept -> const char *
@@ -10,5 +9,5 @@ auto getLibraryVersion() noexcept -> const char *
   return kSdkVersion.data();
 }
 
-}  // namespace sdk
-}  // namespace mcp
+} // namespace mcp::sdk
+

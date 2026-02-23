@@ -1,10 +1,8 @@
 #pragma once
 
-namespace mcp
-{
-namespace lifecycle
-{
-namespace session
+
+
+namespace mcp::lifecycle::session
 {
 
 /**
@@ -15,6 +13,6 @@ struct CompletionsCapability
   // Empty struct - presence indicates support.
 };
 
-}  // namespace session
-}  // namespace lifecycle
-}  // namespace mcp
+} // namespace mcp::lifecycle::session
+
+

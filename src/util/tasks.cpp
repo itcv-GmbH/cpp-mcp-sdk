@@ -19,12 +19,30 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include "mcp/util/task.hpp"
 
 #include <mcp/detail/base64url.hpp>
-#include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/security/crypto_random.hpp>
-#include <mcp/util/all.hpp>
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/jsonrpc/response.hpp"
+#include "mcp/jsonrpc/response_factories.hpp"
+#include "mcp/jsonrpc/error_factories.hpp"
+#include "mcp/jsonrpc/request.hpp"
+#include "mcp/util/task_store_error.hpp"
+#include "mcp/util/task_status.hpp"
+#include "mcp/util/task_augmentation_request.hpp"
+#include "mcp/util/create_task_result.hpp"
+#include "mcp/jsonrpc/request_context.hpp"
+#include "mcp/util/in_memory_task_store.hpp"
+#include "mcp/util/in_memory_task_store_options.hpp"
+#include "mcp/util/task_create_options.hpp"
+#include "mcp/util/task_record_result.hpp"
+#include "mcp/util/task_terminal_result.hpp"
+#include "mcp/util/task_receiver.hpp"
+#include "mcp/util/task_store.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/jsonrpc/error_response.hpp"
 
 namespace mcp::util
 {

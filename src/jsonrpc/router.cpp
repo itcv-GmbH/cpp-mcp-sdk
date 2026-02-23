@@ -18,11 +18,24 @@
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <mcp/detail/thread_boundary.hpp>
-#include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/sdk/error_reporter.hpp>
 #include <mcp/util/cancellation.hpp>
 #include <mcp/util/progress.hpp>
+#include "mcp/jsonrpc/request_context.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/jsonrpc/notification.hpp"
+#include "mcp/jsonrpc/progress_update.hpp"
+#include "mcp/util/progress/progress_notification.hpp"
+#include "mcp/jsonrpc/response.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/jsonrpc/response_factories.hpp"
+#include "mcp/jsonrpc/error_factories.hpp"
+#include "mcp/jsonrpc/handler_types.hpp"
+#include "mcp/jsonrpc/router_options.hpp"
+#include "mcp/jsonrpc/router_enums.hpp"
+#include "mcp/util/cancellation/cancelled_notification.hpp"
+#include "mcp/jsonrpc/outbound_request_options.hpp"
 
 namespace mcp::jsonrpc
 {

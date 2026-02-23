@@ -7,7 +7,9 @@
 #include <mcp/auth/client_credentials_store.hpp>
 #include <mcp/auth/client_registration_http_request.hpp>
 #include <mcp/auth/client_registration_http_response.hpp>
+#include <mcp/auth/client_registration_result.hpp>
 #include <mcp/auth/client_registration_strategy_configuration.hpp>
+#include <mcp/auth/in_memory_client_credentials_store.hpp>
 
 namespace mcp::auth
 {

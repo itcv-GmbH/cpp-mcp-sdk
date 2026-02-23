@@ -19,10 +19,40 @@
 #include <variant>
 #include <vector>
 
-#include <mcp/auth/all.hpp>
-#include <mcp/jsonrpc/all.hpp>
 #include <mcp/security/crypto_random.hpp>
 #include <mcp/transport/all.hpp>
+#include "mcp/transport/http/server_request.hpp"
+#include "mcp/transport/http/header_utils.hpp"
+#include "mcp/transport/http/header.hpp"
+#include "mcp/auth/oauth_scope_set.hpp"
+#include "mcp/auth/oauth_protected_resource_metadata.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/http/sse/event.hpp"
+#include "mcp/jsonrpc/message_functions.hpp"
+#include "mcp/jsonrpc/response_factories.hpp"
+#include "mcp/jsonrpc/error_factories.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/jsonrpc/error_response.hpp"
+#include "mcp/jsonrpc/request.hpp"
+#include "mcp/transport/http/request_validation_result.hpp"
+#include "mcp/jsonrpc/request_context.hpp"
+#include "mcp/transport/http/streamable_http_server.hpp"
+#include "mcp/transport/http/streamable_http_server_options.hpp"
+#include "mcp/auth/oauth_server_authorization_options.hpp"
+#include "mcp/auth/oauth_authorization_request_context.hpp"
+#include "mcp/transport/http/server_response.hpp"
+#include "mcp/auth/oauth_token_verification_request.hpp"
+#include "mcp/auth/oauth_token_verification_result.hpp"
+#include "mcp/auth/oauth_token_verification_status.hpp"
+#include "mcp/transport/http/session_lookup_state.hpp"
+#include "mcp/transport/http/session_resolution.hpp"
+#include "mcp/http/sse/encoding.hpp"
+#include "mcp/transport/http/request_kind.hpp"
+#include "mcp/transport/http/request_validation_options.hpp"
+#include "mcp/transport/http/request_validator.hpp"
+#include "mcp/jsonrpc/notification.hpp"
+#include "mcp/jsonrpc/response.hpp"
+#include "mcp/transport/http/streamable_request_result.hpp"
 
 #ifndef MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY
 #  define MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY 0

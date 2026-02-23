@@ -10,10 +10,17 @@
 #include <utility>
 #include <variant>
 
-#include <mcp/jsonrpc/all.hpp>
-#include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/server.hpp>
+#include "mcp/jsonrpc/request.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/server/server.hpp"
+#include "mcp/jsonrpc/request_context.hpp"
+#include "mcp/jsonrpc/notification.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/server/server_configuration.hpp"
+#include "mcp/jsonrpc/message.hpp"
+#include "mcp/jsonrpc/error_response.hpp"
+#include "mcp/jsonrpc/error_factories.hpp"
 
 namespace
 {

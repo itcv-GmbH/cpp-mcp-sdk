@@ -4,11 +4,9 @@
 
 #include <mcp/jsonrpc/router.hpp>
 
-namespace mcp
-{
-namespace lifecycle
-{
-namespace session
+
+
+namespace mcp::lifecycle::session
 {
 
 /**
@@ -16,6 +14,6 @@ namespace session
  */
 using ResponseCallback = std::function<void(const jsonrpc::Response &)>;
 
-}  // namespace session
-}  // namespace lifecycle
-}  // namespace mcp
+} // namespace mcp::lifecycle::session
+
+

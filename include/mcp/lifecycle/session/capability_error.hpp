@@ -2,11 +2,9 @@
 
 #include <stdexcept>
 
-namespace mcp
-{
-namespace lifecycle
-{
-namespace session
+
+
+namespace mcp::lifecycle::session
 {
 
 /**
@@ -18,6 +16,6 @@ public:
   using std::runtime_error::runtime_error;
 };
 
-}  // namespace session
-}  // namespace lifecycle
-}  // namespace mcp
+} // namespace mcp::lifecycle::session
+
+

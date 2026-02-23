@@ -7,6 +7,8 @@
 #include <mcp/server/combined_runner.hpp>
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
+#include "mcp/server/server_factory.hpp"
+#include "mcp/server/combined_server_runner_options.hpp"
 
 namespace
 {
