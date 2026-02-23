@@ -16,8 +16,6 @@
 #include "mcp/auth/loopback_receiver_options.hpp"
 #include "mcp/auth/loopback_redirect_receiver.hpp"
 #include "mcp/detail/ascii.hpp"
-#include "mcp/transport/http/header.hpp"
-#include "mcp/transport/http/http_client_options.hpp"
 #include "mcp/transport/http/http_client_runtime.hpp"
 #include "mcp/transport/http/http_server_options.hpp"
 #include "mcp/transport/http/http_server_runtime.hpp"
