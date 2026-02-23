@@ -3,9 +3,10 @@
 #include <thread>
 #include <utility>
 
-#include <mcp/detail/inbound_loop.hpp>
-#include <mcp/detail/thread_boundary.hpp>
-#include <mcp/sdk/error_reporter.hpp>
+#include "mcp/detail/inbound_loop.hpp"
+
+#include "mcp/detail/thread_boundary.hpp"
+#include "mcp/sdk/error_reporter.hpp"
 
 namespace mcp::detail
 {

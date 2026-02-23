@@ -10,20 +10,21 @@
 #include <utility>
 #include <variant>
 
-#include <mcp/jsonrpc/encode_options.hpp>
-#include <mcp/jsonrpc/error_response.hpp>
-#include <mcp/jsonrpc/message.hpp>
-#include <mcp/jsonrpc/message_functions.hpp>
-#include <mcp/jsonrpc/message_validation_error.hpp>
-#include <mcp/jsonrpc/notification.hpp>
-#include <mcp/jsonrpc/request.hpp>
-#include <mcp/jsonrpc/success_response.hpp>
-#include <mcp/jsonrpc/types.hpp>
-#include <mcp/schema/format_diagnostics.hpp>
-#include <mcp/schema/validation_result.hpp>
-#include <mcp/schema/validator.hpp>
-#include <mcp/sdk/errors.hpp>
-#include <mcp/sdk/version.hpp>
+#include "mcp/jsonrpc/message.hpp"
+
+#include "mcp/jsonrpc/encode_options.hpp"
+#include "mcp/jsonrpc/error_response.hpp"
+#include "mcp/jsonrpc/message_functions.hpp"
+#include "mcp/jsonrpc/message_validation_error.hpp"
+#include "mcp/jsonrpc/notification.hpp"
+#include "mcp/jsonrpc/request.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/schema/format_diagnostics.hpp"
+#include "mcp/schema/validation_result.hpp"
+#include "mcp/schema/validator.hpp"
+#include "mcp/sdk/errors.hpp"
+#include "mcp/sdk/version.hpp"
 
 namespace mcp::jsonrpc
 {

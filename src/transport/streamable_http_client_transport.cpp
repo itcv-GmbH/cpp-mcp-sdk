@@ -7,18 +7,18 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
 #include "mcp/transport/http/streamable_http_client.hpp"
 
-#include <mcp/detail/inbound_loop.hpp>
-#include <mcp/lifecycle/session.hpp>
-#include <mcp/sdk/error_reporter.hpp>
-#include <mcp/transport/all.hpp>
-#include <mcp/transport/streamable_http_client_transport.hpp>
+#include "mcp/detail/inbound_loop.hpp"
 #include "mcp/jsonrpc/message.hpp"
 #include "mcp/jsonrpc/notification.hpp"
-#include "mcp/transport/http/streamable_http_client_options.hpp"
+#include "mcp/lifecycle/session.hpp"
+#include "mcp/sdk/error_reporter.hpp"
 #include "mcp/session.hpp"
 #include "mcp/transport/http/header_utils.hpp"
+#include "mcp/transport/http/streamable_http_client_options.hpp"
+#include "mcp/transport/streamable_http_client_transport.hpp"
 
 namespace mcp::transport
 {

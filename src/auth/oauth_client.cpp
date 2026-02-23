@@ -15,13 +15,15 @@
 #include <utility>
 #include <vector>
 
-#include <mcp/auth/oauth_client.hpp>
-#include <mcp/detail/ascii.hpp>
-#include <mcp/detail/base64url.hpp>
-#include <mcp/detail/url.hpp>
-#include <mcp/security/crypto_random.hpp>
+#include "mcp/auth/oauth_client.hpp"
+
 #include <openssl/evp.h>
 #include <openssl/sha.h>
+
+#include "mcp/detail/ascii.hpp"
+#include "mcp/detail/base64url.hpp"
+#include "mcp/detail/url.hpp"
+#include "mcp/security/crypto_random.hpp"
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
 // misc-include-cleaner, cppcoreguidelines-pro-bounds-constant-array-index, cppcoreguidelines-avoid-c-arrays, hicpp-avoid-c-arrays,

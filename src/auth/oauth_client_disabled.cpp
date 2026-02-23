@@ -1,6 +1,6 @@
 #include <utility>
 
-#include <mcp/auth/oauth_client.hpp>
+#include "mcp/auth/oauth_client.hpp"
 
 namespace mcp::auth
 {

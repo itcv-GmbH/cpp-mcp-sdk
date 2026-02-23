@@ -17,7 +17,7 @@
 #  include <sys/random.h>
 #endif
 
-#include <mcp/security/crypto_random.hpp>
+#include "mcp/security/crypto_random.hpp"
 
 namespace mcp::security
 {

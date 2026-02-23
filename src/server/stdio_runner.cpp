@@ -10,23 +10,24 @@
 #include <utility>
 #include <variant>
 
-#include <mcp/detail/thread_boundary.hpp>
-#include <mcp/sdk/error_reporter.hpp>
-#include <mcp/server/server.hpp>
-#include <mcp/server/stdio_runner.hpp>
-#include "mcp/server/server_factory.hpp"
-#include "mcp/server/stdio_server_runner_options.hpp"
+#include "mcp/server/stdio_runner.hpp"
+
+#include "mcp/detail/thread_boundary.hpp"
+#include "mcp/jsonrpc/encode_options.hpp"
+#include "mcp/jsonrpc/error_factories.hpp"
+#include "mcp/jsonrpc/error_response.hpp"
 #include "mcp/jsonrpc/message.hpp"
 #include "mcp/jsonrpc/message_functions.hpp"
-#include "mcp/jsonrpc/encode_options.hpp"
-#include "mcp/jsonrpc/request_context.hpp"
-#include "mcp/jsonrpc/response_factories.hpp"
-#include "mcp/jsonrpc/error_factories.hpp"
-#include "mcp/jsonrpc/request.hpp"
-#include "mcp/jsonrpc/response.hpp"
-#include "mcp/jsonrpc/success_response.hpp"
-#include "mcp/jsonrpc/error_response.hpp"
 #include "mcp/jsonrpc/notification.hpp"
+#include "mcp/jsonrpc/request.hpp"
+#include "mcp/jsonrpc/request_context.hpp"
+#include "mcp/jsonrpc/response.hpp"
+#include "mcp/jsonrpc/response_factories.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/sdk/error_reporter.hpp"
+#include "mcp/server/server.hpp"
+#include "mcp/server/server_factory.hpp"
+#include "mcp/server/stdio_server_runner_options.hpp"
 
 namespace
 {

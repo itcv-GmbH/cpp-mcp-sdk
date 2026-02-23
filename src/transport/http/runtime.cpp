@@ -18,9 +18,12 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>  // NOLINT(misc-include-cleaner)
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
-#include <mcp/detail/url.hpp>
-#include <mcp/sdk/error_reporter.hpp>
-#include <mcp/transport/all.hpp>
+
+#include "mcp/detail/url.hpp"
+#include "mcp/sdk/error_reporter.hpp"
+#include "mcp/transport/http/header_utils.hpp"
+#include "mcp/transport/http/http_client_runtime.hpp"
+#include "mcp/transport/http/http_server_runtime.hpp"
 
 #if MCP_SDK_ENABLE_TLS
 #  include <boost/asio/ssl.hpp>  // NOLINT(misc-include-cleaner)
