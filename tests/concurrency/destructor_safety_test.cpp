@@ -20,7 +20,7 @@
 #include <mcp/server/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 #include <mcp/transport/transport.hpp>
 
 namespace
@@ -155,12 +155,12 @@ auto waitUntilPortRebindable(std::uint16_t port, std::chrono::milliseconds timeo
   {
     try
     {
-      mcp::transport::HttpServerOptions options;
+      mcp::transport::http::HttpServerOptions options;
       options.endpoint.bindAddress = "127.0.0.1";
       options.endpoint.bindLocalhostOnly = true;
       options.endpoint.port = port;
 
-      mcp::transport::HttpServerRuntime runtime(options);
+      mcp::transport::http::HttpServerRuntime runtime(options);
       runtime.start();
       runtime.stop();
       return true;
@@ -251,9 +251,9 @@ TEST_CASE("Destroying active StreamableHttpServerRunner is bounded and releases 
   const std::uint16_t boundPort = runner->localPort();
   REQUIRE(boundPort != 0);
 
-  mcp::transport::HttpClientOptions clientOptions;
+  mcp::transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = "http://127.0.0.1:" + std::to_string(boundPort) + "/mcp";
-  mcp::transport::HttpClientRuntime client(clientOptions);
+  mcp::transport::http::HttpClientRuntime client(clientOptions);
 
   const mcp_http::ServerResponse initializeResponse = client.execute(makeJsonPostRequest(makeInitializeRequestJson()));
   REQUIRE(initializeResponse.statusCode == 200);

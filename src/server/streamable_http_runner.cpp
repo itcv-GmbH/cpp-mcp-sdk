@@ -14,7 +14,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -47,7 +47,7 @@ struct StreamableHttpServerRunner::Impl
   ServerFactory serverFactory;
   StreamableHttpServerRunnerOptions options;
   transport::http::StreamableHttpServer streamableServer;
-  transport::HttpServerRuntime runtime;
+  transport::http::HttpServerRuntime runtime;
   std::atomic<bool> running {false};
 
   // Per-session server instances (used when requireSessionId == true)

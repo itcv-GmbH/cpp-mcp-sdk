@@ -12,7 +12,7 @@
 #include <mcp/http/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -20,9 +20,9 @@ namespace
 namespace mcp_http = mcp::transport::http;
 namespace mcp_transport = mcp::transport;
 
-auto makeServerOptions() -> mcp_transport::HttpServerOptions
+auto makeServerOptions() -> mcp_transport::http::HttpServerOptions
 {
-  mcp_transport::HttpServerOptions options;
+  mcp_transport::http::HttpServerOptions options;
   options.endpoint.path = "/mcp";
   options.endpoint.bindAddress = "127.0.0.1";
   options.endpoint.bindLocalhostOnly = true;
@@ -234,7 +234,7 @@ private:
     return makeStatusResponse(404);
   }
 
-  mcp_transport::HttpServerRuntime runtime_;
+  mcp_transport::http::HttpServerRuntime runtime_;
   mutable std::mutex mutex_;
   std::uint16_t modernInitializeStatus_;
   std::string endpointEventData_;
@@ -257,7 +257,7 @@ TEST_CASE("Legacy client fallback connects and lists tools when enabled", "[conf
     LegacyHttpSseFixture fixture(fallbackStatus);
 
     auto client = mcp::Client::create();
-    mcp_transport::HttpClientOptions clientOptions;
+    mcp_transport::http::HttpClientOptions clientOptions;
     clientOptions.endpointUrl = fixture.endpointUrl();
     clientOptions.enableLegacyHttpSseFallback = true;
 
@@ -284,7 +284,7 @@ TEST_CASE("Legacy client fallback disabled keeps initialize failure", "[conforma
   LegacyHttpSseFixture fixture(404);
 
   auto client = mcp::Client::create();
-  mcp_transport::HttpClientOptions clientOptions;
+  mcp_transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = fixture.endpointUrl();
   clientOptions.enableLegacyHttpSseFallback = false;
 
@@ -305,7 +305,7 @@ TEST_CASE("Legacy client fallback does not trigger on HTTP 401", "[conformance][
   LegacyHttpSseFixture fixture(401);
 
   auto client = mcp::Client::create();
-  mcp_transport::HttpClientOptions clientOptions;
+  mcp_transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = fixture.endpointUrl();
   clientOptions.enableLegacyHttpSseFallback = true;
 

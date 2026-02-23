@@ -11,7 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/auth/all.hpp>
 #include <mcp/auth/oauth_client.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -30,10 +30,10 @@ auto makeAuthorizationServerMetadata() -> mcp::auth::AuthorizationServerMetadata
 
 auto sendLoopbackCallbackRequest(std::uint16_t port, std::string pathAndQuery) -> mcp::transport::http::ServerResponse
 {
-  mcp::transport::HttpClientOptions options;
+  mcp::transport::http::HttpClientOptions options;
   options.endpointUrl = "http://127.0.0.1:" + std::to_string(port);
 
-  const mcp::transport::HttpClientRuntime runtime(options);
+  const mcp::transport::http::HttpClientRuntime runtime(options);
 
   mcp::transport::http::ServerRequest request;
   request.method = mcp::transport::http::ServerRequestMethod::kGet;

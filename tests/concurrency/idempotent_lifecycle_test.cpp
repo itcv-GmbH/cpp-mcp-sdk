@@ -8,7 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/client/client.hpp>
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -20,14 +20,14 @@ constexpr auto kStopTimeout = std::chrono::seconds {2};
 
 TEST_CASE("HttpServerRuntime start/stop remains idempotent across repeated cycles", "[concurrency][lifecycle][http_runtime]")
 {
-  mcp::transport::HttpServerOptions serverOptions;
+  mcp::transport::http::HttpServerOptions serverOptions;
   serverOptions.endpoint.path = "/mcp";
   serverOptions.endpoint.bindAddress = "127.0.0.1";
   serverOptions.endpoint.bindLocalhostOnly = true;
   serverOptions.endpoint.port = 0;
 
   std::size_t requestCount = 0;
-  mcp::transport::HttpServerRuntime runtime(serverOptions);
+  mcp::transport::http::HttpServerRuntime runtime(serverOptions);
   runtime.setRequestHandler(
     [&requestCount](const mcp::transport::http::ServerRequest &) -> mcp::transport::http::ServerResponse
     {
@@ -50,9 +50,9 @@ TEST_CASE("HttpServerRuntime start/stop remains idempotent across repeated cycle
     REQUIRE(runtime.isRunning());
     REQUIRE(runtime.localPort() == runningPort);
 
-    mcp::transport::HttpClientOptions clientOptions;
+    mcp::transport::http::HttpClientOptions clientOptions;
     clientOptions.endpointUrl = "http://127.0.0.1:" + std::to_string(runningPort) + "/mcp";
-    mcp::transport::HttpClientRuntime client(clientOptions);
+    mcp::transport::http::HttpClientRuntime client(clientOptions);
 
     mcp::transport::http::ServerRequest request;
     request.method = mcp::transport::http::ServerRequestMethod::kPost;

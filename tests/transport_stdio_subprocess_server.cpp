@@ -5,7 +5,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/transport/stdio.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {

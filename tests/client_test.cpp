@@ -2581,19 +2581,19 @@ TEST_CASE("Client connectHttp using HttpClientOptions performs lifecycle request
       return result;
     });
 
-  mcp::transport::HttpServerOptions serverOptions;
+  mcp::transport::http::HttpServerOptions serverOptions;
   serverOptions.endpoint.path = "/mcp";
   serverOptions.endpoint.bindAddress = "127.0.0.1";
   serverOptions.endpoint.bindLocalhostOnly = true;
   serverOptions.endpoint.port = 0;
 
-  mcp::transport::HttpServerRuntime serverRuntime(serverOptions);
+  mcp::transport::http::HttpServerRuntime serverRuntime(serverOptions);
   serverRuntime.setRequestHandler([&streamableServer](const mcp::transport::http::ServerRequest &request) -> mcp::transport::http::ServerResponse
                                   { return streamableServer.handleRequest(request); });
   serverRuntime.start();
 
   auto client = mcp::Client::create();
-  mcp::transport::HttpClientOptions clientOptions;
+  mcp::transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = "http://127.0.0.1:" + std::to_string(serverRuntime.localPort()) + "/mcp";
 
   client->connectHttp(clientOptions);

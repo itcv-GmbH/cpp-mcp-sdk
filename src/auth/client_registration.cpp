@@ -16,7 +16,7 @@
 #include <mcp/detail/ascii.hpp>
 #include <mcp/detail/url.hpp>
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-static-definition-in-anonymous-namespace)
 
@@ -263,11 +263,11 @@ static auto parseRequestMethod(std::string_view method) -> ServerRequestMethod
 
 static auto defaultHttpExecutor(const ClientRegistrationHttpRequest &request) -> ClientRegistrationHttpResponse
 {
-  transport::HttpClientOptions options;
+  transport::http::HttpClientOptions options;
   options.endpointUrl = request.url;
   options.tls.verifyPeer = true;
 
-  const transport::HttpClientRuntime runtime(std::move(options));
+  const transport::http::HttpClientRuntime runtime(std::move(options));
 
   transport::http::ServerRequest runtimeRequest;
   runtimeRequest.method = parseRequestMethod(request.method);

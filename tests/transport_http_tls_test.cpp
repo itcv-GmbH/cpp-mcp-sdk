@@ -3,7 +3,7 @@
 #include <utility>
 
 #include <catch2/catch_test_macros.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 
@@ -30,7 +30,7 @@ auto makePostRequest() -> mcp_http::ServerRequest
   return request;
 }
 
-auto makeOkHandler() -> mcp_transport::HttpRequestHandler
+auto makeOkHandler() -> mcp_transport::http::HttpRequestHandler
 {
   return [](const mcp_http::ServerRequest &) -> mcp_http::ServerResponse
   {
@@ -42,9 +42,9 @@ auto makeOkHandler() -> mcp_transport::HttpRequestHandler
   };
 }
 
-auto makeServerOptions() -> mcp_transport::HttpServerOptions
+auto makeServerOptions() -> mcp_transport::http::HttpServerOptions
 {
-  mcp_transport::HttpServerOptions options;
+  mcp_transport::http::HttpServerOptions options;
   options.endpoint.path = "/mcp";
   options.endpoint.bindAddress = "127.0.0.1";
   options.endpoint.bindLocalhostOnly = true;
@@ -52,9 +52,9 @@ auto makeServerOptions() -> mcp_transport::HttpServerOptions
   return options;
 }
 
-auto makeClientOptions(std::string endpointUrl) -> mcp_transport::HttpClientOptions
+auto makeClientOptions(std::string endpointUrl) -> mcp_transport::http::HttpClientOptions
 {
-  mcp_transport::HttpClientOptions options;
+  mcp_transport::http::HttpClientOptions options;
   options.endpointUrl = std::move(endpointUrl);
   return options;
 }
@@ -70,11 +70,11 @@ TEST_CASE("HTTP runtime server runs in HTTP or HTTPS mode from config", "[transp
 {
   SECTION("HTTP mode")
   {
-    mcp_transport::HttpServerRuntime server(makeServerOptions());
+    mcp_transport::http::HttpServerRuntime server(makeServerOptions());
     server.setRequestHandler(makeOkHandler());
     server.start();
 
-    const mcp_transport::HttpClientRuntime client(makeClientOptions(endpointUrl("http", server.localPort())));
+    const mcp_transport::http::HttpClientRuntime client(makeClientOptions(endpointUrl("http", server.localPort())));
     const mcp_http::ServerResponse response = client.execute(makePostRequest());
 
     REQUIRE(response.statusCode == 200);
@@ -84,20 +84,20 @@ TEST_CASE("HTTP runtime server runs in HTTP or HTTPS mode from config", "[transp
 #if MCP_SDK_ENABLE_TLS
   SECTION("HTTPS mode")
   {
-    mcp_transport::HttpServerOptions serverOptions = makeServerOptions();
+    mcp_transport::http::HttpServerOptions serverOptions = makeServerOptions();
     mcp_http::ServerTlsConfiguration tls;
     tls.certificateChainFile = fixturePath("tls-localhost-cert.pem");
     tls.privateKeyFile = fixturePath("tls-localhost-key.pem");
     serverOptions.tls = std::move(tls);
 
-    mcp_transport::HttpServerRuntime server(std::move(serverOptions));
+    mcp_transport::http::HttpServerRuntime server(std::move(serverOptions));
     server.setRequestHandler(makeOkHandler());
     server.start();
 
-    mcp_transport::HttpClientOptions clientOptions = makeClientOptions(endpointUrl("https", server.localPort()));
+    mcp_transport::http::HttpClientOptions clientOptions = makeClientOptions(endpointUrl("https", server.localPort()));
     clientOptions.tls.caCertificateFile = fixturePath("tls-ca-cert.pem");
 
-    const mcp_transport::HttpClientRuntime client(std::move(clientOptions));
+    const mcp_transport::http::HttpClientRuntime client(std::move(clientOptions));
     const mcp_http::ServerResponse response = client.execute(makePostRequest());
 
     REQUIRE(response.statusCode == 200);
@@ -109,17 +109,17 @@ TEST_CASE("HTTP runtime server runs in HTTP or HTTPS mode from config", "[transp
 #if MCP_SDK_ENABLE_TLS
 TEST_CASE("HTTPS client verification is enabled by default", "[transport][http][tls]")
 {
-  mcp_transport::HttpServerOptions serverOptions = makeServerOptions();
+  mcp_transport::http::HttpServerOptions serverOptions = makeServerOptions();
   mcp_http::ServerTlsConfiguration tls;
   tls.certificateChainFile = fixturePath("tls-localhost-cert.pem");
   tls.privateKeyFile = fixturePath("tls-localhost-key.pem");
   serverOptions.tls = std::move(tls);
 
-  mcp_transport::HttpServerRuntime server(std::move(serverOptions));
+  mcp_transport::http::HttpServerRuntime server(std::move(serverOptions));
   server.setRequestHandler(makeOkHandler());
   server.start();
 
-  const mcp_transport::HttpClientRuntime client(makeClientOptions(endpointUrl("https", server.localPort())));
+  const mcp_transport::http::HttpClientRuntime client(makeClientOptions(endpointUrl("https", server.localPort())));
   REQUIRE_THROWS(client.execute(makePostRequest()));
 }
 #endif

@@ -37,8 +37,8 @@
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/transport/http.hpp>
-#include <mcp/transport/stdio.hpp>
+#include <mcp/transport/all.hpp>
+
 #include <mcp/transport/streamable_http_client_transport.hpp>
 #include <mcp/transport/transport.hpp>
 #include <mcp/util/all.hpp>
@@ -1847,10 +1847,10 @@ auto Client::connectStdio(const transport::StdioClientOptions &options) -> void
   attachTransport(std::move(transport));
 }
 
-auto Client::connectHttp(const transport::HttpClientOptions &options) -> void
+auto Client::connectHttp(const transport::http::HttpClientOptions &options) -> void
 {
   auto sharedHeaderState = options.headerState;
-  auto runtime = std::make_shared<transport::HttpClientRuntime>(options);
+  auto runtime = std::make_shared<transport::http::HttpClientRuntime>(options);
 
   transport::http::StreamableHttpClientOptions streamableOptions;
   streamableOptions.endpointUrl = options.endpointUrl;

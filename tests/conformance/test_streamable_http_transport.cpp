@@ -13,7 +13,7 @@
 #include <mcp/http/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -521,7 +521,7 @@ TEST_CASE("Streamable HTTP TLS handshake and verification", "[conformance][trans
 {
   GeneratedTlsFixture tlsFixture;
 
-  mcp_transport::HttpServerOptions serverOptions;
+  mcp_transport::http::HttpServerOptions serverOptions;
   serverOptions.endpoint.path = "/mcp";
   serverOptions.endpoint.bindAddress = "127.0.0.1";
   serverOptions.endpoint.bindLocalhostOnly = true;
@@ -532,7 +532,7 @@ TEST_CASE("Streamable HTTP TLS handshake and verification", "[conformance][trans
   tls.privateKeyFile = tlsFixture.privateKeyPath();
   serverOptions.tls = std::move(tls);
 
-  mcp_transport::HttpServerRuntime server(std::move(serverOptions));
+  mcp_transport::http::HttpServerRuntime server(std::move(serverOptions));
   server.setRequestHandler(
     [](const mcp_http::ServerRequest &) -> mcp_http::ServerResponse
     {
@@ -544,19 +544,19 @@ TEST_CASE("Streamable HTTP TLS handshake and verification", "[conformance][trans
     });
   server.start();
 
-  mcp_transport::HttpClientOptions verifiedClientOptions;
+  mcp_transport::http::HttpClientOptions verifiedClientOptions;
   verifiedClientOptions.endpointUrl = "https://localhost:" + std::to_string(server.localPort()) + "/mcp";
   verifiedClientOptions.tls.caCertificateFile = tlsFixture.caCertificatePath();
 
-  const mcp_transport::HttpClientRuntime verifiedClient(std::move(verifiedClientOptions));
+  const mcp_transport::http::HttpClientRuntime verifiedClient(std::move(verifiedClientOptions));
   const mcp_http::ServerResponse verifiedResponse = verifiedClient.execute(makeRuntimePostRequest());
   REQUIRE(verifiedResponse.statusCode == 200);
   REQUIRE(verifiedResponse.body == "ok");
 
-  mcp_transport::HttpClientOptions defaultClientOptions;
+  mcp_transport::http::HttpClientOptions defaultClientOptions;
   defaultClientOptions.endpointUrl = "https://localhost:" + std::to_string(server.localPort()) + "/mcp";
 
-  const mcp_transport::HttpClientRuntime defaultClient(std::move(defaultClientOptions));
+  const mcp_transport::http::HttpClientRuntime defaultClient(std::move(defaultClientOptions));
   REQUIRE_THROWS(defaultClient.execute(makeRuntimePostRequest()));
 }
 

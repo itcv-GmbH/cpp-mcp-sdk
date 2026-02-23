@@ -12,7 +12,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/server/server.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {

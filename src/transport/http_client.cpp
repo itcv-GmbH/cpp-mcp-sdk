@@ -16,7 +16,7 @@
 #include <mcp/detail/url.hpp>
 #include <mcp/http/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 #ifndef MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK
 #  define MCP_SDK_ENABLE_LEGACY_HTTP_SSE_FALLBACK 0

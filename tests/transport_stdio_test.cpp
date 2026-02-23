@@ -16,7 +16,7 @@
 #endif
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/router.hpp>
-#include <mcp/transport/stdio.hpp>
+#include <mcp/transport/all.hpp>
 
 static auto makeReadyResponseFuture(mcp::jsonrpc::Response response) -> std::future<mcp::jsonrpc::Response>
 {

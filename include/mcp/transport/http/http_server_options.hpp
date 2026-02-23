@@ -12,7 +12,7 @@
 #include <mcp/transport/http/http_endpoint_config.hpp>
 #include <mcp/transport/http/server_tls_configuration.hpp>
 
-namespace mcp::transport
+namespace mcp::transport::http
 {
 
 struct HttpServerOptions
@@ -33,4 +33,4 @@ struct HttpServerOptions
   ErrorReporter errorReporter;
 };
 
-}  // namespace mcp::transport
+}  // namespace mcp::transport::http

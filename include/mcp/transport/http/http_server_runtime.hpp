@@ -8,10 +8,10 @@
 #include <mcp/transport/http/server_request.hpp>
 #include <mcp/transport/http/server_response.hpp>
 
-namespace mcp::transport
+namespace mcp::transport::http
 {
 
-using HttpRequestHandler = std::function<http::ServerResponse(const http::ServerRequest &)>;
+using HttpRequestHandler = std::function<ServerResponse(const ServerRequest &)>;
 
 class HttpServerRuntime
 {
@@ -35,4 +35,4 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace mcp::transport
+}  // namespace mcp::transport::http

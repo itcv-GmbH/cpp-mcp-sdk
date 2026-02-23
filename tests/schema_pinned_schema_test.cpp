@@ -3,7 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <jsoncons/json.hpp>
 #include <mcp/schema/detail/pinned_schema.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 // NOLINTBEGIN(readability-function-cognitive-complexity)
 

@@ -16,7 +16,7 @@
 #include <mcp/detail/ascii.hpp>
 #include <mcp/detail/url.hpp>
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,
 // readability-magic-numbers, bugprone-argument-comment, misc-const-correctness, performance-unnecessary-value-param, performance-no-automatic-move,
@@ -720,11 +720,11 @@ auto defaultHttpFetcher(const DiscoveryHttpRequest &request) -> DiscoveryHttpRes
     throw AuthorizationDiscoveryError(AuthorizationDiscoveryErrorCode::kInvalidInput, "Discovery HTTP fetcher only supports GET requests");
   }
 
-  transport::HttpClientOptions options;
+  transport::http::HttpClientOptions options;
   options.endpointUrl = request.url;
   options.tls.verifyPeer = true;
 
-  transport::HttpClientRuntime runtime(std::move(options));
+  transport::http::HttpClientRuntime runtime(std::move(options));
 
   transport::http::ServerRequest runtimeRequest;
   runtimeRequest.method = ServerRequestMethod::kGet;

@@ -14,7 +14,7 @@
 #include <mcp/client/client.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -177,9 +177,9 @@ auto initializeSucceeded(const mcp::jsonrpc::Response &response) -> bool
 
 auto verifyUnauthorizedHttpStatus(std::string_view endpoint) -> void
 {
-  mcp::transport::HttpClientOptions httpOptions;
+  mcp::transport::http::HttpClientOptions httpOptions;
   httpOptions.endpointUrl = std::string(endpoint);
-  mcp::transport::HttpClientRuntime httpRuntime(std::move(httpOptions));
+  mcp::transport::http::HttpClientRuntime httpRuntime(std::move(httpOptions));
 
   mcp::jsonrpc::Request initializeRequest;
   initializeRequest.id = std::int64_t {1};
@@ -219,7 +219,7 @@ auto main(int argc, char **argv) -> int
     const Options options = parseOptions(argc, argv);
 
     auto client = mcp::Client::create();
-    mcp::transport::HttpClientOptions clientOptions;
+    mcp::transport::http::HttpClientOptions clientOptions;
     clientOptions.endpointUrl = options.endpoint;
     if (options.token.has_value())
     {

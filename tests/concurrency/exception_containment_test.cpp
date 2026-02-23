@@ -12,7 +12,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/sdk/error_reporter.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -117,7 +117,7 @@ TEST_CASE("HttpServerRuntime thread boundary reports failure and supports restar
   std::future<void> errorReportedFuture = errorReportedPromise.get_future();
   std::once_flag errorReportedOnce;
 
-  mcp::transport::HttpServerOptions serverOptions;
+  mcp::transport::http::HttpServerOptions serverOptions;
   serverOptions.endpoint.bindAddress = "127.0.0.1";
   serverOptions.endpoint.bindLocalhostOnly = true;
   serverOptions.endpoint.port = 0;
@@ -129,7 +129,7 @@ TEST_CASE("HttpServerRuntime thread boundary reports failure and supports restar
     }
   };
 
-  mcp::transport::HttpServerRuntime runtime(serverOptions);
+  mcp::transport::http::HttpServerRuntime runtime(serverOptions);
 
   bool shouldThrow = true;
   runtime.setRequestHandler(
@@ -151,9 +151,9 @@ TEST_CASE("HttpServerRuntime thread boundary reports failure and supports restar
   const std::uint16_t initialPort = runtime.localPort();
   REQUIRE(initialPort != 0);
 
-  mcp::transport::HttpClientOptions failingClientOptions;
+  mcp::transport::http::HttpClientOptions failingClientOptions;
   failingClientOptions.endpointUrl = "http://127.0.0.1:" + std::to_string(initialPort) + "/mcp";
-  mcp::transport::HttpClientRuntime failingClient(failingClientOptions);
+  mcp::transport::http::HttpClientRuntime failingClient(failingClientOptions);
 
   mcp::transport::http::ServerRequest request;
   request.method = mcp::transport::http::ServerRequestMethod::kPost;
@@ -174,9 +174,9 @@ TEST_CASE("HttpServerRuntime thread boundary reports failure and supports restar
   REQUIRE_NOTHROW(runtime.start());
   REQUIRE(runtime.isRunning());
 
-  mcp::transport::HttpClientOptions healthyClientOptions;
+  mcp::transport::http::HttpClientOptions healthyClientOptions;
   healthyClientOptions.endpointUrl = "http://127.0.0.1:" + std::to_string(runtime.localPort()) + "/mcp";
-  mcp::transport::HttpClientRuntime healthyClient(healthyClientOptions);
+  mcp::transport::http::HttpClientRuntime healthyClient(healthyClientOptions);
   const mcp::transport::http::ServerResponse response = healthyClient.execute(request);
   REQUIRE(response.statusCode == 200);
   REQUIRE(response.body == "ok");

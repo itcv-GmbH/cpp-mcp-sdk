@@ -22,7 +22,7 @@
 #include <mcp/auth/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/security/crypto_random.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 #ifndef MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY
 #  define MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY 0

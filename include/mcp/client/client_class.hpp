@@ -29,8 +29,8 @@
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/transport/http.hpp>
-#include <mcp/transport/stdio.hpp>
+#include <mcp/transport/all.hpp>
+
 #include <mcp/transport/transport.hpp>
 #include <mcp/util/all.hpp>
 
@@ -148,7 +148,7 @@ public:
 
   auto attachTransport(std::shared_ptr<transport::Transport> transport) -> void;
   auto connectStdio(const transport::StdioClientOptions &options) -> void;
-  auto connectHttp(const transport::HttpClientOptions &options) -> void;
+  auto connectHttp(const transport::http::HttpClientOptions &options) -> void;
   auto connectHttp(transport::http::StreamableHttpClientOptions options, transport::http::StreamableHttpClient::RequestExecutor requestExecutor) -> void;
 
   auto setInitializeConfiguration(ClientInitializeConfiguration configuration) -> void;

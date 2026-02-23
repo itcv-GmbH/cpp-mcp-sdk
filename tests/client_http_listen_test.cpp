@@ -17,7 +17,7 @@
 #include <mcp/http/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 #include <mcp/transport/streamable_http_client_transport.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers,

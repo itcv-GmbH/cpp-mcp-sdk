@@ -16,7 +16,7 @@
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 // NOLINTBEGIN(misc-include-cleaner, readability-function-cognitive-complexity, cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
 // misc-const-correctness, llvm-prefer-static-over-anonymous-namespace)

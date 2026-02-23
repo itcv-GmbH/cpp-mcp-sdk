@@ -17,7 +17,7 @@
 #include <mcp/auth/oauth_client.hpp>
 #include <mcp/auth/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 

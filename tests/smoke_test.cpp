@@ -12,8 +12,8 @@
 #include <mcp/sdk/version.hpp>
 #include <mcp/security/origin_policy.hpp>
 #include <mcp/server/server.hpp>
-#include <mcp/transport/http.hpp>
-#include <mcp/transport/stdio.hpp>
+#include <mcp/transport/all.hpp>
+
 #include <mcp/transport/transport.hpp>
 
 auto main() -> int

@@ -13,7 +13,7 @@
 #include <mcp/server/combined_runner.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -61,7 +61,7 @@ static auto createMinimalServer() -> std::shared_ptr<mcp::Server>
 
 // Helper to verify a port is released by attempting to bind an HTTP server to it
 // Uses retries with exponential backoff to handle TIME_WAIT socket state
-static auto verifyPortReleased(std::uint16_t port, std::chrono::milliseconds timeout) -> std::unique_ptr<mcp::transport::HttpServerRuntime>
+static auto verifyPortReleased(std::uint16_t port, std::chrono::milliseconds timeout) -> std::unique_ptr<mcp::transport::http::HttpServerRuntime>
 {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   auto sleepDuration = std::chrono::milliseconds {50};
@@ -70,11 +70,11 @@ static auto verifyPortReleased(std::uint16_t port, std::chrono::milliseconds tim
   {
     try
     {
-      mcp::transport::HttpServerOptions options;
+      mcp::transport::http::HttpServerOptions options;
       options.endpoint.bindAddress = "127.0.0.1";
       options.endpoint.port = port;
 
-      auto server = std::make_unique<mcp::transport::HttpServerRuntime>(std::move(options));
+      auto server = std::make_unique<mcp::transport::http::HttpServerRuntime>(std::move(options));
       server->start();
 
       if (server->isRunning())
@@ -94,11 +94,11 @@ static auto verifyPortReleased(std::uint16_t port, std::chrono::milliseconds tim
   // Final attempt - return nullptr if it fails (port still in use)
   try
   {
-    mcp::transport::HttpServerOptions options;
+    mcp::transport::http::HttpServerOptions options;
     options.endpoint.bindAddress = "127.0.0.1";
     options.endpoint.port = port;
 
-    auto server = std::make_unique<mcp::transport::HttpServerRuntime>(std::move(options));
+    auto server = std::make_unique<mcp::transport::http::HttpServerRuntime>(std::move(options));
     server->start();
 
     if (server->isRunning())

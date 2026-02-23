@@ -11,7 +11,7 @@
 #include <mcp/transport/http/client_tls_configuration.hpp>
 #include <mcp/transport/http/shared_header_state.hpp>
 
-namespace mcp::transport
+namespace mcp::transport::http
 {
 
 struct HttpClientOptions
@@ -38,4 +38,4 @@ struct HttpClientOptions
   ErrorReporter errorReporter;
 };
 
-}  // namespace mcp::transport
+}  // namespace mcp::transport::http

@@ -8,10 +8,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 using namespace mcp;
 using namespace mcp::transport;
+using namespace mcp::transport::http;
 
 TEST_CASE("HttpServerRuntime start() is idempotent", "[transport][threading]")
 {

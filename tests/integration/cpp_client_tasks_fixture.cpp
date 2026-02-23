@@ -16,7 +16,7 @@
 #include <mcp/client/client.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -101,7 +101,7 @@ auto main(int argc, char **argv) -> int
     const Options options = parseOptions(argc, argv);
 
     auto client = mcp::Client::create();
-    mcp::transport::HttpClientOptions clientOptions;
+    mcp::transport::http::HttpClientOptions clientOptions;
     clientOptions.endpointUrl = options.endpoint;
     if (options.token.has_value())
     {

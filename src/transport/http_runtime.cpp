@@ -20,7 +20,7 @@
 #include <boost/beast/http.hpp>  // NOLINT(misc-include-cleaner)
 #include <mcp/detail/url.hpp>
 #include <mcp/sdk/error_reporter.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 #if MCP_SDK_ENABLE_TLS
 #  include <boost/asio/ssl.hpp>  // NOLINT(misc-include-cleaner)
@@ -35,7 +35,7 @@
 #  include <openssl/ssl.h>
 #endif
 
-namespace mcp::transport
+namespace mcp::transport::http
 {
 namespace
 {
@@ -779,7 +779,7 @@ auto HttpClientRuntime::execute(const http::ServerRequest &request) const -> htt
   return impl_->execute(request);
 }
 
-}  // namespace mcp::transport
+}  // namespace mcp::transport::http
 
 // NOLINTEND(misc-include-cleaner, llvm-prefer-static-over-anonymous-namespace, readability-identifier-naming,
 // cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers, bugprone-unused-return-value, cert-err33-c, hicpp-signed-bitwise,

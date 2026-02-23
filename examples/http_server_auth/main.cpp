@@ -17,7 +17,7 @@
 #include <mcp/server/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {

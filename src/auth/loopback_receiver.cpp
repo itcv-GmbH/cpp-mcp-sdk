@@ -13,7 +13,7 @@
 
 #include <mcp/auth/all.hpp>
 #include <mcp/detail/ascii.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 // NOLINTBEGIN(llvm-prefer-static-over-anonymous-namespace, cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers,
 // hicpp-signed-bitwise, misc-const-correctness, misc-include-cleaner)
@@ -218,13 +218,13 @@ public:
     resultPromise_ = std::promise<LoopbackAuthorizationCode>();
     resultFuture_ = resultPromise_.get_future();
 
-    transport::HttpServerOptions httpOptions;
+    transport::http::HttpServerOptions httpOptions;
     httpOptions.endpoint.path = options_.callbackPath;
     httpOptions.endpoint.bindAddress = "127.0.0.1";
     httpOptions.endpoint.port = 0;
     httpOptions.endpoint.bindLocalhostOnly = true;
 
-    runtime_ = std::make_unique<transport::HttpServerRuntime>(std::move(httpOptions));
+    runtime_ = std::make_unique<transport::http::HttpServerRuntime>(std::move(httpOptions));
     runtime_->setRequestHandler([this](const transport::http::ServerRequest &request) -> transport::http::ServerResponse { return handleRequest(request); });
 
     try
@@ -240,7 +240,7 @@ public:
 
   auto stop() noexcept -> void
   {
-    std::unique_ptr<transport::HttpServerRuntime> runtime;
+    std::unique_ptr<transport::http::HttpServerRuntime> runtime;
     {
       std::scoped_lock lock(mutex_);
       runtime = std::move(runtime_);
@@ -454,7 +454,7 @@ public:
 
 private:
   LoopbackReceiverOptions options_;
-  std::unique_ptr<transport::HttpServerRuntime> runtime_;
+  std::unique_ptr<transport::http::HttpServerRuntime> runtime_;
 
   mutable std::mutex mutex_;
   std::promise<LoopbackAuthorizationCode> resultPromise_;

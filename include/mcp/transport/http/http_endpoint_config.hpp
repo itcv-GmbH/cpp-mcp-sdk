@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-namespace mcp::transport
+namespace mcp::transport::http
 {
 
 struct HttpEndpointConfig
@@ -14,4 +14,4 @@ struct HttpEndpointConfig
   bool bindLocalhostOnly = true;
 };
 
-}  // namespace mcp::transport
+}  // namespace mcp::transport::http

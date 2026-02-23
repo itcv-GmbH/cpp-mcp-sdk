@@ -4,7 +4,7 @@
 #include <memory>
 
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 #include <mcp/transport/transport.hpp>
 
 namespace mcp::transport

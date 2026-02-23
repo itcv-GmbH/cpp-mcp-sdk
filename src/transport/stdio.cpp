@@ -35,7 +35,7 @@
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/error_reporter.hpp>
-#include <mcp/transport/stdio.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace mcp::transport
 {

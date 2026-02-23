@@ -14,7 +14,7 @@
 #include <mcp/server/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -156,9 +156,9 @@ TEST_CASE("StreamableHttpServerRunner creates independent sessions with requireS
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
 
   // Create client runtime
-  mcp_transport::HttpClientOptions clientOptions;
+  mcp_transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = baseUrl;
-  mcp_transport::HttpClientRuntime client(std::move(clientOptions));
+  mcp_transport::http::HttpClientRuntime client(std::move(clientOptions));
 
   // Step 1: Initialize session A (no session ID in request, expect MCP-Session-Id in response)
   mcp_http::ServerResponse initResponseA = client.execute(makeRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeInitializeRequestJson()));
@@ -210,9 +210,9 @@ TEST_CASE("StreamableHttpServerRunner supports SSE endpoint with valid session",
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
 
   // Create client runtime
-  mcp_transport::HttpClientOptions clientOptions;
+  mcp_transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = baseUrl;
-  mcp_transport::HttpClientRuntime client(std::move(clientOptions));
+  mcp_transport::http::HttpClientRuntime client(std::move(clientOptions));
 
   // Initialize session A
   mcp_http::ServerResponse initResponseA = client.execute(makeRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeInitializeRequestJson()));
@@ -256,9 +256,9 @@ TEST_CASE("StreamableHttpServerRunner rejects requests without session when requ
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
 
   // Create client runtime
-  mcp_transport::HttpClientOptions clientOptions;
+  mcp_transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = baseUrl;
-  mcp_transport::HttpClientRuntime client(std::move(clientOptions));
+  mcp_transport::http::HttpClientRuntime client(std::move(clientOptions));
 
   // Try to send a request without a session ID (other than initialize)
   // First initialize to get a session
@@ -307,9 +307,9 @@ TEST_CASE("StreamableHttpServerRunner routes outbound notifications via SSE", "[
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
 
   // Create client runtime
-  mcp_transport::HttpClientOptions clientOptions;
+  mcp_transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = baseUrl;
-  mcp_transport::HttpClientRuntime client(std::move(clientOptions));
+  mcp_transport::http::HttpClientRuntime client(std::move(clientOptions));
 
   // Step 1: Initialize session A (POST initialize), capture sessionIdA
   mcp_http::ServerResponse initResponseA = client.execute(makeRequest(mcp_http::ServerRequestMethod::kPost, "/mcp", makeInitializeRequestJson()));
@@ -441,9 +441,9 @@ TEST_CASE("StreamableHttpServerRunner initializes on first request when requireS
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
 
   // Create client runtime
-  mcp_transport::HttpClientOptions clientOptions;
+  mcp_transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = baseUrl;
-  mcp_transport::HttpClientRuntime client(std::move(clientOptions));
+  mcp_transport::http::HttpClientRuntime client(std::move(clientOptions));
 
   // Verify factory not yet called (server not created yet)
   REQUIRE(factoryCount == 0);

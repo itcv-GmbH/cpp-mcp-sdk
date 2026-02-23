@@ -7,7 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/transport/stdio.hpp>
+#include <mcp/transport/all.hpp>
 
 #ifndef MCP_TEST_STDIO_SUBPROCESS_HELPER_PATH
 #  error "MCP_TEST_STDIO_SUBPROCESS_HELPER_PATH must be defined by CMake."

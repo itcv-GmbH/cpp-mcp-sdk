@@ -13,7 +13,7 @@
 #include <mcp/auth/oauth_client.hpp>
 #include <mcp/auth/all.hpp>
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/transport/http.hpp>
+#include <mcp/transport/all.hpp>
 
 namespace
 {
@@ -310,9 +310,9 @@ auto main() -> int
       callbackDispatchUrl.replace(0, kLoopbackLocalhostPrefix.size(), "http://127.0.0.1:");
     }
 
-    mcp::transport::HttpClientOptions callbackOptions;
+    mcp::transport::http::HttpClientOptions callbackOptions;
     callbackOptions.endpointUrl = callbackDispatchUrl;
-    const mcp::transport::HttpClientRuntime callbackRuntime(callbackOptions);
+    const mcp::transport::http::HttpClientRuntime callbackRuntime(callbackOptions);
     mcp_http::ServerRequest callbackRequest;
     callbackRequest.method = mcp_http::ServerRequestMethod::kGet;
     callbackRequest.path = extractPathAndQuery(callbackDispatchUrl);
