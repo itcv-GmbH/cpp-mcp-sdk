@@ -56,13 +56,13 @@ set(MCP_SDK_SOURCES
     src/server/streamable_http_runner.cpp
     src/server/combined_runner.cpp
     src/schema/validator.cpp
-    src/transport/http_client.cpp
-    src/transport/http_runtime.cpp
-    src/transport/http_server.cpp
+    src/transport/http/client.cpp
+    src/transport/http/runtime.cpp
+    src/transport/http/server.cpp
     src/transport/stdio.cpp
     src/transport/streamable_http_client_transport.cpp
     src/util/tasks.cpp
-    src/version.cpp
+    src/sdk/version.cpp
 )
 
 if(MCP_SDK_ENABLE_AUTH)
