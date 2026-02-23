@@ -1,7 +1,7 @@
 # Dependency Graph
 
 ## Phase 1: Inventory And Decisions
-- [ ] `task-001`: Inventory `src/**/*.cpp` namespace-to-path violations
+- [x] `task-001`: Inventory `src/**/*.cpp` namespace-to-path violations
 
 ## Phase 2: Namespace And Path Alignment
 - [ ] `task-002`: Relocate `src/**/*.cpp` files to align with namespace layout
