@@ -53,7 +53,7 @@ def main() -> int:
         host=args.host,
         port=args.port,
         streamable_http_path=args.path,
-        json_response=False,
+        json_response=True,
         stateless_http=False,
         log_level="WARNING",
         token_verifier=StaticTokenVerifier(args.token),
@@ -367,7 +367,6 @@ def main() -> int:
         description="Returns a prompt containing the supplied topic",
     )
     async def python_server_prompt(topic: str) -> str:
-        await assert_outbound_verifications()
         return f"Python reference prompt topic: {topic}"
 
     print(

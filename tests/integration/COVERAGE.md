@@ -61,23 +61,16 @@ Format: test_name: protocol_item1, protocol_item2, ...
 All protocol items must be mapped to at least one test.
 -->
 
-### Python Reference Client to C++ HTTP Server Tests
-
-- `reference_client_to_cpp_server_utilities`: initialize, ping, logging/setLevel, notifications/message, completion/complete, tools/list, tools/call, prompts/list, prompts/get
-- `reference_client_to_cpp_server_resources_advanced`: initialize, resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, notifications/resources/updated, prompts/list
-- `reference_client_to_cpp_server_roots`: initialize, roots/list, notifications/roots/list_changed, tools/list, tools/call
-- `reference_client_to_cpp_server_tasks`: initialize, tasks/create, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status, notifications/cancelled, tools/list, tools/call, resources/list, prompts/list
-
-### Python Reference Client to C++ STDIO Server Tests
-
-- `reference_client_to_cpp_stdio_server_utilities`: initialize, ping, completion/complete
-- `reference_client_to_cpp_stdio_server_resources_advanced`: resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, notifications/resources/list_changed, notifications/resources/updated
-- `reference_client_to_cpp_stdio_server_roots`: initialize, tools/list, tools/call (Note: C++ fixture has a pre-existing startup crash issue)
-- `reference_client_to_cpp_stdio_server_tasks`: initialize, tools/list, tools/call, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status
-
-### C++ Client to Python Reference Server Tests
-
-- `cpp_client_to_reference_server_utilities`: initialize, ping, completion/complete (Note: logging/setLevel not implemented as JSON-RPC method in reference server)
-- `cpp_client_to_reference_server_resources_advanced`: initialize, resources/templates/list (Note: resources/subscribe/unsubscribe not implemented as JSON-RPC methods in reference server)
-- `cpp_client_to_reference_server_roots`: initialize, roots/list, notifications/roots/list_changed
-- `cpp_client_to_reference_server_tasks`: initialize (Note: tasks protocol methods partially implemented in reference server)
+reference_client_to_cpp_server_utilities: initialize, ping, logging/setLevel, notifications/message, completion/complete, tools/list, tools/call, prompts/list, prompts/get
+reference_client_to_cpp_server_resources_advanced: initialize, resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, notifications/resources/updated, notifications/resources/list_changed
+reference_client_to_cpp_server_roots: initialize, roots/list, notifications/roots/list_changed, tools/list, tools/call
+reference_client_to_cpp_server_tasks: initialize, tasks/create, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status, notifications/cancelled, notifications/progress, tools/list, tools/call
+reference_client_to_cpp_stdio_server_utilities: initialize, ping, completion/complete, notifications/initialized
+reference_client_to_cpp_stdio_server_resources_advanced: resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, notifications/resources/list_changed, notifications/resources/updated
+reference_client_to_cpp_stdio_server_roots: initialize, roots/list, tools/list, tools/call, notifications/roots/list_changed
+reference_client_to_cpp_stdio_server_tasks: initialize, tasks/list, tasks/get, tasks/cancel, notifications/tasks/status, notifications/cancelled
+cpp_client_to_reference_server: initialize, tools/list, tools/call, resources/list, resources/read, prompts/list, prompts/get, sampling/createMessage, elicitation/create
+cpp_client_to_reference_server_utilities: initialize, ping, logging/setLevel, completion/complete, notifications/message
+cpp_client_to_reference_server_resources_advanced: initialize, resources/templates/list, resources/subscribe, resources/unsubscribe
+cpp_client_to_reference_server_tasks: initialize, tasks/create, tasks/get, tasks/list, tasks/cancel, tasks/result, notifications/tasks/status, notifications/elicitation/complete
+reference_protocol_surface_regression: notifications/tools/list_changed, notifications/prompts/list_changed

@@ -110,6 +110,7 @@ auto main(int argc, char **argv) -> int
     {
       clientOptions.bearerToken = options.token;
     }
+    clientOptions.enableGetListen = false;
 
     client->connectHttp(clientOptions);
     client->start();

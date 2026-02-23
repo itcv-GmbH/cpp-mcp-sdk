@@ -369,7 +369,7 @@ add_test(
         "${MCP_SDK_INTEGRATION_PYTHON_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reference_client_to_cpp_stdio_server_roots.py"
         --cpp-server
-        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_stdio_server_roots>"
+        "$<TARGET_FILE:mcp_sdk_test_integration_cpp_stdio_server>"
 )
 
 set_tests_properties(
