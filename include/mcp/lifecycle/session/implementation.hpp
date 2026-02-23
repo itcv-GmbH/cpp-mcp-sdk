@@ -8,6 +8,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Describes MCP implementation metadata.
@@ -39,4 +43,6 @@ private:
   std::optional<std::vector<Icon>> icons_;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

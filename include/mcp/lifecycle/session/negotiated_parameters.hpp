@@ -10,6 +10,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Stores negotiated version and capabilities.
@@ -41,4 +45,6 @@ private:
   std::optional<std::string> instructions_;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

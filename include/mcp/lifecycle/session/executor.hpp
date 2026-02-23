@@ -4,6 +4,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Abstract executor interface for task scheduling.
@@ -20,4 +24,6 @@ public:
   virtual auto post(std::function<void()> task) -> void = 0;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

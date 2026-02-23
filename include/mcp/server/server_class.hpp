@@ -20,6 +20,7 @@
 #include <mcp/server/resources.hpp>
 #include <mcp/server/server_configuration.hpp>
 #include <mcp/server/tools.hpp>
+#include <mcp/session.hpp>
 #include <mcp/util/all.hpp>
 
 namespace mcp
@@ -30,7 +31,7 @@ class Server
 public:
   using CompletionHandler = std::function<CompletionResult(const CompletionRequest &)>;
 
-  static auto create(SessionOptions options = {}) -> std::shared_ptr<Server>;
+  static auto create(lifecycle::session::SessionOptions options = {}) -> std::shared_ptr<Server>;
   static auto create(ServerConfiguration configuration) -> std::shared_ptr<Server>;
 
   explicit Server(std::shared_ptr<Session> session);

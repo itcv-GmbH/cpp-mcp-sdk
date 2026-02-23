@@ -3,11 +3,12 @@
 #include <memory>
 
 #include <mcp/jsonrpc/all.hpp>
+#include <mcp/session.hpp>
 
 namespace mcp
 {
 
-class Session;
+// Session is now defined in <mcp/session.hpp> as an alias for lifecycle::Session
 
 namespace transport
 {

@@ -2,6 +2,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Resources capability.
@@ -12,4 +16,6 @@ struct ResourcesCapability
   bool listChanged = false;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

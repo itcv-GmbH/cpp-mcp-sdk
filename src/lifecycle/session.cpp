@@ -13,8 +13,8 @@
 
 #include <jsoncons/basic_json.hpp>
 #include <mcp/detail/initialize_codec.hpp>
-#include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/all.hpp>
+#include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/router_options.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/errors.hpp>
@@ -23,6 +23,11 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+
+// Bring session types into lifecycle namespace for implementation
+using namespace session;
 
 static constexpr std::string_view kInitializeMethod = "initialize";
 static constexpr std::string_view kPingMethod = "ping";
@@ -807,4 +812,5 @@ auto Session::checkCapability(std::string_view capability) const -> bool
   return false;
 }
 
+}  // namespace lifecycle
 }  // namespace mcp

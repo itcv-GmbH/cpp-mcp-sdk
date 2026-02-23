@@ -9,7 +9,8 @@
 // NOLINTBEGIN(readability-function-cognitive-complexity, misc-const-correctness, bugprone-unchecked-optional-access, google-build-using-namespace, abseil-string-find-str-contains,
 // misc-include-cleaner)
 
-using namespace mcp;
+using namespace mcp::lifecycle;
+using namespace mcp::lifecycle::session;
 
 TEST_CASE("Session starts in Created state", "[lifecycle][session]")
 {

@@ -6,6 +6,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Represents an optionally-sized icon for UI display.
@@ -31,4 +35,6 @@ private:
   std::optional<std::string> theme_;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

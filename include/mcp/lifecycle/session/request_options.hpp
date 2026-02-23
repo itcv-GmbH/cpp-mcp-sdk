@@ -4,6 +4,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Options for sending a request.
@@ -14,4 +18,6 @@ struct RequestOptions
   bool cancelOnTimeout = true;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

@@ -13,6 +13,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Capabilities a server may support.
@@ -49,4 +53,6 @@ private:
   std::optional<jsoncons::json> experimental_;  // Passthrough for experimental features.
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

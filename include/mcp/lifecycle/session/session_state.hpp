@@ -4,6 +4,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief States in the session lifecycle.
@@ -18,4 +22,6 @@ enum class SessionState : std::uint8_t
   kStopped,  ///< Session stopped.
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

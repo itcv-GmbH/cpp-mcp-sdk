@@ -2,6 +2,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Tasks capability.
@@ -15,4 +19,6 @@ struct TasksCapability
   bool toolsCall = false;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

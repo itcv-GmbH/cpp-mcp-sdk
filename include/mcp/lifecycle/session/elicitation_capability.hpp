@@ -2,6 +2,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Elicitation capability.
@@ -12,4 +16,6 @@ struct ElicitationCapability
   bool url = false;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

@@ -26,8 +26,8 @@
 #include <mcp/client/sampling.hpp>
 #include <mcp/detail/inbound_loop.hpp>
 #include <mcp/detail/initialize_codec.hpp>
-#include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/all.hpp>
+#include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/router_options.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/schema/format_diagnostics.hpp>
@@ -37,8 +37,8 @@
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
+#include <mcp/session.hpp>
 #include <mcp/transport/all.hpp>
-
 #include <mcp/transport/streamable_http_client_transport.hpp>
 #include <mcp/transport/transport.hpp>
 #include <mcp/util/all.hpp>
@@ -1166,13 +1166,13 @@ private:
   ErrorReporter errorReporter_;
 };
 
-auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
+auto Client::create(lifecycle::session::SessionOptions options) -> std::shared_ptr<Client>
 {
   // Extract error reporter before moving options
-  ErrorReporter errorReporter = std::move(options.errorReporter);
+  sdk::ErrorReporter errorReporter = std::move(options.errorReporter);
 
   // NOLINTNEXTLINE(modernize-return-braced-init-list)
-  return std::shared_ptr<Client>(new Client(std::make_shared<Session>(std::move(options)), std::move(errorReporter)),
+  return std::shared_ptr<Client>(new Client(std::make_shared<lifecycle::Session>(std::move(options)), std::move(errorReporter)),
                                  [](Client *client) noexcept -> void
                                  {
                                    if (!client)
@@ -1209,7 +1209,7 @@ auto Client::create(SessionOptions options) -> std::shared_ptr<Client>
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity) - Complex initialization required by MCP protocol
-Client::Client(std::shared_ptr<Session> session, ErrorReporter errorReporter)
+Client::Client(std::shared_ptr<lifecycle::Session> session, sdk::ErrorReporter errorReporter)
   : session_(std::move(session))
   , asyncWorkPool_(std::make_unique<boost::asio::thread_pool>(kClientAsyncWorkerCount))
   , callbackDispatchPool_(std::make_unique<boost::asio::thread_pool>(kClientCallbackWorkerCount))
@@ -1221,7 +1221,7 @@ Client::Client(std::shared_ptr<Session> session, ErrorReporter errorReporter)
     throw std::invalid_argument("Client requires a non-null session");
   }
 
-  session_->setRole(SessionRole::kClient);
+  session_->setRole(lifecycle::session::SessionRole::kClient);
 
   router_.setOutboundMessageSender([this](const jsonrpc::RequestContext &, jsonrpc::Message message) -> void { dispatchOutboundMessage(std::move(message)); });
 

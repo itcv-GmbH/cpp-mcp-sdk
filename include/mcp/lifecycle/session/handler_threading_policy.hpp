@@ -4,6 +4,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Policy for handler threading behavior.
@@ -14,4 +18,6 @@ enum class HandlerThreadingPolicy : std::uint8_t
   kExecutor,  ///< Handlers are dispatched to the configured Executor.
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

@@ -9,6 +9,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Configuration options for a Session.
@@ -25,4 +29,6 @@ struct SessionOptions
   ErrorReporter errorReporter;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

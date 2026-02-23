@@ -14,7 +14,7 @@ namespace
 {
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity, llvm-prefer-static-over-anonymous-namespace, misc-include-cleaner)
-auto parseIcon(const jsoncons::json &iconJson) -> std::optional<Icon>
+auto parseIcon(const jsoncons::json &iconJson) -> std::optional<lifecycle::session::Icon>
 {
   if (!iconJson.is_object() || !iconJson.contains("src") || !iconJson["src"].is_string())
   {
@@ -48,12 +48,12 @@ auto parseIcon(const jsoncons::json &iconJson) -> std::optional<Icon>
     theme = iconJson["theme"].as<std::string>();
   }
 
-  return Icon {iconJson["src"].as<std::string>(), std::move(mimeType), std::move(sizes), std::move(theme)};
+  return lifecycle::session::Icon {iconJson["src"].as<std::string>(), std::move(mimeType), std::move(sizes), std::move(theme)};
 }
 
 }  // namespace
 
-auto iconToJson(const Icon &icon) -> jsoncons::json
+auto iconToJson(const lifecycle::session::Icon &icon) -> jsoncons::json
 {
   jsoncons::json iconJson = jsoncons::json::object();
   iconJson["src"] = icon.src();
@@ -76,7 +76,7 @@ auto iconToJson(const Icon &icon) -> jsoncons::json
   return iconJson;
 }
 
-auto implementationToJson(const Implementation &implementation) -> jsoncons::json
+auto implementationToJson(const lifecycle::session::Implementation &implementation) -> jsoncons::json
 {
   jsoncons::json implementationJson = jsoncons::json::object();
   implementationJson["name"] = implementation.name();
@@ -111,7 +111,7 @@ auto implementationToJson(const Implementation &implementation) -> jsoncons::jso
   return implementationJson;
 }
 
-auto parseImplementation(const jsoncons::json &implementationJson, std::string defaultName, std::string defaultVersion) -> Implementation
+auto parseImplementation(const jsoncons::json &implementationJson, std::string defaultName, std::string defaultVersion) -> lifecycle::session::Implementation
 {
   if (!implementationJson.is_object())
   {
@@ -141,10 +141,10 @@ auto parseImplementation(const jsoncons::json &implementationJson, std::string d
     websiteUrl = implementationJson["websiteUrl"].as<std::string>();
   }
 
-  std::optional<std::vector<Icon>> icons;
+  std::optional<std::vector<lifecycle::session::Icon>> icons;
   if (implementationJson.contains("icons") && implementationJson["icons"].is_array())
   {
-    std::vector<Icon> parsedIcons;
+    std::vector<lifecycle::session::Icon> parsedIcons;
     for (const auto &iconValue : implementationJson["icons"].array_range())
     {
       const auto parsedIcon = parseIcon(iconValue);
@@ -161,7 +161,7 @@ auto parseImplementation(const jsoncons::json &implementationJson, std::string d
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-auto clientCapabilitiesToJson(const ClientCapabilities &capabilities) -> jsoncons::json
+auto clientCapabilitiesToJson(const lifecycle::session::ClientCapabilities &capabilities) -> jsoncons::json
 {
   jsoncons::json capabilitiesJson = jsoncons::json::object();
 
@@ -256,17 +256,17 @@ auto clientCapabilitiesToJson(const ClientCapabilities &capabilities) -> jsoncon
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> ClientCapabilities
+auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> lifecycle::session::ClientCapabilities
 {
   if (!capabilitiesJson.is_object())
   {
-    return ClientCapabilities {};
+    return lifecycle::session::ClientCapabilities {};
   }
 
-  std::optional<RootsCapability> roots;
+  std::optional<lifecycle::session::RootsCapability> roots;
   if (capabilitiesJson.contains("roots") && capabilitiesJson["roots"].is_object())
   {
-    RootsCapability rootsCapability;
+    lifecycle::session::RootsCapability rootsCapability;
     if (capabilitiesJson["roots"].contains("listChanged") && capabilitiesJson["roots"]["listChanged"].is_bool())
     {
       rootsCapability.listChanged = capabilitiesJson["roots"]["listChanged"].as<bool>();
@@ -275,20 +275,20 @@ auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> ClientCa
     roots = rootsCapability;
   }
 
-  std::optional<SamplingCapability> sampling;
+  std::optional<lifecycle::session::SamplingCapability> sampling;
   if (capabilitiesJson.contains("sampling") && capabilitiesJson["sampling"].is_object())
   {
-    SamplingCapability samplingCapability;
+    lifecycle::session::SamplingCapability samplingCapability;
     samplingCapability.context = capabilitiesJson["sampling"].contains("context") && capabilitiesJson["sampling"]["context"].is_object();
     samplingCapability.tools = capabilitiesJson["sampling"].contains("tools") && capabilitiesJson["sampling"]["tools"].is_object();
     sampling = samplingCapability;
   }
 
-  std::optional<ElicitationCapability> elicitation;
+  std::optional<lifecycle::session::ElicitationCapability> elicitation;
   if (capabilitiesJson.contains("elicitation") && capabilitiesJson["elicitation"].is_object())
   {
     const auto &elicitationJson = capabilitiesJson["elicitation"];
-    ElicitationCapability elicitationCapability;
+    lifecycle::session::ElicitationCapability elicitationCapability;
     elicitationCapability.form = elicitationJson.contains("form") && elicitationJson["form"].is_object();
     elicitationCapability.url = elicitationJson.contains("url") && elicitationJson["url"].is_object();
     if (!elicitationCapability.form && !elicitationCapability.url && elicitationJson.empty())
@@ -299,10 +299,10 @@ auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> ClientCa
     elicitation = elicitationCapability;
   }
 
-  std::optional<TasksCapability> tasks;
+  std::optional<lifecycle::session::TasksCapability> tasks;
   if (capabilitiesJson.contains("tasks") && capabilitiesJson["tasks"].is_object())
   {
-    TasksCapability tasksCapability;
+    lifecycle::session::TasksCapability tasksCapability;
     const auto &tasksJson = capabilitiesJson["tasks"];
     tasksCapability.list = tasksJson.contains("list") && tasksJson["list"].is_object();
     tasksCapability.cancel = tasksJson.contains("cancel") && tasksJson["cancel"].is_object();
@@ -339,7 +339,7 @@ auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> ClientCa
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-auto serverCapabilitiesToJson(const ServerCapabilities &capabilities) -> jsoncons::json
+auto serverCapabilitiesToJson(const lifecycle::session::ServerCapabilities &capabilities) -> jsoncons::json
 {
   jsoncons::json capabilitiesJson = jsoncons::json::object();
 
@@ -425,29 +425,29 @@ auto serverCapabilitiesToJson(const ServerCapabilities &capabilities) -> jsoncon
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> ServerCapabilities
+auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> lifecycle::session::ServerCapabilities
 {
   if (!capabilitiesJson.is_object())
   {
-    return ServerCapabilities {};
+    return lifecycle::session::ServerCapabilities {};
   }
 
-  std::optional<LoggingCapability> logging;
+  std::optional<lifecycle::session::LoggingCapability> logging;
   if (capabilitiesJson.contains("logging") && capabilitiesJson["logging"].is_object())
   {
-    logging = LoggingCapability {};
+    logging = lifecycle::session::LoggingCapability {};
   }
 
-  std::optional<CompletionsCapability> completions;
+  std::optional<lifecycle::session::CompletionsCapability> completions;
   if (capabilitiesJson.contains("completions") && capabilitiesJson["completions"].is_object())
   {
-    completions = CompletionsCapability {};
+    completions = lifecycle::session::CompletionsCapability {};
   }
 
-  std::optional<PromptsCapability> prompts;
+  std::optional<lifecycle::session::PromptsCapability> prompts;
   if (capabilitiesJson.contains("prompts") && capabilitiesJson["prompts"].is_object())
   {
-    PromptsCapability promptsCapability;
+    lifecycle::session::PromptsCapability promptsCapability;
     if (capabilitiesJson["prompts"].contains("listChanged") && capabilitiesJson["prompts"]["listChanged"].is_bool())
     {
       promptsCapability.listChanged = capabilitiesJson["prompts"]["listChanged"].as<bool>();
@@ -456,10 +456,10 @@ auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> ServerCa
     prompts = promptsCapability;
   }
 
-  std::optional<ResourcesCapability> resources;
+  std::optional<lifecycle::session::ResourcesCapability> resources;
   if (capabilitiesJson.contains("resources") && capabilitiesJson["resources"].is_object())
   {
-    ResourcesCapability resourcesCapability;
+    lifecycle::session::ResourcesCapability resourcesCapability;
     if (capabilitiesJson["resources"].contains("subscribe") && capabilitiesJson["resources"]["subscribe"].is_bool())
     {
       resourcesCapability.subscribe = capabilitiesJson["resources"]["subscribe"].as<bool>();
@@ -473,10 +473,10 @@ auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> ServerCa
     resources = resourcesCapability;
   }
 
-  std::optional<ToolsCapability> tools;
+  std::optional<lifecycle::session::ToolsCapability> tools;
   if (capabilitiesJson.contains("tools") && capabilitiesJson["tools"].is_object())
   {
-    ToolsCapability toolsCapability;
+    lifecycle::session::ToolsCapability toolsCapability;
     if (capabilitiesJson["tools"].contains("listChanged") && capabilitiesJson["tools"]["listChanged"].is_bool())
     {
       toolsCapability.listChanged = capabilitiesJson["tools"]["listChanged"].as<bool>();
@@ -485,10 +485,10 @@ auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> ServerCa
     tools = toolsCapability;
   }
 
-  std::optional<TasksCapability> tasks;
+  std::optional<lifecycle::session::TasksCapability> tasks;
   if (capabilitiesJson.contains("tasks") && capabilitiesJson["tasks"].is_object())
   {
-    TasksCapability tasksCapability;
+    lifecycle::session::TasksCapability tasksCapability;
     const auto &tasksJson = capabilitiesJson["tasks"];
     tasksCapability.list = tasksJson.contains("list") && tasksJson["list"].is_object();
     tasksCapability.cancel = tasksJson.contains("cancel") && tasksJson["cancel"].is_object();

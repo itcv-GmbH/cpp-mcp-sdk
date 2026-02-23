@@ -14,8 +14,8 @@ inline constexpr std::size_t kDefaultMaxPaginationPages = 1024U;
 struct ClientInitializeConfiguration
 {
   std::optional<std::string> protocolVersion;
-  std::optional<ClientCapabilities> capabilities;
-  std::optional<Implementation> clientInfo;
+  std::optional<lifecycle::session::ClientCapabilities> capabilities;
+  std::optional<lifecycle::session::Implementation> clientInfo;
 };
 
 }  // namespace mcp

@@ -26,11 +26,12 @@
 #include <mcp/client/types.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
+#include <mcp/sdk/error_reporter.hpp>
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
+#include <mcp/session.hpp>
 #include <mcp/transport/all.hpp>
-
 #include <mcp/transport/transport.hpp>
 #include <mcp/util/all.hpp>
 
@@ -49,7 +50,7 @@ namespace mcp
  *
  * @par Thread-Safe Methods (concurrent invocation allowed):
  * - All query methods: session(), initializeConfiguration(), negotiatedProtocolVersion(),
- *   negotiatedParameters(), negotiatedClientCapabilities(), negotiatedServerCapabilities(),
+ *   negotiatedParameters(), negotiatedlifecycle::session::ClientCapabilities(), negotiatedlifecycle::session::ServerCapabilities(),
  *   supportedProtocolVersions()
  * - All request methods: initialize(), listTools(), callTool(), listResources(),
  *   readResource(), listResourceTemplates(), listPrompts(), getPrompt()
@@ -80,7 +81,7 @@ namespace mcp
  * - Handler callbacks (RootsProvider, SamplingCreateMessageHandler, FormElicitationHandler,
  *   UrlElicitationHandler, UrlElicitationCompletionHandler): Invoked directly on the router/I/O
  *   thread. These callbacks must be fast and non-blocking.
- * - ResponseCallback (used with sendRequestAsync): Dispatched to an internal single-threaded
+ * - lifecycle::session::ResponseCallback (used with sendRequestAsync): Dispatched to an internal single-threaded
  *   boost::asio::thread_pool to avoid blocking the I/O thread.
  *
  * Callback types and their threading:
@@ -89,7 +90,7 @@ namespace mcp
  * - FormElicitationHandler - Serial invocation, router/I/O thread
  * - UrlElicitationHandler - Serial invocation, router/I/O thread
  * - UrlElicitationCompletionHandler - Serial invocation, router/I/O thread
- * - ResponseCallback (async) - Serial invocation, internal callback dispatch thread pool
+ * - lifecycle::session::ResponseCallback (async) - Serial invocation, internal callback dispatch thread pool
  *
  * @section Exceptions
  *
@@ -134,7 +135,7 @@ namespace mcp
 class Client : public std::enable_shared_from_this<Client>
 {
 public:
-  static auto create(SessionOptions options = {}) -> std::shared_ptr<Client>;
+  static auto create(lifecycle::session::SessionOptions options = {}) -> std::shared_ptr<Client>;
 
   explicit Client(std::shared_ptr<Session> session, ErrorReporter errorReporter = {});
   ~Client() noexcept;
@@ -153,15 +154,15 @@ public:
 
   auto setInitializeConfiguration(ClientInitializeConfiguration configuration) -> void;
   auto initializeConfiguration() const -> ClientInitializeConfiguration;
-  auto initialize(RequestOptions options = {}) -> std::future<jsonrpc::Response>;
+  auto initialize(lifecycle::session::RequestOptions options = {}) -> std::future<jsonrpc::Response>;
 
-  auto listTools(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListToolsResult;
-  auto callTool(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), RequestOptions options = {}) -> CallToolResult;
-  auto listResources(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListResourcesResult;
-  auto readResource(const std::string &uri, RequestOptions options = {}) -> ReadResourceResult;
-  auto listResourceTemplates(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListResourceTemplatesResult;
-  auto listPrompts(std::optional<std::string> cursor = std::nullopt, RequestOptions options = {}) -> ListPromptsResult;
-  auto getPrompt(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), RequestOptions options = {}) -> PromptGetResult;
+  auto listTools(std::optional<std::string> cursor = std::nullopt, lifecycle::session::RequestOptions options = {}) -> ListToolsResult;
+  auto callTool(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), lifecycle::session::RequestOptions options = {}) -> CallToolResult;
+  auto listResources(std::optional<std::string> cursor = std::nullopt, lifecycle::session::RequestOptions options = {}) -> ListResourcesResult;
+  auto readResource(const std::string &uri, lifecycle::session::RequestOptions options = {}) -> ReadResourceResult;
+  auto listResourceTemplates(std::optional<std::string> cursor = std::nullopt, lifecycle::session::RequestOptions options = {}) -> ListResourceTemplatesResult;
+  auto listPrompts(std::optional<std::string> cursor = std::nullopt, lifecycle::session::RequestOptions options = {}) -> ListPromptsResult;
+  auto getPrompt(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), lifecycle::session::RequestOptions options = {}) -> PromptGetResult;
   auto setRootsProvider(RootsProvider provider) -> void;
   auto clearRootsProvider() -> void;
   auto notifyRootsListChanged() -> bool;
@@ -231,8 +232,9 @@ public:
   auto start() -> void;
   auto stop() -> void;
 
-  auto sendRequest(std::string method, jsonrpc::JsonValue params, RequestOptions options = {}) -> std::future<jsonrpc::Response>;
-  auto sendRequestAsync(std::string method, jsonrpc::JsonValue params, const ResponseCallback &callback, RequestOptions options = {}) -> void;
+  auto sendRequest(std::string method, jsonrpc::JsonValue params, lifecycle::session::RequestOptions options = {}) -> std::future<jsonrpc::Response>;
+  auto sendRequestAsync(std::string method, jsonrpc::JsonValue params, const lifecycle::session::ResponseCallback &callback, lifecycle::session::RequestOptions options = {})
+    -> void;
   auto sendNotification(std::string method, std::optional<jsonrpc::JsonValue> params = std::nullopt) -> void;
 
   auto registerRequestHandler(std::string method, jsonrpc::RequestHandler handler) -> void;
@@ -244,9 +246,9 @@ public:
   auto handleMessage(const jsonrpc::RequestContext &context, const jsonrpc::Message &message) -> void;
 
   auto negotiatedProtocolVersion() const noexcept -> std::optional<std::string_view>;
-  auto negotiatedParameters() const -> std::optional<NegotiatedParameters>;
-  auto negotiatedClientCapabilities() const -> std::optional<ClientCapabilities>;
-  auto negotiatedServerCapabilities() const -> std::optional<ServerCapabilities>;
+  auto negotiatedParameters() const -> std::optional<lifecycle::session::NegotiatedParameters>;
+  auto negotiatedClientCapabilities() const -> std::optional<lifecycle::session::ClientCapabilities>;
+  auto negotiatedServerCapabilities() const -> std::optional<lifecycle::session::ServerCapabilities>;
 
   auto supportedProtocolVersions() const -> std::vector<std::string>;
 

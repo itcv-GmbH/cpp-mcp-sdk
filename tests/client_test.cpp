@@ -314,7 +314,7 @@ TEST_CASE("Client blocks feature requests before initialize", "[client][core][li
 
 TEST_CASE("Client initialize defaults to latest supported version and auto-sends initialized", "[client][core][initialize]")
 {
-  mcp::SessionOptions options;
+  mcp::lifecycle::session::SessionOptions options;
   options.supportedProtocolVersions = {"2024-11-05", "2025-11-25"};
 
   auto client = mcp::Client::create(options);

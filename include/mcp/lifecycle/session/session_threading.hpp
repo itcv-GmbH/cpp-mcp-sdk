@@ -7,6 +7,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Threading configuration for a session.
@@ -17,4 +21,6 @@ struct SessionThreading
   std::shared_ptr<Executor> handlerExecutor;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp

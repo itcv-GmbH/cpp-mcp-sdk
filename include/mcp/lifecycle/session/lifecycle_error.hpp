@@ -4,6 +4,10 @@
 
 namespace mcp
 {
+namespace lifecycle
+{
+namespace session
+{
 
 /**
  * @brief Exception thrown on invalid session state transitions or operations in wrong state.
@@ -14,4 +18,6 @@ public:
   using std::runtime_error::runtime_error;
 };
 
+}  // namespace session
+}  // namespace lifecycle
 }  // namespace mcp
