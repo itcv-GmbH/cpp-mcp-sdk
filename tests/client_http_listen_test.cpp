@@ -41,7 +41,7 @@ auto makeHttpClientOptions() -> mcp_http::StreamableHttpClientOptions
 
 // Test that demonstrates server-initiated JSON-RPC requests delivered over GET SSE stream
 // Complete round-trip: server enqueues roots/list -> client polls -> roots provider invoked -> response sent back
-TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over GET SSE", "[client][http][listen]")
+TEST_CASE("mcp::client::Client receives and responds to server-initiated roots/list over GET SSE", "[client][http][listen]")
 {
   // Track server-side state for responses
   std::mutex responseMutex;
@@ -119,14 +119,14 @@ TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over
   // Create request executor that delegates to in-process server
   auto requestExecutor = [&server](const mcp_http::ServerRequest &request) -> mcp_http::ServerResponse { return server.handleRequest(request); };
 
-  // Step 1: Create mcp::Client instance
-  auto client = mcp::Client::create();
+  // Step 1: Create mcp::client::Client instance
+  auto client = mcp::client::Client::create();
 
   // Step 2: Configure roots provider
   client->setRootsProvider(
-    [](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry>
+    [](const mcp::client::RootsListContext &) -> std::vector<mcp::client::RootEntry>
     {
-      mcp::RootEntry entry;
+      mcp::client::RootEntry entry;
       entry.uri = "file:///test";
       entry.name = "Test Root";
       return {entry};
@@ -144,7 +144,7 @@ TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over
   mcp::lifecycle::session::RootsCapability rootsCapability;
   rootsCapability.listChanged = true;
 
-  mcp::ClientInitializeConfiguration initConfig;
+  mcp::client::ClientInitializeConfiguration initConfig;
   initConfig.clientInfo = mcp::lifecycle::session::Implementation {"test-client", "1.0.0"};
   initConfig.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(initConfig);

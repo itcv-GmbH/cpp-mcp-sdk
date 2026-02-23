@@ -18,7 +18,7 @@
 
 auto main() -> int
 {
-  const std::size_t apiSurfaceSanity = sizeof(mcp::auth::AuthProvider *) + sizeof(mcp::Client *) + sizeof(mcp::JsonRpcError) + sizeof(mcp::jsonrpc::Message)
+  const std::size_t apiSurfaceSanity = sizeof(mcp::auth::AuthProvider *) + sizeof(mcp::client::Client *) + sizeof(mcp::JsonRpcError) + sizeof(mcp::jsonrpc::Message)
     + sizeof(mcp::jsonrpc::Router) + sizeof(mcp::lifecycle::Session *) + sizeof(mcp::server::Server *) + sizeof(mcp::transport::StdioTransport *) + sizeof(mcp::transport::Transport *)
     + sizeof(mcp::security::OriginPolicy);
 

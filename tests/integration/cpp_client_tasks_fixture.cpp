@@ -100,7 +100,7 @@ auto main(int argc, char **argv) -> int
   {
     const Options options = parseOptions(argc, argv);
 
-    auto client = mcp::Client::create();
+    auto client = mcp::client::Client::create();
     mcp::transport::http::HttpClientOptions clientOptions;
     clientOptions.endpointUrl = options.endpoint;
     if (options.token.has_value())

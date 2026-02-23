@@ -256,7 +256,7 @@ TEST_CASE("Legacy client fallback connects and lists tools when enabled", "[conf
 
     LegacyHttpSseFixture fixture(fallbackStatus);
 
-    auto client = mcp::Client::create();
+    auto client = mcp::client::Client::create();
     mcp_transport::http::HttpClientOptions clientOptions;
     clientOptions.endpointUrl = fixture.endpointUrl();
     clientOptions.enableLegacyHttpSseFallback = true;
@@ -267,7 +267,7 @@ TEST_CASE("Legacy client fallback connects and lists tools when enabled", "[conf
     const auto initializeResponse = client->initialize().get();
     REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initializeResponse));
 
-    const mcp::ListToolsResult tools = client->listTools();
+    const mcp::client::ListToolsResult tools = client->listTools();
     REQUIRE(tools.tools.size() == 1);
     REQUIRE(tools.tools.front().name == "legacy-tool");
 
@@ -283,7 +283,7 @@ TEST_CASE("Legacy client fallback disabled keeps initialize failure", "[conforma
 {
   LegacyHttpSseFixture fixture(404);
 
-  auto client = mcp::Client::create();
+  auto client = mcp::client::Client::create();
   mcp_transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = fixture.endpointUrl();
   clientOptions.enableLegacyHttpSseFallback = false;
@@ -304,7 +304,7 @@ TEST_CASE("Legacy client fallback does not trigger on HTTP 401", "[conformance][
 {
   LegacyHttpSseFixture fixture(401);
 
-  auto client = mcp::Client::create();
+  auto client = mcp::client::Client::create();
   mcp_transport::http::HttpClientOptions clientOptions;
   clientOptions.endpointUrl = fixture.endpointUrl();
   clientOptions.enableLegacyHttpSseFallback = true;

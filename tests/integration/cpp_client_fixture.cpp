@@ -218,7 +218,7 @@ auto main(int argc, char **argv) -> int
   {
     const Options options = parseOptions(argc, argv);
 
-    auto client = mcp::Client::create();
+    auto client = mcp::client::Client::create();
     mcp::transport::http::HttpClientOptions clientOptions;
     clientOptions.endpointUrl = options.endpoint;
     if (options.token.has_value())
@@ -238,12 +238,12 @@ auto main(int argc, char **argv) -> int
     mcp::lifecycle::session::ElicitationCapability elicitationCapability;
     elicitationCapability.form = true;
 
-    mcp::ClientInitializeConfiguration initializeConfiguration;
+    mcp::client::ClientInitializeConfiguration initializeConfiguration;
     initializeConfiguration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, elicitationCapability, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(initializeConfiguration));
 
     client->setSamplingCreateMessageHandler(
-      [&observedSamplingRequest](const mcp::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &params) -> std::optional<mcp::jsonrpc::JsonValue>
+      [&observedSamplingRequest](const mcp::client::SamplingCreateMessageContext &, const mcp::jsonrpc::JsonValue &params) -> std::optional<mcp::jsonrpc::JsonValue>
       {
         if (!params.is_object() || !params.contains("messages") || !params["messages"].is_array() || params["messages"].empty())
         {
@@ -276,7 +276,7 @@ auto main(int argc, char **argv) -> int
       });
 
     client->setFormElicitationHandler(
-      [&observedElicitationRequest](const mcp::ElicitationCreateContext &, const mcp::FormElicitationRequest &request) -> mcp::FormElicitationResult
+      [&observedElicitationRequest](const mcp::client::ElicitationCreateContext &, const mcp::client::FormElicitationRequest &request) -> mcp::client::FormElicitationResult
       {
         if (request.message != kExpectedServerElicitationMessage)
         {
@@ -285,8 +285,8 @@ auto main(int argc, char **argv) -> int
 
         observedElicitationRequest = true;
 
-        mcp::FormElicitationResult result;
-        result.action = mcp::ElicitationAction::kAccept;
+        mcp::client::FormElicitationResult result;
+        result.action = mcp::client::ElicitationAction::kAccept;
         result.content = mcp::jsonrpc::JsonValue::object();
         (*result.content)["approved"] = true;
         (*result.content)["reason"] = std::string(kExpectedClientElicitationReason);
@@ -330,7 +330,7 @@ auto main(int argc, char **argv) -> int
       return 3;
     }
 
-    const mcp::ListToolsResult tools = client->listTools();
+    const mcp::client::ListToolsResult tools = client->listTools();
     if (!hasTool(tools.tools, "python_echo"))
     {
       std::cerr << "python_echo tool was not advertised by reference server" << '\n';
@@ -362,7 +362,7 @@ auto main(int argc, char **argv) -> int
       return 6;
     }
 
-    const mcp::ListResourcesResult resources = client->listResources();
+    const mcp::client::ListResourcesResult resources = client->listResources();
     if (!hasResource(resources.resources, "resource://python-server/info"))
     {
       std::cerr << "resource://python-server/info was not advertised by reference server" << '\n';
@@ -370,7 +370,7 @@ auto main(int argc, char **argv) -> int
       return 7;
     }
 
-    const mcp::ReadResourceResult resourceResult = client->readResource("resource://python-server/info");
+    const mcp::client::ReadResourceResult resourceResult = client->readResource("resource://python-server/info");
     if (resourceResult.contents.empty() || resourceResult.contents[0].value.find("python reference server") == std::string::npos)
     {
       std::cerr << "Reference resource content was missing expected marker" << '\n';
@@ -378,7 +378,7 @@ auto main(int argc, char **argv) -> int
       return 8;
     }
 
-    const mcp::ListPromptsResult prompts = client->listPrompts();
+    const mcp::client::ListPromptsResult prompts = client->listPrompts();
     if (!hasPrompt(prompts.prompts, "python_server_prompt"))
     {
       std::cerr << "python_server_prompt was not advertised by reference server" << '\n';

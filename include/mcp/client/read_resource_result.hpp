@@ -7,7 +7,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/resource_content.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct ReadResourceResult
@@ -15,4 +15,4 @@ struct ReadResourceResult
   std::vector<server::ResourceContent> contents;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

@@ -5,7 +5,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct UrlElicitationRequest
@@ -16,4 +16,4 @@ struct UrlElicitationRequest
   std::optional<jsonrpc::JsonValue> metadata;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

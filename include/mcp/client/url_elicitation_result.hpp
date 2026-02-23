@@ -2,7 +2,7 @@
 
 #include <mcp/client/elicitation_action.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct UrlElicitationResult
@@ -10,4 +10,4 @@ struct UrlElicitationResult
   ElicitationAction action = ElicitationAction::kCancel;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

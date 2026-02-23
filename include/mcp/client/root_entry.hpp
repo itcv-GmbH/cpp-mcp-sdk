@@ -5,7 +5,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct RootEntry
@@ -15,4 +15,4 @@ struct RootEntry
   std::optional<jsonrpc::JsonValue> metadata;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

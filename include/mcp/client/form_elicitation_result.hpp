@@ -5,7 +5,7 @@
 #include <mcp/client/elicitation_action.hpp>
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct FormElicitationResult
@@ -14,4 +14,4 @@ struct FormElicitationResult
   std::optional<jsonrpc::JsonValue> content;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

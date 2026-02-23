@@ -6,7 +6,7 @@
 
 #include <mcp/client/url_elicitation.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 inline auto formatUrlForConsent(std::string_view url) -> std::optional<UrlElicitationDisplayInfo>
@@ -69,4 +69,4 @@ inline auto formatUrlForConsent(std::string_view url) -> std::optional<UrlElicit
   return display;
 }
 
-}  // namespace mcp
+}  // namespace mcp::client

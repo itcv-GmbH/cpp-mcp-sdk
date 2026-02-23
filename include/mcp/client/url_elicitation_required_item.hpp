@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct UrlElicitationRequiredItem
@@ -12,4 +12,4 @@ struct UrlElicitationRequiredItem
   std::string url;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

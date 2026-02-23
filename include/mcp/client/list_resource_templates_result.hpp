@@ -8,7 +8,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/resource_template_definition.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct ListResourceTemplatesResult
@@ -17,4 +17,4 @@ struct ListResourceTemplatesResult
   std::optional<std::string> nextCursor;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

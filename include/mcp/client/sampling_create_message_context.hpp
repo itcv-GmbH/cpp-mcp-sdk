@@ -5,7 +5,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct SamplingCreateMessageContext
@@ -13,4 +13,4 @@ struct SamplingCreateMessageContext
   jsonrpc::RequestContext requestContext;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

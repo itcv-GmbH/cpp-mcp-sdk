@@ -7,7 +7,7 @@
 #include <mcp/client/url_elicitation_required_item.hpp>
 #include <mcp/sdk/errors.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct UrlElicitationRequiredErrorData
@@ -48,4 +48,4 @@ inline auto parseUrlElicitationRequiredError(const JsonRpcError &error) -> std::
   return parsed;
 }
 
-}  // namespace mcp
+}  // namespace mcp::client

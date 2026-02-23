@@ -76,7 +76,7 @@ TEST_CASE("Client stdio subprocess transport supports repeated start/stop cycles
 {
   for (std::size_t cycle = 0; cycle < kLifecycleCycles; ++cycle)
   {
-    auto client = mcp::Client::create();
+    auto client = mcp::client::Client::create();
 
     mcp::transport::StdioClientOptions options;
     options.executablePath = MCP_TEST_STDIO_SUBPROCESS_HELPER_PATH;

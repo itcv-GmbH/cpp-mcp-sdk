@@ -6,9 +6,9 @@
 #include <mcp/client/url_elicitation_request.hpp>
 #include <mcp/client/url_elicitation_result.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 using UrlElicitationHandler = std::function<UrlElicitationResult(const ElicitationCreateContext &, const UrlElicitationRequest &)>;
 
-}  // namespace mcp
+}  // namespace mcp::client

@@ -6,9 +6,9 @@
 #include <mcp/client/form_elicitation_request.hpp>
 #include <mcp/client/form_elicitation_result.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 using FormElicitationHandler = std::function<FormElicitationResult(const ElicitationCreateContext &, const FormElicitationRequest &)>;
 
-}  // namespace mcp
+}  // namespace mcp::client

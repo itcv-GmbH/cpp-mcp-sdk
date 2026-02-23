@@ -5,9 +5,9 @@
 
 #include <mcp/client/elicitation_context.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 using UrlElicitationCompletionHandler = std::function<void(const ElicitationCreateContext &, std::string_view)>;
 
-}  // namespace mcp
+}  // namespace mcp::client

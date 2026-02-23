@@ -101,7 +101,7 @@ auto main(int argc, char **argv) -> int
   {
     const Options options = parseOptions(argc, argv);
 
-    auto client = mcp::Client::create();
+    auto client = mcp::client::Client::create();
     mcp::transport::http::HttpClientOptions clientOptions;
     clientOptions.endpointUrl = options.endpoint;
     if (options.token.has_value())
@@ -123,10 +123,10 @@ auto main(int argc, char **argv) -> int
     // Set up a roots provider - this will be called when the server sends roots/list request
     // For this test, we just provide a simple static set of roots
     client->setRootsProvider(
-      [](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry>
+      [](const mcp::client::RootsListContext &) -> std::vector<mcp::client::RootEntry>
       {
         // Return a simple root entry
-        mcp::RootEntry entry;
+        mcp::client::RootEntry entry;
         entry.uri = "file:///tmp/test-root";
         entry.name = "test-root";
         return {entry};

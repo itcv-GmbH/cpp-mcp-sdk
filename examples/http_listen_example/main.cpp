@@ -131,17 +131,17 @@ auto main() -> int
     // ========================================================================
     std::cout << "\n=== Creating Client ===" << '\n';
 
-    auto client = mcp::Client::create();
+    auto client = mcp::client::Client::create();
 
     // Configure roots provider - this is called when server sends roots/list request
     // This demonstrates server-initiated request handling
     client->setRootsProvider(
-      [](const mcp::RootsListContext & /* context */) -> std::vector<mcp::RootEntry>
+      [](const mcp::client::RootsListContext & /* context */) -> std::vector<mcp::client::RootEntry>
       {
         std::cout << "[Client] Roots provider invoked (server-initiated request received)" << '\n';
 
-        std::vector<mcp::RootEntry> roots;
-        mcp::RootEntry root;
+        std::vector<mcp::client::RootEntry> roots;
+        mcp::client::RootEntry root;
         root.uri = "file:///example/dynamic-resource";
         root.name = "Dynamic Resource";
         roots.push_back(std::move(root));

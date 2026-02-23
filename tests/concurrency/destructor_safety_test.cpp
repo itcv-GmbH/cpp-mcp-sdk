@@ -180,7 +180,7 @@ auto waitUntilPortRebindable(std::uint16_t port, std::chrono::milliseconds timeo
 TEST_CASE("Client destructor is bounded with in-flight async work", "[concurrency][destructor][client]")
 {
   auto transport = std::make_shared<CapturingTransport>();
-  auto client = mcp::Client::create();
+  auto client = mcp::client::Client::create();
   client->attachTransport(transport);
   client->start();
 

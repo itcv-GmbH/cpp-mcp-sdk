@@ -100,7 +100,7 @@ auto main(int argc, char **argv) -> int
   {
     const Options options = parseOptions(argc, argv);
 
-    auto client = mcp::Client::create();
+    auto client = mcp::client::Client::create();
     mcp::transport::http::HttpClientOptions clientOptions;
     clientOptions.endpointUrl = options.endpoint;
     if (options.token.has_value())
@@ -141,7 +141,7 @@ auto main(int argc, char **argv) -> int
 
     // Test 1: List resource templates
     {
-      mcp::ListResourceTemplatesResult templatesResult = client->listResourceTemplates();
+      mcp::client::ListResourceTemplatesResult templatesResult = client->listResourceTemplates();
 
       // Check if templates are present - the Python reference server should have one
       std::cout << "listResourceTemplates returned " << templatesResult.resourceTemplates.size() << " template(s)" << '\n';
@@ -151,7 +151,7 @@ auto main(int argc, char **argv) -> int
     // Test 2: Subscribe and unsubscribe to a resource
     {
       // First, list resources to get a valid URI
-      mcp::ListResourcesResult resourcesResult = client->listResources();
+      mcp::client::ListResourcesResult resourcesResult = client->listResources();
       if (resourcesResult.resources.empty())
       {
         std::cerr << "No resources available to subscribe to" << '\n';

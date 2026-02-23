@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace mcp
+namespace mcp::client
 {
 
 enum class ElicitationAction : std::uint8_t
@@ -12,4 +12,4 @@ enum class ElicitationAction : std::uint8_t
   kCancel,
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

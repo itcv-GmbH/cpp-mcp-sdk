@@ -2,7 +2,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct ElicitationCreateContext
@@ -10,4 +10,4 @@ struct ElicitationCreateContext
   jsonrpc::RequestContext requestContext;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client

@@ -40,7 +40,7 @@
 #include <mcp/transport/transport.hpp>
 #include <mcp/util/all.hpp>
 
-namespace mcp
+namespace mcp::client
 {
 static constexpr std::string_view kInitializeMethod = "initialize";
 static constexpr std::string_view kPingMethod = "ping";
@@ -2699,4 +2699,4 @@ auto Client::postCallbackTask(std::function<void()> task) -> bool
   return true;
 }
 
-}  // namespace mcp
+}  // namespace mcp::client

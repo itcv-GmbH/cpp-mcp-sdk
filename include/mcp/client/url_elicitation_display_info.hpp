@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace mcp
+namespace mcp::client
 {
 
 struct UrlElicitationDisplayInfo
@@ -11,4 +11,4 @@ struct UrlElicitationDisplayInfo
   std::string domain;
 };
 
-}  // namespace mcp
+}  // namespace mcp::client
