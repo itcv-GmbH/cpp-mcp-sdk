@@ -74,9 +74,9 @@ The SDK provides runners for different transport types. The following rules defi
   - `include/mcp/sdk/errors.hpp` defines structured JSON-RPC error data (`code`, `message`, `data`).
 - Server runners (high-level transport orchestration):
   - `include/mcp/server/runners.hpp` provides access to all runner types via convenience includes.
-  - `include/mcp/server/stdio_runner.hpp` defines `mcp::StdioServerRunner` for STDIO transport.
-  - `include/mcp/server/streamable_http_runner.hpp` defines `mcp::StreamableHttpServerRunner` for Streamable HTTP.
-  - `include/mcp/server/combined_runner.hpp` defines `mcp::CombinedServerRunner` for multi-transport servers.
+  - `include/mcp/server/stdio_runner.hpp` defines `mcp::server::StdioServerRunner` for STDIO transport.
+  - `include/mcp/server/streamable_http_runner.hpp` defines `mcp::server::StreamableHttpServerRunner` for Streamable HTTP.
+  - `include/mcp/server/combined_runner.hpp` defines `mcp::server::CombinedServerRunner` for multi-transport servers.
 
 ## Ownership Model
 
@@ -150,7 +150,7 @@ Custom streams can be specified:
 runner.run(customInput, customOutput, customError);
 ```
 
-Options can be configured via `mcp::StdioServerRunnerOptions`:
+Options can be configured via `mcp::server::StdioServerRunnerOptions`:
 ```cpp
 mcp::server::StdioServerRunnerOptions options;
 options.transportOptions.allowStderrLogs = true;
@@ -211,8 +211,8 @@ runner.stop();   // Stops HTTP
 ### Relationship to Transport Primitives
 
 Runners wrap the lower-level transport types:
-- `mcp::StdioServerRunner` directly handles stdio I/O without using `StdioTransport::run()`.
-- `mcp::StreamableHttpServerRunner` owns `mcp::transport::HttpServerRuntime` and delegates to `mcp::transport::http::StreamableHttpServer`.
-- `mcp::CombinedServerRunner` orchestrates multiple runners.
+- `mcp::server::StdioServerRunner` directly handles stdio I/O without using `StdioTransport::run()`.
+- `mcp::server::StreamableHttpServerRunner` owns `mcp::transport::HttpServerRuntime` and delegates to `mcp::transport::http::StreamableHttpServer`.
+- `mcp::server::CombinedServerRunner` orchestrates multiple runners.
 
 Applications needing direct transport access can use the transport headers directly. Runners provide convenience; transports provide flexibility.
