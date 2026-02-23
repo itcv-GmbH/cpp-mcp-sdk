@@ -69,8 +69,8 @@ The SDK provides runners for different transport types. The following rules defi
 - Auth:
   - `include/mcp/auth/all.hpp` is the umbrella header for all auth types including async auth providers, verifiers, OAuth server/client types, and protected resource metadata.
 - Core constants and protocol errors:
-  - `include/mcp/version.hpp` defines protocol and SDK version constants and negotiated-version accessors.
-  - `include/mcp/errors.hpp` defines structured JSON-RPC error data (`code`, `message`, `data`).
+  - `include/mcp/sdk/version.hpp` defines protocol and SDK version constants and negotiated-version accessors.
+  - `include/mcp/sdk/errors.hpp` defines structured JSON-RPC error data (`code`, `message`, `data`).
 - Server runners (high-level transport orchestration):
   - `include/mcp/server/runners.hpp` provides access to all runner types via convenience includes.
   - `include/mcp/server/stdio_runner.hpp` defines `mcp::StdioServerRunner` for STDIO transport.

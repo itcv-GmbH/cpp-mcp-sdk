@@ -4,7 +4,7 @@ This SDK tracks MCP protocol revisions as date strings (`YYYY-MM-DD`).
 
 ## Supported revisions in this codebase
 
-Defined in `include/mcp/version.hpp`:
+Defined in `include/mcp/sdk/version.hpp`:
 
 - `2025-11-25` (`kLatestProtocolVersion`)
 - `2025-03-26` (`kFallbackProtocolVersion`)
