@@ -6,7 +6,7 @@
 #include <mcp/server/detail/server_factory.hpp>
 #include <mcp/server/detail/streamable_http_server_runner_options.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 /// @section Exceptions
@@ -48,8 +48,8 @@ namespace mcp
 ///
 /// Usage:
 /// @code
-///   ServerFactory makeServer = [] { return mcp::Server::create(); };
-///   mcp::StreamableHttpServerRunner runner(makeServer);
+///   ServerFactory makeServer = [] { return mcp::server::Server::create(); };
+///   mcp::server::StreamableHttpServerRunner runner(makeServer);
 ///   runner.start();
 ///   std::cout << "Server running on port " << runner.localPort() << std::endl;
 ///   // ... server is handling requests ...
@@ -62,8 +62,8 @@ namespace mcp
 ///   options.transportOptions.http.endpoint.port = 8080;
 ///   options.transportOptions.http.endpoint.path = "/mcp";
 ///   options.transportOptions.http.requireSessionId = true;  // Multi-client safe
-///   ServerFactory makeServer = [] { return mcp::Server::create(); };
-///   mcp::StreamableHttpServerRunner runner(makeServer, options);
+///   ServerFactory makeServer = [] { return mcp::server::Server::create(); };
+///   mcp::server::StreamableHttpServerRunner runner(makeServer, options);
 ///   runner.start();
 /// @endcode
 class StreamableHttpServerRunner final
@@ -117,4 +117,4 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

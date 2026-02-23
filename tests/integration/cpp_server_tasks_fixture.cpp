@@ -52,7 +52,7 @@ std::unordered_map<std::string, std::shared_ptr<TaskState>> tasks;
 std::atomic<int> nextTaskId {1};
 
 // Shared server reference for sending notifications
-std::shared_ptr<mcp::Server> g_server;
+std::shared_ptr<mcp::server::Server> g_server;
 
 auto parsePort(const std::string &value) -> std::uint16_t
 {
@@ -282,7 +282,7 @@ auto main(int argc, char **argv) -> int
   {
     const Options options = parseOptions(argc, argv);
 
-    auto makeServer = [&options]() -> std::shared_ptr<mcp::Server>
+    auto makeServer = [&options]() -> std::shared_ptr<mcp::server::Server>
     {
       mcp::lifecycle::session::ToolsCapability toolsCapability;
       mcp::lifecycle::session::ResourcesCapability resourcesCapability;
@@ -303,7 +303,7 @@ auto main(int argc, char **argv) -> int
       configuration.taskStore = std::make_shared<mcp::util::InMemoryTaskStore>();
       configuration.defaultTaskPollInterval = 100;  // Poll every 100ms for faster tests
 
-      const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+      const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
       // Store global reference for notifications
       g_server = server;
@@ -549,14 +549,14 @@ auto main(int argc, char **argv) -> int
       return server;
     };
 
-    mcp::StreamableHttpServerRunnerOptions runnerOptions;
+    mcp::server::StreamableHttpServerRunnerOptions runnerOptions;
     runnerOptions.transportOptions.http.endpoint.bindAddress = options.bindAddress;
     runnerOptions.transportOptions.http.endpoint.bindLocalhostOnly = true;
     runnerOptions.transportOptions.http.endpoint.port = options.port;
     runnerOptions.transportOptions.http.endpoint.path = options.path;
     runnerOptions.transportOptions.http.requireSessionId = false;
 
-    mcp::StreamableHttpServerRunner runner(makeServer, std::move(runnerOptions));
+    mcp::server::StreamableHttpServerRunner runner(makeServer, std::move(runnerOptions));
     runner.start();
 
     std::cout << "cpp integration server listening on http://" << options.bindAddress << ":" << runner.localPort() << options.path << '\n';

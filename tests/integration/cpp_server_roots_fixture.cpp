@@ -52,7 +52,7 @@ struct RootsAssertionsState
 struct ServerRegistry
 {
   std::mutex mutex;
-  std::vector<std::weak_ptr<mcp::Server>> servers;
+  std::vector<std::weak_ptr<mcp::server::Server>> servers;
 };
 
 class StaticTokenVerifier final : public mcp::auth::OAuthTokenVerifier
@@ -172,7 +172,7 @@ auto awaitResponse(std::future<mcp::jsonrpc::Response> &future, std::string_view
   return future.get();
 }
 
-auto runRootsAssertions(mcp::Server &server, const mcp::jsonrpc::RequestContext &context, RootsAssertionsState &assertionsState) -> void
+auto runRootsAssertions(mcp::server::Server &server, const mcp::jsonrpc::RequestContext &context, RootsAssertionsState &assertionsState) -> void
 {
   // Send roots/list request to the client
   mcp::jsonrpc::Request rootsRequest;
@@ -252,7 +252,7 @@ auto main(int argc, char **argv) -> int
     // Shared registry to track server instances created by the runner's factory
     auto serverRegistry = std::make_shared<ServerRegistry>();
 
-    auto makeServer = [&options, &serverRegistry]() -> std::shared_ptr<mcp::Server>
+    auto makeServer = [&options, &serverRegistry]() -> std::shared_ptr<mcp::server::Server>
     {
       mcp::lifecycle::session::ToolsCapability toolsCapability;
       mcp::lifecycle::session::ResourcesCapability resourcesCapability;
@@ -263,7 +263,7 @@ auto main(int argc, char **argv) -> int
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-server", "1.0.0");
       configuration.instructions = "Integration fixture server for reference SDK tests.";
 
-      const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+      const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
       // Register this server in the registry
       {
@@ -294,7 +294,7 @@ auto main(int argc, char **argv) -> int
       return server;
     };
 
-    mcp::StreamableHttpServerRunnerOptions runnerOptions;
+    mcp::server::StreamableHttpServerRunnerOptions runnerOptions;
     runnerOptions.transportOptions.http.endpoint.bindAddress = options.bindAddress;
     runnerOptions.transportOptions.http.endpoint.bindLocalhostOnly = true;
     runnerOptions.transportOptions.http.endpoint.port = options.port;
@@ -314,7 +314,7 @@ auto main(int argc, char **argv) -> int
       "mcp:read",
     };
 
-    mcp::StreamableHttpServerRunner runner(makeServer, std::move(runnerOptions));
+    mcp::server::StreamableHttpServerRunner runner(makeServer, std::move(runnerOptions));
     runner.start();
 
     std::cout << "cpp integration server listening on http://" << options.bindAddress << ":" << runner.localPort() << options.path << '\n';
@@ -330,7 +330,7 @@ auto main(int argc, char **argv) -> int
         try
         {
           const auto startTime = std::chrono::steady_clock::now();
-          std::shared_ptr<mcp::Server> targetServer;
+          std::shared_ptr<mcp::server::Server> targetServer;
 
           // Poll for a server that has reached kOperating state
           while (true)

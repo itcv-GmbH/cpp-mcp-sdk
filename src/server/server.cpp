@@ -40,7 +40,7 @@
 #include <mcp/server/tools.hpp>
 #include <mcp/util/all.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 namespace detail
 {
@@ -445,12 +445,12 @@ auto isValidCursorChar(char value) -> bool
 
 auto encodeCursorPayload(std::string_view payload) -> std::string
 {
-  return encodeBase64UrlNoPad(payload);
+  return ::mcp::detail::encodeBase64UrlNoPad(payload);
 }
 
 auto decodeCursorPayload(std::string_view encoded) -> std::optional<std::string>
 {
-  return decodeBase64UrlNoPad(encoded);
+  return ::mcp::detail::decodeBase64UrlNoPad(encoded);
 }
 
 auto makePaginationCursor(ListEndpoint endpoint, std::size_t startIndex) -> std::string
@@ -596,13 +596,10 @@ auto capabilityForMethod(std::string_view method) -> std::optional<std::string_v
 
 }  // namespace detail
 
-struct Server::TaskStatusObserverState
+}  // namespace mcp::server
+
+namespace mcp
 {
-  std::weak_ptr<lifecycle::Session> session;
-  bool emitTaskStatusNotifications = false;
-  mutable std::mutex mutex;
-  jsonrpc::OutboundMessageSender outboundMessageSender;
-};
 
 auto ResourceContent::text(std::string uri,
                            std::string text,
@@ -643,8 +640,21 @@ auto ResourceContent::blobBytes(std::string uri,
                                 std::optional<jsonrpc::JsonValue> metadata) -> ResourceContent
 {
   const std::string byteView(blobBytes.begin(), blobBytes.end());
-  return blobBase64(std::move(uri), detail::encodeStandardBase64(byteView), std::move(mimeType), std::move(annotations), std::move(metadata));
+  return blobBase64(std::move(uri), server::detail::encodeStandardBase64(byteView), std::move(mimeType), std::move(annotations), std::move(metadata));
 }
+
+}  // namespace mcp
+
+namespace mcp::server
+{
+
+struct Server::TaskStatusObserverState
+{
+  std::weak_ptr<lifecycle::Session> session;
+  bool emitTaskStatusNotifications = false;
+  mutable std::mutex mutex;
+  jsonrpc::OutboundMessageSender outboundMessageSender;
+};
 
 auto Server::create(lifecycle::session::SessionOptions options) -> std::shared_ptr<Server>
 {
@@ -1541,7 +1551,7 @@ auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, cons
   jsonrpc::RequestContext backgroundContext = context;
   const std::shared_ptr<util::TaskReceiver> taskReceiver = taskReceiver_;
   const ErrorReporter errorReporter = configuration_.sessionOptions.errorReporter;
-  std::thread(detail::threadBoundary(
+  std::thread(::mcp::detail::threadBoundary(
                 // NOLINTNEXTLINE(bugprone-exception-escape) - All exceptions are handled inside this lambda and via threadBoundary.
                 [taskId = std::move(taskId),
                  toolName,
@@ -2384,4 +2394,4 @@ auto Server::isCoreRequestMethod(std::string_view method) -> bool
   return method == detail::kInitializeMethod || method == detail::kPingMethod;
 }
 
-}  // namespace mcp
+}  // namespace mcp::server

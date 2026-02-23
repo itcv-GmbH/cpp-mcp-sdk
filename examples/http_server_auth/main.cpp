@@ -173,7 +173,7 @@ auto parseOptions(const std::vector<std::string> &arguments) -> Options  // NOLI
 
 }  // namespace
 
-auto createServer() -> std::shared_ptr<mcp::Server>
+auto createServer() -> std::shared_ptr<mcp::server::Server>
 {
   mcp::lifecycle::session::ToolsCapability toolsCapability;
   toolsCapability.listChanged = true;
@@ -186,7 +186,7 @@ auto createServer() -> std::shared_ptr<mcp::Server>
   configuration.serverInfo = mcp::lifecycle::session::Implementation("example-http-auth-server", "1.0.0");
   configuration.instructions = "Send a bearer token to call tools.";
 
-  const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+  const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
   mcp::ToolDefinition whoAmITool;
   whoAmITool.name = "who_am_i";
@@ -227,7 +227,7 @@ auto main(int argc, char *argv[]) -> int
 
     const Options options = parseOptions(arguments);
 
-    mcp::StreamableHttpServerRunnerOptions runnerOptions;
+    mcp::server::StreamableHttpServerRunnerOptions runnerOptions;
 
     runnerOptions.transportOptions.http.endpoint.bindAddress = options.bindAddress;
     runnerOptions.transportOptions.http.endpoint.bindLocalhostOnly = false;
@@ -260,7 +260,7 @@ auto main(int argc, char *argv[]) -> int
       runnerOptions.transportOptions.http.tls = std::move(tls);
     }
 
-    mcp::StreamableHttpServerRunner runner(createServer, runnerOptions);
+    mcp::server::StreamableHttpServerRunner runner(createServer, runnerOptions);
     runner.start();
 
     const std::string scheme = options.tlsCert.has_value() ? "https" : "http";

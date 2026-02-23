@@ -2,7 +2,7 @@
 
 #include <mcp/transport/all.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 /// Configuration options for the Streamable HTTP server runner.
@@ -13,4 +13,4 @@ struct StreamableHttpServerRunnerOptions
   transport::http::StreamableHttpServerOptions transportOptions;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

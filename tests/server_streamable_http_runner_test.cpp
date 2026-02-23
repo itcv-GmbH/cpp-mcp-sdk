@@ -85,9 +85,9 @@ static auto makeRequest(mcp_http::ServerRequestMethod method,
 
 // Minimal ServerFactory that creates a Server with at least one tool registered
 // This is required for initialize to succeed (server needs to have capabilities)
-static auto createMinimalServer() -> std::shared_ptr<mcp::Server>
+static auto createMinimalServer() -> std::shared_ptr<mcp::server::Server>
 {
-  auto server = mcp::Server::create();
+  auto server = mcp::server::Server::create();
 
   // Register at least one tool so the server has tools capability
   mcp::ToolDefinition toolDef;
@@ -116,7 +116,7 @@ static auto createMinimalServer() -> std::shared_ptr<mcp::Server>
 TEST_CASE("StreamableHttpServerRunner starts and stops cleanly on ephemeral port", "[server][streamable_http_runner]")
 {
   // Create runner with factory that produces minimal server
-  mcp::StreamableHttpServerRunner runner(createMinimalServer);
+  mcp::server::StreamableHttpServerRunner runner(createMinimalServer);
   runner.start();
 
   // Verify server is running and has a valid port
@@ -134,9 +134,9 @@ TEST_CASE("StreamableHttpServerRunner creates independent sessions with requireS
 {
   // Track factory invocations
   std::atomic<int> factoryCount {0};
-  std::vector<std::shared_ptr<mcp::Server>> createdServers;
+  std::vector<std::shared_ptr<mcp::server::Server>> createdServers;
 
-  auto countingFactory = [&factoryCount, &createdServers]() -> std::shared_ptr<mcp::Server>
+  auto countingFactory = [&factoryCount, &createdServers]() -> std::shared_ptr<mcp::server::Server>
   {
     auto server = createMinimalServer();
     factoryCount++;
@@ -145,12 +145,12 @@ TEST_CASE("StreamableHttpServerRunner creates independent sessions with requireS
   };
 
   // Create runner with requireSessionId=true
-  mcp::StreamableHttpServerRunnerOptions options;
+  mcp::server::StreamableHttpServerRunnerOptions options;
   options.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
   options.transportOptions.http.endpoint.path = "/mcp";
   options.transportOptions.http.requireSessionId = true;
 
-  mcp::StreamableHttpServerRunner runner(std::move(countingFactory), std::move(options));
+  mcp::server::StreamableHttpServerRunner runner(std::move(countingFactory), std::move(options));
   runner.start();
 
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
@@ -199,12 +199,12 @@ TEST_CASE("StreamableHttpServerRunner creates independent sessions with requireS
 TEST_CASE("StreamableHttpServerRunner supports SSE endpoint with valid session", "[server][streamable_http_runner]")
 {
   // Create runner with requireSessionId=true
-  mcp::StreamableHttpServerRunnerOptions options;
+  mcp::server::StreamableHttpServerRunnerOptions options;
   options.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
   options.transportOptions.http.endpoint.path = "/mcp";
   options.transportOptions.http.requireSessionId = true;
 
-  mcp::StreamableHttpServerRunner runner(createMinimalServer, std::move(options));
+  mcp::server::StreamableHttpServerRunner runner(createMinimalServer, std::move(options));
   runner.start();
 
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
@@ -245,12 +245,12 @@ TEST_CASE("StreamableHttpServerRunner supports SSE endpoint with valid session",
 TEST_CASE("StreamableHttpServerRunner rejects requests without session when requireSessionId=true", "[server][streamable_http_runner]")
 {
   // Create runner with requireSessionId=true
-  mcp::StreamableHttpServerRunnerOptions options;
+  mcp::server::StreamableHttpServerRunnerOptions options;
   options.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
   options.transportOptions.http.endpoint.path = "/mcp";
   options.transportOptions.http.requireSessionId = true;
 
-  mcp::StreamableHttpServerRunner runner(createMinimalServer, std::move(options));
+  mcp::server::StreamableHttpServerRunner runner(createMinimalServer, std::move(options));
   runner.start();
 
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
@@ -285,9 +285,9 @@ TEST_CASE("StreamableHttpServerRunner routes outbound notifications via SSE", "[
 {
   // Track factory invocations and capture created servers
   std::atomic<int> factoryCount {0};
-  std::vector<std::shared_ptr<mcp::Server>> createdServers;
+  std::vector<std::shared_ptr<mcp::server::Server>> createdServers;
 
-  auto countingFactory = [&factoryCount, &createdServers]() -> std::shared_ptr<mcp::Server>
+  auto countingFactory = [&factoryCount, &createdServers]() -> std::shared_ptr<mcp::server::Server>
   {
     auto server = createMinimalServer();
     factoryCount++;
@@ -296,12 +296,12 @@ TEST_CASE("StreamableHttpServerRunner routes outbound notifications via SSE", "[
   };
 
   // Create runner with requireSessionId=true
-  mcp::StreamableHttpServerRunnerOptions options;
+  mcp::server::StreamableHttpServerRunnerOptions options;
   options.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
   options.transportOptions.http.endpoint.path = "/mcp";
   options.transportOptions.http.requireSessionId = true;
 
-  mcp::StreamableHttpServerRunner runner(std::move(countingFactory), std::move(options));
+  mcp::server::StreamableHttpServerRunner runner(std::move(countingFactory), std::move(options));
   runner.start();
 
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";
@@ -423,19 +423,19 @@ TEST_CASE("StreamableHttpServerRunner initializes on first request when requireS
   // Track factory invocations
   std::atomic<int> factoryCount {0};
 
-  auto countingFactory = [&factoryCount]() -> std::shared_ptr<mcp::Server>
+  auto countingFactory = [&factoryCount]() -> std::shared_ptr<mcp::server::Server>
   {
     factoryCount++;
     return createMinimalServer();
   };
 
   // Create runner with requireSessionId=false (single-server mode)
-  mcp::StreamableHttpServerRunnerOptions options;
+  mcp::server::StreamableHttpServerRunnerOptions options;
   options.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
   options.transportOptions.http.endpoint.path = "/mcp";
   options.transportOptions.http.requireSessionId = false;
 
-  mcp::StreamableHttpServerRunner runner(std::move(countingFactory), std::move(options));
+  mcp::server::StreamableHttpServerRunner runner(std::move(countingFactory), std::move(options));
   runner.start();
 
   const std::string baseUrl = "http://127.0.0.1:" + std::to_string(runner.localPort()) + "/mcp";

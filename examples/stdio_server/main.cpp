@@ -32,7 +32,7 @@ auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue  // NOL
 
 }  // namespace
 
-auto createServer() -> std::shared_ptr<mcp::Server>
+auto createServer() -> std::shared_ptr<mcp::server::Server>
 {
   mcp::lifecycle::session::ToolsCapability toolsCapability;
   toolsCapability.listChanged = true;
@@ -49,11 +49,12 @@ auto createServer() -> std::shared_ptr<mcp::Server>
   tasksCapability.cancel = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
+  configuration.capabilities =
+    mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
   configuration.serverInfo = mcp::lifecycle::session::Implementation("example-stdio-server", "1.0.0");
   configuration.instructions = "Use tools for generated output and read resources for static context.";
 
-  const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+  const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
   mcp::ToolDefinition echoTool;
   echoTool.name = "echo";
@@ -147,10 +148,10 @@ auto main() -> int
 {
   try
   {
-    mcp::StdioServerRunnerOptions runnerOptions;
+    mcp::server::StdioServerRunnerOptions runnerOptions;
     runnerOptions.transportOptions.allowStderrLogs = false;
 
-    mcp::StdioServerRunner runner(createServer, runnerOptions);
+    mcp::server::StdioServerRunner runner(createServer, runnerOptions);
 
     std::cerr << "stdio_server: waiting for JSON-RPC messages on stdin" << '\n';
     std::cerr.flush();

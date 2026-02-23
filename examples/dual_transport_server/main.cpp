@@ -51,7 +51,7 @@ auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
 }
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-auto makeServer() -> std::shared_ptr<mcp::Server>
+auto makeServer() -> std::shared_ptr<mcp::server::Server>
 {
   mcp::lifecycle::session::ToolsCapability toolsCapability;
   toolsCapability.listChanged = true;
@@ -72,7 +72,7 @@ auto makeServer() -> std::shared_ptr<mcp::Server>
   configuration.serverInfo = mcp::lifecycle::session::Implementation("example-dual-transport-server", "1.0.0");
   configuration.instructions = "Use tools for generated output and read resources for static context.";
 
-  const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+  const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
   // Register echo tool
   mcp::ToolDefinition echoTool;
@@ -172,14 +172,14 @@ auto runCombinedRunnerExample() -> void
   std::cerr << "=== CombinedServerRunner Example ===" << '\n';
 
   // Server factory - creates a fresh Server instance per call
-  const mcp::ServerFactory serverFactory = []() -> std::shared_ptr<mcp::Server>
+  const mcp::server::ServerFactory serverFactory = []() -> std::shared_ptr<mcp::server::Server>
   {
     // Each session gets its own Server instance
     return makeServer();
   };
 
   // Configure combined runner options
-  mcp::CombinedServerRunnerOptions options;
+  mcp::server::CombinedServerRunnerOptions options;
   options.enableStdio = true;
   options.enableHttp = true;
 
@@ -190,7 +190,7 @@ auto runCombinedRunnerExample() -> void
   options.httpOptions.transportOptions.http.requireSessionId = true;  // Multi-client isolation
 
   // Create and run the combined runner
-  mcp::CombinedServerRunner runner(serverFactory, options);
+  mcp::server::CombinedServerRunner runner(serverFactory, options);
 
   // Start HTTP in background (non-blocking)
   runner.startHttp();
@@ -201,7 +201,7 @@ auto runCombinedRunnerExample() -> void
   std::cerr << "STDIO transport ready, waiting for input..." << '\n';
   std::cerr.flush();
 
-  mcp::StdioServerRunner *stdioRunnerPtr = runner.stdioRunner();
+  mcp::server::StdioServerRunner *stdioRunnerPtr = runner.stdioRunner();
 
   // Start STDIO in a thread and wrap to set completion flag when done
   std::thread stdioThread(
@@ -279,19 +279,19 @@ auto runExplicitCompositionExample() -> void
   std::cerr << "=== Explicit Composition Example (StdioServerRunner + StreamableHttpServerRunner) ===" << '\n';
 
   // Shared server factory
-  const mcp::ServerFactory serverFactory = []() -> std::shared_ptr<mcp::Server> { return makeServer(); };
+  const mcp::server::ServerFactory serverFactory = []() -> std::shared_ptr<mcp::server::Server> { return makeServer(); };
 
   // Create STDIO runner
-  const mcp::StdioServerRunnerOptions stdioOptions;
-  mcp::StdioServerRunner stdioRunner(serverFactory, stdioOptions);
+  const mcp::server::StdioServerRunnerOptions stdioOptions;
+  mcp::server::StdioServerRunner stdioRunner(serverFactory, stdioOptions);
 
   // Create HTTP runner
-  mcp::StreamableHttpServerRunnerOptions httpOptions;
+  mcp::server::StreamableHttpServerRunnerOptions httpOptions;
   httpOptions.transportOptions.http.endpoint.bindAddress = kHttpBind;
   httpOptions.transportOptions.http.endpoint.port = kHttpPort;
   httpOptions.transportOptions.http.endpoint.path = kHttpPath;
   httpOptions.transportOptions.http.requireSessionId = true;  // Multi-client isolation
-  mcp::StreamableHttpServerRunner httpRunner(serverFactory, httpOptions);
+  mcp::server::StreamableHttpServerRunner httpRunner(serverFactory, httpOptions);
 
   // Start HTTP in background
   httpRunner.start();
@@ -328,7 +328,7 @@ auto main() -> int
 
   // Use the combined runner for the main example
   // This demonstrates:
-  // - Shared ServerFactory building an mcp::Server with tools/resources/prompts
+  // - Shared ServerFactory building an mcp::server::Server with tools/resources/prompts
   // - Starting both transports via CombinedServerRunner
   // - HTTP configured with requireSessionId=true
   // - HTTP runs in background, STDIO runs in foreground (blocking)

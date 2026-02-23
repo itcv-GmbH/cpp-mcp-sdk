@@ -76,7 +76,7 @@ static auto makeInitializeRequest(std::int64_t requestId = 1) -> mcp::jsonrpc::R
   return request;
 }
 
-static auto dispatchRequest(mcp::Server &server, const mcp::jsonrpc::Request &request, const mcp::jsonrpc::RequestContext &context = {}) -> mcp::jsonrpc::Response
+static auto dispatchRequest(mcp::server::Server &server, const mcp::jsonrpc::Request &request, const mcp::jsonrpc::RequestContext &context = {}) -> mcp::jsonrpc::Response
 {
   return server.handleRequest(context, request).get();
 }
@@ -88,7 +88,7 @@ static auto assertErrorCode(const mcp::jsonrpc::Response &response, mcp::JsonRpc
   REQUIRE(errorResponse.error.code == static_cast<std::int32_t>(expectedCode));
 }
 
-static auto completeInitialization(mcp::Server &server) -> void
+static auto completeInitialization(mcp::server::Server &server) -> void
 {
   const mcp::jsonrpc::Response initializeResponse = dispatchRequest(server, makeInitializeRequest());
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initializeResponse));
@@ -164,7 +164,7 @@ TEST_CASE("Server initialize result reflects configured capabilities and metadat
   configuration.serverInfo = mcp::lifecycle::session::Implementation("configured-server", "2.3.4");
   configuration.instructions = "Use tools only when needed.";
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   const mcp::jsonrpc::Response response = dispatchRequest(*server, makeInitializeRequest());
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(response));
@@ -193,7 +193,7 @@ TEST_CASE("Server enforces pre-initialization lifecycle rules", "[server][core][
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   server->registerRequestHandler("tools/list",
                                  [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
@@ -249,7 +249,7 @@ TEST_CASE("Server completion enforces max values and preserves reference semanti
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, mcp::lifecycle::session::CompletionsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   std::vector<mcp::CompletionRequest> observedRequests;
   server->setCompletionHandler(
@@ -342,7 +342,7 @@ TEST_CASE("Server completion enforces max values and preserves reference semanti
 
 TEST_CASE("Server pagination cursors are opaque and endpoint-scoped", "[server][utilities][pagination]")
 {
-  const mcp::PaginationWindow firstPage = mcp::Server::paginateList(mcp::ListEndpoint::kTools, std::nullopt, 11, 4);
+  const mcp::PaginationWindow firstPage = mcp::server::Server::paginateList(mcp::ListEndpoint::kTools, std::nullopt, 11, 4);
   REQUIRE(firstPage.startIndex == 0);
   REQUIRE(firstPage.endIndex == 4);
   REQUIRE(firstPage.nextCursor.has_value());
@@ -351,18 +351,18 @@ TEST_CASE("Server pagination cursors are opaque and endpoint-scoped", "[server][
     REQUIRE(*firstPage.nextCursor != "4");
   }
 
-  const mcp::PaginationWindow secondPage = mcp::Server::paginateList(mcp::ListEndpoint::kTools, firstPage.nextCursor, 11, 4);
+  const mcp::PaginationWindow secondPage = mcp::server::Server::paginateList(mcp::ListEndpoint::kTools, firstPage.nextCursor, 11, 4);
   REQUIRE(secondPage.startIndex == 4);
   REQUIRE(secondPage.endIndex == 8);
   REQUIRE(secondPage.nextCursor.has_value());
 
-  REQUIRE_THROWS_AS(mcp::Server::paginateList(mcp::ListEndpoint::kResources, firstPage.nextCursor, 11, 4), std::invalid_argument);
-  REQUIRE_THROWS_AS(mcp::Server::paginateList(mcp::ListEndpoint::kPrompts, std::optional<std::string> {"invalid-cursor"}, 11, 4), std::invalid_argument);
+  REQUIRE_THROWS_AS(mcp::server::Server::paginateList(mcp::ListEndpoint::kResources, firstPage.nextCursor, 11, 4), std::invalid_argument);
+  REQUIRE_THROWS_AS(mcp::server::Server::paginateList(mcp::ListEndpoint::kPrompts, std::optional<std::string> {"invalid-cursor"}, 11, 4), std::invalid_argument);
 }
 
 TEST_CASE("Server logging/setLevel is capability-gated", "[server][utilities][logging]")
 {
-  auto server = mcp::Server::create();
+  auto server = mcp::server::Server::create();
   completeInitialization(*server);
 
   mcp::jsonrpc::Request setLevel;
@@ -382,7 +382,7 @@ TEST_CASE("Server logging level updates and filters outbound notifications", "[s
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   std::mutex messagesMutex;
   std::vector<mcp::jsonrpc::Message> outboundMessages;
@@ -438,7 +438,7 @@ TEST_CASE("Server returns method not found when a feature capability is not decl
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
   server->registerRequestHandler("tools/list",
                                  [](const mcp::jsonrpc::RequestContext &, const mcp::jsonrpc::Request &request) -> std::future<mcp::jsonrpc::Response>
                                  {
@@ -465,7 +465,7 @@ TEST_CASE("Server tools list supports cursor pagination", "[server][tools][list]
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
   for (std::size_t index = 0; index < kToolsListPageSize + 5; ++index)
   {
     server->registerTool(makeToolDefinition("tool-" + std::to_string(index)),
@@ -517,7 +517,7 @@ TEST_CASE("Server tools call differentiates unknown tool errors from input schem
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   std::size_t invocationCount = 0;
   server->registerTool(makeToolDefinition("echo"),
@@ -582,7 +582,7 @@ TEST_CASE("Server tools call validates structured output when output schema is d
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   mcp::ToolDefinition validTool = makeToolDefinition("counter");
   validTool.outputSchema = mcp::jsonrpc::JsonValue::object();
@@ -668,7 +668,7 @@ TEST_CASE("Server tools/call task augmentation returns deferred result and enfor
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
   configuration.emitTaskStatusNotifications = true;
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   mcp::ToolDefinition toolDefinition = makeToolDefinition("task-echo");
   toolDefinition.execution = mcp::jsonrpc::JsonValue::object();
@@ -779,7 +779,7 @@ TEST_CASE("Server teardown is safe with in-flight task-augmented tools worker", 
   configuration.emitTaskStatusNotifications = true;
   configuration.taskStore = taskStore;
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   mcp::ToolDefinition toolDefinition = makeToolDefinition("teardown-task-tool");
   toolDefinition.execution = mcp::jsonrpc::JsonValue::object();
@@ -852,7 +852,7 @@ TEST_CASE("Server tools/call enforces tool-level task support negotiation", "[se
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   mcp::ToolDefinition requiredTaskTool = makeToolDefinition("requires-task");
   requiredTaskTool.execution = mcp::jsonrpc::JsonValue::object();
@@ -914,7 +914,7 @@ TEST_CASE("Server tasks/list and tasks/cancel are gated by sub-capabilities", "[
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   mcp::ToolDefinition toolDefinition = makeToolDefinition("task-tool");
   toolDefinition.execution = mcp::jsonrpc::JsonValue::object();
@@ -982,7 +982,7 @@ TEST_CASE("Server emits tools list_changed notifications when enabled", "[server
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   std::mutex messagesMutex;
   std::vector<mcp::jsonrpc::Message> outboundMessages;
@@ -1032,7 +1032,7 @@ TEST_CASE("Server resources list/read/templates support pagination and blob enco
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   for (std::size_t index = 0; index < kResourcesListPageSize + 5; ++index)
   {
@@ -1140,7 +1140,7 @@ TEST_CASE("Server resources/read missing URI returns resource not found", "[serv
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ResourcesCapability {}, std::nullopt, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
   completeInitialization(*server);
 
   mcp::jsonrpc::Request request;
@@ -1171,7 +1171,7 @@ TEST_CASE("Server resource subscriptions are capability-gated and emit update no
     mcp::ServerConfiguration configuration;
     configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
 
-    auto server = mcp::Server::create(std::move(configuration));
+    auto server = mcp::server::Server::create(std::move(configuration));
     completeInitialization(*server);
 
     mcp::jsonrpc::Request subscribeRequest;
@@ -1193,7 +1193,7 @@ TEST_CASE("Server resource subscriptions are capability-gated and emit update no
     mcp::ServerConfiguration configuration;
     configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
 
-    auto server = mcp::Server::create(std::move(configuration));
+    auto server = mcp::server::Server::create(std::move(configuration));
 
     std::mutex messagesMutex;
     std::vector<mcp::jsonrpc::Message> outboundMessages;
@@ -1276,7 +1276,7 @@ TEST_CASE("Server prompts list supports cursor pagination", "[server][prompts][l
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, mcp::lifecycle::session::PromptsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
   for (std::size_t index = 0; index < kPromptsListPageSize + 5; ++index)
   {
     server->registerPrompt(makePromptDefinition("prompt-" + std::to_string(index)),
@@ -1338,7 +1338,7 @@ TEST_CASE("Server list endpoint cursors are opaque, stable, and endpoint-scoped"
   configuration.capabilities =
     mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, mcp::lifecycle::session::PromptsCapability {}, mcp::lifecycle::session::ResourcesCapability {}, mcp::lifecycle::session::ToolsCapability {}, tasksCapability, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   for (std::size_t index = 0; index < kToolsListPageSize + 3; ++index)
   {
@@ -1530,7 +1530,7 @@ TEST_CASE("Server prompts/get validates required and unknown arguments", "[serve
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, mcp::lifecycle::session::PromptsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   std::size_t invocationCount = 0;
   server->registerPrompt(makePromptDefinition("explain-topic"),
@@ -1614,7 +1614,7 @@ TEST_CASE("Server emits prompts list_changed notifications when enabled", "[serv
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   std::mutex messagesMutex;
   std::vector<mcp::jsonrpc::Message> outboundMessages;
@@ -1664,7 +1664,7 @@ TEST_CASE("Server emits prompts list_changed notifications when enabled", "[serv
 
 TEST_CASE("Server returns method not found for unregistered methods", "[server][core][dispatch]")
 {
-  auto server = mcp::Server::create();
+  auto server = mcp::server::Server::create();
   completeInitialization(*server);
 
   mcp::jsonrpc::Request request;

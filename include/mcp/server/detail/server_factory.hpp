@@ -5,7 +5,7 @@
 
 #include <mcp/server/server.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 /// @brief ServerFactory is a session-agnostic factory function that creates new Server instances.
@@ -14,4 +14,4 @@ namespace mcp
 /// requireSessionId=true).
 using ServerFactory = std::function<std::shared_ptr<Server>()>;
 
-}  // namespace mcp
+}  // namespace mcp::server

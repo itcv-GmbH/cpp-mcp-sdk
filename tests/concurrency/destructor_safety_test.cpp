@@ -123,9 +123,9 @@ struct CallbackState
   std::promise<void> invokedPromise;
 };
 
-auto makeMinimalServer() -> std::shared_ptr<mcp::Server>
+auto makeMinimalServer() -> std::shared_ptr<mcp::server::Server>
 {
-  auto server = mcp::Server::create();
+  auto server = mcp::server::Server::create();
 
   mcp::ToolDefinition definition;
   definition.name = "ping";
@@ -219,7 +219,7 @@ TEST_CASE("Destroying active StreamableHttpServerRunner is bounded and releases 
   std::promise<void> releaseHandlerPromise;
   std::shared_future<void> releaseHandlerFuture = releaseHandlerPromise.get_future().share();
 
-  auto makeBlockingServer = [&handlerEnteredPromise, &handlerEnteredOnce, releaseHandlerFuture]() -> std::shared_ptr<mcp::Server>
+  auto makeBlockingServer = [&handlerEnteredPromise, &handlerEnteredOnce, releaseHandlerFuture]() -> std::shared_ptr<mcp::server::Server>
   {
     auto server = makeMinimalServer();
     server->registerRequestHandler("test/blocking",
@@ -244,7 +244,7 @@ TEST_CASE("Destroying active StreamableHttpServerRunner is bounded and releases 
     return server;
   };
 
-  auto runner = std::make_unique<mcp::StreamableHttpServerRunner>(makeBlockingServer);
+  auto runner = std::make_unique<mcp::server::StreamableHttpServerRunner>(makeBlockingServer);
   runner->start();
 
   REQUIRE(runner->isRunning());

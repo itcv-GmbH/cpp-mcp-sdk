@@ -37,7 +37,7 @@ auto makeRequest(std::int64_t requestId, std::string method) -> mcp::jsonrpc::Re
   return request;
 }
 
-auto dispatchRequest(mcp::Server &server, const mcp::jsonrpc::Request &request) -> mcp::jsonrpc::Response
+auto dispatchRequest(mcp::server::Server &server, const mcp::jsonrpc::Request &request) -> mcp::jsonrpc::Response
 {
   return server.handleRequest(mcp::jsonrpc::RequestContext {}, request).get();
 }
@@ -57,7 +57,7 @@ TEST_CASE("Feature methods are gated by negotiated capabilities", "[conformance]
   configuration.capabilities =
     mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
-  const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+  const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
   const mcp::jsonrpc::Response initializeResponse = dispatchRequest(*server, makeInitializeRequest(1));
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initializeResponse));

@@ -47,7 +47,7 @@ auto makeInitializeRequest(std::int64_t requestId = kRequestIdInitialize) -> mcp
   return request;
 }
 
-auto completeInitialization(mcp::Server &server) -> void  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
+auto completeInitialization(mcp::server::Server &server) -> void  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 {
   static_cast<void>(server.handleRequest(mcp::jsonrpc::RequestContext {}, makeInitializeRequest()).get());
 
@@ -73,7 +73,7 @@ auto main() -> int
     mcp::ServerConfiguration configuration;
     configuration.serverInfo = mcp::lifecycle::session::Implementation("example-bidirectional-server", "1.0.0");
 
-    const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+    const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
     completeInitialization(*server);
 
     std::unordered_map<std::string, mcp::jsonrpc::JsonValue> taskResults;

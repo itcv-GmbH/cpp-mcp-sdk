@@ -23,7 +23,7 @@ inline auto suppressException() noexcept -> void {}  // NOLINT(llvm-prefer-stati
 
 }  // namespace
 
-namespace mcp
+namespace mcp::server
 {
 
 struct CombinedServerRunner::Impl
@@ -241,4 +241,4 @@ auto CombinedServerRunner::httpRunner() -> StreamableHttpServerRunner *
   return impl_->httpRunner.get();
 }
 
-}  // namespace mcp
+}  // namespace mcp::server

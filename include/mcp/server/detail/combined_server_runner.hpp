@@ -9,7 +9,7 @@
 #include <mcp/server/detail/stdio_server_runner.hpp>
 #include <mcp/server/detail/streamable_http_server_runner.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 /// Combined runner for serving MCP over multiple transports.
@@ -25,31 +25,31 @@ namespace mcp
 ///
 /// Usage (STDIO only):
 /// @code
-///   ServerFactory makeServer = [] { return mcp::Server::create(); };
+///   ServerFactory makeServer = [] { return mcp::server::Server::create(); };
 ///   CombinedServerRunnerOptions options;
 ///   options.enableStdio = true;
-///   mcp::CombinedServerRunner runner(makeServer, options);
+///   mcp::server::CombinedServerRunner runner(makeServer, options);
 ///   runner.runStdio();
 /// @endcode
 ///
 /// Usage (HTTP only):
 /// @code
-///   ServerFactory makeServer = [] { return mcp::Server::create(); };
+///   ServerFactory makeServer = [] { return mcp::server::Server::create(); };
 ///   CombinedServerRunnerOptions options;
 ///   options.enableHttp = true;
 ///   options.httpOptions.transportOptions.http.endpoint.port = 8080;
-///   mcp::CombinedServerRunner runner(makeServer, options);
+///   mcp::server::CombinedServerRunner runner(makeServer, options);
 ///   runner.startHttp();
 /// @endcode
 ///
 /// Usage (both STDIO and HTTP):
 /// @code
-///   ServerFactory makeServer = [] { return mcp::Server::create(); };
+///   ServerFactory makeServer = [] { return mcp::server::Server::create(); };
 ///   CombinedServerRunnerOptions options;
 ///   options.enableStdio = true;
 ///   options.enableHttp = true;
 ///   options.httpOptions.transportOptions.http.requireSessionId = true;
-///   mcp::CombinedServerRunner runner(makeServer, options);
+///   mcp::server::CombinedServerRunner runner(makeServer, options);
 ///   runner.start();  // Starts both transports
 ///   // ... server is handling requests ...
 ///   runner.stop();  // Stops both transports
@@ -125,4 +125,4 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

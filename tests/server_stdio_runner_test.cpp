@@ -30,9 +30,9 @@ static auto makeInitializedNotificationJson() -> std::string
 
 // Minimal ServerFactory that creates a Server with at least one tool registered
 // This is required for initialize to succeed (server needs to have capabilities)
-static auto createMinimalServer() -> std::shared_ptr<mcp::Server>
+static auto createMinimalServer() -> std::shared_ptr<mcp::server::Server>
 {
-  auto server = mcp::Server::create();
+  auto server = mcp::server::Server::create();
 
   // Register at least one tool so the server has tools capability
   mcp::ToolDefinition toolDef;
@@ -70,7 +70,7 @@ TEST_CASE("StdioServerRunner handles valid initialize flow", "[server][stdio_run
   std::ostringstream stderr;
 
   // Create runner with factory that produces minimal server
-  mcp::StdioServerRunner runner(createMinimalServer);
+  mcp::server::StdioServerRunner runner(createMinimalServer);
   runner.run(input, output, stderr);
 
   // Parse stdout - should contain exactly one JSON-RPC response (the initialize response)
@@ -98,7 +98,7 @@ TEST_CASE("StdioServerRunner handles malformed JSON with parse error", "[server]
   std::ostringstream output;
   std::ostringstream stderr;
 
-  mcp::StdioServerRunner runner(createMinimalServer);
+  mcp::server::StdioServerRunner runner(createMinimalServer);
   runner.run(input, output, stderr);
 
   // Parse stdout - should contain two JSON-RPC messages:
@@ -143,7 +143,7 @@ TEST_CASE("StdioServerRunner never writes diagnostics to stdout", "[server][stdi
   std::ostringstream output;
   std::ostringstream stderr;
 
-  mcp::StdioServerRunner runner(createMinimalServer);
+  mcp::server::StdioServerRunner runner(createMinimalServer);
   runner.run(input, output, stderr);
 
   // stdout should contain ONLY valid JSON-RPC messages (newline-delimited)
@@ -179,10 +179,10 @@ TEST_CASE("StdioServerRunner writes diagnostics to stderr when allowed", "[serve
   std::ostringstream stderr;
 
   // Enable stderr logging
-  mcp::StdioServerRunnerOptions options;
+  mcp::server::StdioServerRunnerOptions options;
   options.transportOptions.allowStderrLogs = true;
 
-  mcp::StdioServerRunner runner(createMinimalServer, options);
+  mcp::server::StdioServerRunner runner(createMinimalServer, options);
   runner.run(input, output, stderr);
 
   // With allowStderrLogs=true, stderr should contain diagnostics

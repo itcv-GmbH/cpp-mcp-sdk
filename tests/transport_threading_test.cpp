@@ -11,6 +11,7 @@
 #include <mcp/transport/all.hpp>
 
 using namespace mcp;
+using namespace mcp::server;
 using namespace mcp::transport;
 using namespace mcp::transport::http;
 

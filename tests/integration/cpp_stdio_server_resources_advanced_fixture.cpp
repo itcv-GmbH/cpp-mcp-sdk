@@ -39,7 +39,7 @@ struct OutboundAssertionsState
 struct ServerRegistry
 {
   std::mutex mutex;
-  std::vector<std::weak_ptr<mcp::Server>> servers;
+  std::vector<std::weak_ptr<mcp::server::Server>> servers;
 };
 
 auto makeTextContent(std::string text) -> mcp::jsonrpc::JsonValue
@@ -50,7 +50,7 @@ auto makeTextContent(std::string text) -> mcp::jsonrpc::JsonValue
   return content;
 }
 
-auto runOutboundAssertions(mcp::Server &server) -> void
+auto runOutboundAssertions(mcp::server::Server &server) -> void
 {
   // Test 1: List resource templates - verify templates are registered
   {
@@ -212,7 +212,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
     // Shared registry to track server instances created by the runner's factory
     auto serverRegistry = std::make_shared<ServerRegistry>();
 
-    auto makeServer = [&serverRegistry]() -> std::shared_ptr<mcp::Server>
+    auto makeServer = [&serverRegistry]() -> std::shared_ptr<mcp::server::Server>
     {
       mcp::lifecycle::session::ToolsCapability toolsCapability;
       mcp::lifecycle::session::ResourcesCapability resourcesCapability;
@@ -225,7 +225,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-stdio-server-resources", "1.0.0");
       configuration.instructions = "STDIO integration fixture server for reference SDK tests - resources advanced.";
 
-      const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+      const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
       // Register this server in the registry
       {
@@ -308,10 +308,10 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       return server;
     };
 
-    mcp::StdioServerRunnerOptions runnerOptions;
+    mcp::server::StdioServerRunnerOptions runnerOptions;
     runnerOptions.transportOptions.allowStderrLogs = true;
 
-    mcp::StdioServerRunner runner(makeServer, std::move(runnerOptions));
+    mcp::server::StdioServerRunner runner(makeServer, std::move(runnerOptions));
 
     OutboundAssertionsState outboundAssertions;
 
@@ -323,7 +323,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
         try
         {
           const auto startTime = std::chrono::steady_clock::now();
-          std::shared_ptr<mcp::Server> targetServer;
+          std::shared_ptr<mcp::server::Server> targetServer;
 
           // Poll for a server that has reached kOperating state
           while (true)

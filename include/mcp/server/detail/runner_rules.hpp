@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-namespace mcp
+namespace mcp::server
 {
 
 /// @brief Runner behavior rules for different transport configurations.
@@ -80,23 +80,23 @@ namespace lifecycle_rules
 {
 
 /// @brief Start requirement
-/// @details The runner must call mcp::Server::start() for every Server instance it creates
+/// @details The runner must call mcp::server::Server::start() for every Server instance it creates
 /// before handling any messages. This ensures the session is properly initialized and ready to
 /// process requests.
-inline constexpr std::string_view kStartRequirement = "runner must call mcp::Server::start() for every server instance it creates before handling any messages";
+inline constexpr std::string_view kStartRequirement = "runner must call mcp::server::Server::start() for every server instance it creates before handling any messages";
 
 /// @brief Stop triggers
-/// @details The runner must call mcp::Server::stop() before dropping a Server instance due to:
+/// @details The runner must call mcp::server::Server::stop() before dropping a Server instance due to:
 /// - HTTP DELETE for the session
 /// - HTTP 404 cleanup (session expired/terminated)
 /// - Runner stop
 /// - Runner destruction
 inline constexpr std::string_view kStopTriggers =
-  "runner must call mcp::Server::stop() before dropping a server instance due to HTTP DELETE, "
+  "runner must call mcp::server::Server::stop() before dropping a server instance due to HTTP DELETE, "
   "HTTP 404 cleanup, runner stop, or runner destruction";
 
 }  // namespace lifecycle_rules
 
 }  // namespace runner
 
-}  // namespace mcp
+}  // namespace mcp::server

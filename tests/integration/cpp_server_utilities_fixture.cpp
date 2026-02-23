@@ -137,7 +137,7 @@ auto main(int argc, char **argv) -> int
   {
     const Options options = parseOptions(argc, argv);
 
-    auto makeServer = [&options]() -> std::shared_ptr<mcp::Server>
+    auto makeServer = [&options]() -> std::shared_ptr<mcp::server::Server>
     {
       // Register utilities capability (logging and completions)
       mcp::lifecycle::session::LoggingCapability loggingCapability;
@@ -152,7 +152,7 @@ auto main(int argc, char **argv) -> int
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-utilities-server", "1.0.0");
       configuration.instructions = "Integration fixture server for reference SDK utility tests.";
 
-      const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+      const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
       // Register ping handler - returns empty result
       server->registerRequestHandler("ping",
@@ -245,7 +245,7 @@ auto main(int argc, char **argv) -> int
       return server;
     };
 
-    mcp::StreamableHttpServerRunnerOptions runnerOptions;
+    mcp::server::StreamableHttpServerRunnerOptions runnerOptions;
     runnerOptions.transportOptions.http.endpoint.bindAddress = options.bindAddress;
     runnerOptions.transportOptions.http.endpoint.bindLocalhostOnly = true;
     runnerOptions.transportOptions.http.endpoint.port = options.port;
@@ -265,7 +265,7 @@ auto main(int argc, char **argv) -> int
       "mcp:read",
     };
 
-    mcp::StreamableHttpServerRunner runner(makeServer, std::move(runnerOptions));
+    mcp::server::StreamableHttpServerRunner runner(makeServer, std::move(runnerOptions));
     runner.start();
 
     std::cout << "cpp integration server listening on http://" << options.bindAddress << ":" << runner.localPort() << options.path << '\n';

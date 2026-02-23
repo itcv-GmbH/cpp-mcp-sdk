@@ -42,7 +42,7 @@ auto assertErrorCode(const mcp::jsonrpc::Response &response, mcp::JsonRpcErrorCo
   REQUIRE(errorResponse.error.code == static_cast<std::int32_t>(expectedCode));
 }
 
-auto dispatchRequest(mcp::Server &server, const mcp::jsonrpc::Request &request) -> mcp::jsonrpc::Response
+auto dispatchRequest(mcp::server::Server &server, const mcp::jsonrpc::Request &request) -> mcp::jsonrpc::Response
 {
   return server.handleRequest(mcp::jsonrpc::RequestContext {}, request).get();
 }
@@ -55,7 +55,7 @@ TEST_CASE("Server enforces initialize then initialized ordering", "[conformance]
   configuration.capabilities =
     mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
-  const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+  const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
   const mcp::jsonrpc::Response beforeInitializeTools = dispatchRequest(*server, makeRequest(10, "tools/list"));
   assertErrorCode(beforeInitializeTools, mcp::JsonRpcErrorCode::kInvalidRequest);
@@ -80,7 +80,7 @@ TEST_CASE("Initialized notification before initialize does not unlock feature me
   configuration.capabilities =
     mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
-  const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
+  const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
   mcp::jsonrpc::Notification initialized;
   initialized.method = "notifications/initialized";

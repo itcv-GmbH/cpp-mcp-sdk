@@ -7,7 +7,7 @@
 #include <mcp/server/detail/stdio_server_runner_options.hpp>
 #include <mcp/server/detail/streamable_http_server_runner_options.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 /// Flags to control which transports a CombinedServerRunner should enable.
@@ -43,4 +43,4 @@ struct CombinedServerRunnerOptions
   std::ostream *stdioError = nullptr;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

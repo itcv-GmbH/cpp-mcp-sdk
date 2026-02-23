@@ -21,11 +21,6 @@ namespace
 
 constexpr std::string_view kName = "StreamableHttpServerRunner";  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 
-}  // namespace
-
-namespace mcp
-{
-
 namespace detail
 {
 
@@ -33,6 +28,11 @@ namespace detail
 inline auto suppressException() noexcept -> void {}  // NOLINT(llvm-prefer-static-over-anonymous-namespace)
 
 }  // namespace detail
+
+}  // namespace
+
+namespace mcp::server
+{
 
 struct StreamableHttpServerRunner::Impl
 {
@@ -105,7 +105,7 @@ struct StreamableHttpServerRunner::Impl
       }
       catch (...)
       {
-        detail::suppressException();
+        ::detail::suppressException();
       }
       sessionServers.erase(it);
     }
@@ -130,7 +130,7 @@ struct StreamableHttpServerRunner::Impl
       }
       catch (...)
       {
-        detail::suppressException();
+        ::detail::suppressException();
       }
     }
     sessionServers.clear();
@@ -144,7 +144,7 @@ struct StreamableHttpServerRunner::Impl
       }
       catch (...)
       {
-        detail::suppressException();
+        ::detail::suppressException();
       }
       singleServer.reset();
     }
@@ -241,7 +241,7 @@ struct StreamableHttpServerRunner::Impl
             }
             catch (...)
             {
-              detail::suppressException();
+              ::detail::suppressException();
             }
             throw;
           }
@@ -257,7 +257,7 @@ struct StreamableHttpServerRunner::Impl
             }
             catch (...)
             {
-              detail::suppressException();
+              ::detail::suppressException();
             }
             return result;
           }
@@ -548,4 +548,4 @@ auto StreamableHttpServerRunner::options() const -> const StreamableHttpServerRu
   return impl_->options;
 }
 
-}  // namespace mcp
+}  // namespace mcp::server

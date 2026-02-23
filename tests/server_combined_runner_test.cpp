@@ -33,9 +33,9 @@ static auto makeInitializedNotificationJson() -> std::string
 
 // Minimal ServerFactory that creates a Server with at least one tool registered
 // This is required for initialize to succeed (server needs to have capabilities)
-static auto createMinimalServer() -> std::shared_ptr<mcp::Server>
+static auto createMinimalServer() -> std::shared_ptr<mcp::server::Server>
 {
-  auto server = mcp::Server::create();
+  auto server = mcp::server::Server::create();
 
   // Register at least one tool so the server has tools capability
   mcp::ToolDefinition toolDef;
@@ -128,14 +128,14 @@ TEST_CASE("CombinedServerRunner handles stdio-only mode with in-memory streams",
   std::ostringstream stderr;
 
   // Create options with stdio-only mode and custom streams
-  mcp::CombinedServerRunnerOptions options;
+  mcp::server::CombinedServerRunnerOptions options;
   options.enableStdio = true;
   options.stdioInput = &input;
   options.stdioOutput = &output;
   options.stdioError = &stderr;
 
   // Create runner with factory that produces minimal server
-  mcp::CombinedServerRunner runner(createMinimalServer, options);
+  mcp::server::CombinedServerRunner runner(createMinimalServer, options);
 
   // Run stdio (blocking)
   runner.runStdio();
@@ -155,14 +155,14 @@ TEST_CASE("CombinedServerRunner handles stdio-only mode with in-memory streams",
 TEST_CASE("CombinedServerRunner handles HTTP-only mode on ephemeral port", "[server][combined_runner]")
 {
   // Create options with HTTP-only mode
-  mcp::CombinedServerRunnerOptions options;
+  mcp::server::CombinedServerRunnerOptions options;
   options.enableHttp = true;
 
   // Configure HTTP to use localhost and ephemeral port
   options.httpOptions.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
 
   // Create runner with factory that produces minimal server
-  mcp::CombinedServerRunner runner(createMinimalServer, options);
+  mcp::server::CombinedServerRunner runner(createMinimalServer, options);
 
   // Start HTTP server (non-blocking)
   runner.startHttp();
@@ -191,7 +191,7 @@ TEST_CASE("CombinedServerRunner handles both-enabled mode without hangs", "[serv
   std::ostringstream stderr;
 
   // Create options with both HTTP and stdio enabled
-  mcp::CombinedServerRunnerOptions options;
+  mcp::server::CombinedServerRunnerOptions options;
   options.enableStdio = true;
   options.enableHttp = true;
   options.httpOptions.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
@@ -200,7 +200,7 @@ TEST_CASE("CombinedServerRunner handles both-enabled mode without hangs", "[serv
   options.stdioError = &stderr;
 
   // Create runner as shared_ptr to safely share ownership with stdio thread
-  auto runner = std::make_shared<mcp::CombinedServerRunner>(createMinimalServer, options);
+  auto runner = std::make_shared<mcp::server::CombinedServerRunner>(createMinimalServer, options);
 
   // Start HTTP server first (non-blocking)
   runner->startHttp();
@@ -261,12 +261,12 @@ TEST_CASE("CombinedServerRunner handles both-enabled mode without hangs", "[serv
 TEST_CASE("CombinedServerRunner move constructor allows destruction of moved-from object", "[server][combined_runner]")
 {
   // Create options with HTTP-only mode
-  mcp::CombinedServerRunnerOptions options;
+  mcp::server::CombinedServerRunnerOptions options;
   options.enableHttp = true;
   options.httpOptions.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
 
   // Create first runner
-  mcp::CombinedServerRunner runner1(createMinimalServer, options);
+  mcp::server::CombinedServerRunner runner1(createMinimalServer, options);
   runner1.startHttp();
 
   REQUIRE(runner1.isHttpRunning());
@@ -274,7 +274,7 @@ TEST_CASE("CombinedServerRunner move constructor allows destruction of moved-fro
   REQUIRE(port > 0);
 
   // Move construct a new runner
-  mcp::CombinedServerRunner runner2(std::move(runner1));
+  mcp::server::CombinedServerRunner runner2(std::move(runner1));
 
   // The moved-from runner should be in a valid state (but not running)
   // Note: After move, runner1 is in a valid but unspecified state
@@ -292,12 +292,12 @@ TEST_CASE("CombinedServerRunner move constructor allows destruction of moved-fro
 TEST_CASE("CombinedServerRunner move assignment allows destruction of moved-from object", "[server][combined_runner]")
 {
   // Create options with HTTP-only mode
-  mcp::CombinedServerRunnerOptions options;
+  mcp::server::CombinedServerRunnerOptions options;
   options.enableHttp = true;
   options.httpOptions.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
 
   // Create first runner
-  mcp::CombinedServerRunner runner1(createMinimalServer, options);
+  mcp::server::CombinedServerRunner runner1(createMinimalServer, options);
   runner1.startHttp();
 
   REQUIRE(runner1.isHttpRunning());
@@ -305,9 +305,9 @@ TEST_CASE("CombinedServerRunner move assignment allows destruction of moved-from
   REQUIRE(port1 > 0);
 
   // Create second runner (will be overwritten)
-  mcp::CombinedServerRunnerOptions options2;
+  mcp::server::CombinedServerRunnerOptions options2;
   options2.enableHttp = true;
-  mcp::CombinedServerRunner runner2(createMinimalServer, options2);
+  mcp::server::CombinedServerRunner runner2(createMinimalServer, options2);
   runner2.startHttp();
 
   REQUIRE(runner2.isHttpRunning());
@@ -330,7 +330,7 @@ TEST_CASE("CombinedServerRunner move assignment allows destruction of moved-from
 TEST_CASE("CombinedServerRunner destructor releases HTTP port without explicit stop", "[server][combined_runner]")
 {
   // Create options with HTTP-only mode
-  mcp::CombinedServerRunnerOptions options;
+  mcp::server::CombinedServerRunnerOptions options;
   options.enableHttp = true;
   options.httpOptions.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
 
@@ -338,7 +338,7 @@ TEST_CASE("CombinedServerRunner destructor releases HTTP port without explicit s
 
   // Create and start runner in a scope, then destroy without stopping
   {
-    mcp::CombinedServerRunner runner(createMinimalServer, options);
+    mcp::server::CombinedServerRunner runner(createMinimalServer, options);
     runner.startHttp();
 
     REQUIRE(runner.isHttpRunning());
@@ -367,11 +367,11 @@ TEST_CASE("CombinedServerRunner move assignment cleans up overwritten runner's H
   // RunnerA uses ephemeral port
 
   // Create runnerA first (ephemeral port)
-  mcp::CombinedServerRunnerOptions optionsA;
+  mcp::server::CombinedServerRunnerOptions optionsA;
   optionsA.enableHttp = true;
   optionsA.httpOptions.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
 
-  mcp::CombinedServerRunner runnerA(createMinimalServer, optionsA);
+  mcp::server::CombinedServerRunner runnerA(createMinimalServer, optionsA);
   runnerA.startHttp();
 
   REQUIRE(runnerA.isHttpRunning());
@@ -379,12 +379,12 @@ TEST_CASE("CombinedServerRunner move assignment cleans up overwritten runner's H
   REQUIRE(portA > 0);
 
   // Create runnerB with a specific high port that we control
-  mcp::CombinedServerRunnerOptions optionsB;
+  mcp::server::CombinedServerRunnerOptions optionsB;
   optionsB.enableHttp = true;
   optionsB.httpOptions.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
   optionsB.httpOptions.transportOptions.http.endpoint.port = 0;  // Let OS assign
 
-  mcp::CombinedServerRunner runnerB(createMinimalServer, optionsB);
+  mcp::server::CombinedServerRunner runnerB(createMinimalServer, optionsB);
   runnerB.startHttp();
 
   REQUIRE(runnerB.isHttpRunning());
@@ -408,7 +408,7 @@ TEST_CASE("CombinedServerRunner move assignment cleans up overwritten runner's H
   REQUIRE(runnerB.localPort() == portA);
 
   // Explicitly destroy runnerA to trigger its destructor (cleanup of moved-from state)
-  runnerA = mcp::CombinedServerRunner(createMinimalServer, optionsA);
+  runnerA = mcp::server::CombinedServerRunner(createMinimalServer, optionsA);
 
   // Verify portB was released - try to bind to it
   // Uses bounded retry logic for TIME_WAIT handling
@@ -429,11 +429,11 @@ TEST_CASE("CombinedServerRunner move assignment cleans up overwritten runner's H
 TEST_CASE("CombinedServerRunner stop() stops HTTP transport", "[server][combined_runner]")
 {
   // Create options with both HTTP and stdio enabled
-  mcp::CombinedServerRunnerOptions options;
+  mcp::server::CombinedServerRunnerOptions options;
   options.enableHttp = true;
   options.httpOptions.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
 
-  mcp::CombinedServerRunner runner(createMinimalServer, options);
+  mcp::server::CombinedServerRunner runner(createMinimalServer, options);
 
   // Start HTTP
   runner.startHttp();

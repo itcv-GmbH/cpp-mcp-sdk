@@ -23,7 +23,7 @@ constexpr std::string_view kName = "StdioServerRunner";  // NOLINT(llvm-prefer-s
 
 }  // namespace
 
-namespace mcp
+namespace mcp::server
 {
 
 struct StdioServerRunner::Impl
@@ -329,4 +329,4 @@ auto StdioServerRunner::options() const -> const StdioServerRunnerOptions &
   return impl_->options;
 }
 
-}  // namespace mcp
+}  // namespace mcp::server

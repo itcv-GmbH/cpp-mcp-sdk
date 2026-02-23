@@ -153,7 +153,7 @@ private:
 class InMemoryClientServerTransport final : public mcp::transport::Transport
 {
 public:
-  InMemoryClientServerTransport(std::shared_ptr<mcp::Server> server, std::weak_ptr<mcp::Client> client)
+  InMemoryClientServerTransport(std::shared_ptr<mcp::server::Server> server, std::weak_ptr<mcp::Client> client)
     : server_(std::move(server))
     , client_(std::move(client))
   {
@@ -191,7 +191,7 @@ public:
 
   auto send(mcp::jsonrpc::Message message) -> void override
   {
-    std::shared_ptr<mcp::Server> server;
+    std::shared_ptr<mcp::server::Server> server;
     std::weak_ptr<mcp::Client> client;
 
     {
@@ -235,7 +235,7 @@ private:
   bool running_ = false;
   mcp::jsonrpc::RequestContext context_;
   std::weak_ptr<mcp::lifecycle::Session> attachedSession_;
-  std::shared_ptr<mcp::Server> server_;
+  std::shared_ptr<mcp::server::Server> server_;
   std::weak_ptr<mcp::Client> client_;
 };
 
@@ -736,7 +736,7 @@ TEST_CASE("Client convenience APIs enforce negotiated capability gating", "[clie
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
   auto client = mcp::Client::create();
   auto transport = std::make_shared<InMemoryClientServerTransport>(server, client);
   client->attachTransport(transport);
@@ -2289,7 +2289,7 @@ TEST_CASE("Client pagination helpers pass and honor cursors for list endpoints",
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   for (std::size_t index = 0; index < kRoundTripItemCount; ++index)
   {
@@ -2444,7 +2444,7 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
   mcp::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
 
-  auto server = mcp::Server::create(std::move(configuration));
+  auto server = mcp::server::Server::create(std::move(configuration));
 
   for (std::size_t index = 0; index < kRoundTripItemCount; ++index)
   {

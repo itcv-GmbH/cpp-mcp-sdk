@@ -3,7 +3,7 @@
 #include <mcp/sdk/error_reporter.hpp>
 #include <mcp/transport/all.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 /// Configuration options for the STDIO server runner.
@@ -18,4 +18,4 @@ struct StdioServerRunnerOptions
   ErrorReporter errorReporter;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

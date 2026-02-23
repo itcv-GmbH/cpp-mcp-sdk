@@ -12,7 +12,7 @@
 #include <mcp/server/detail/server_factory.hpp>
 #include <mcp/server/detail/stdio_server_runner_options.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 /// @section Exceptions
@@ -49,8 +49,8 @@ namespace mcp
 ///
 /// Usage:
 /// @code
-///   ServerFactory makeServer = [] { return mcp::Server::create(); };
-///   mcp::StdioServerRunner runner(makeServer);
+///   ServerFactory makeServer = [] { return mcp::server::Server::create(); };
+///   mcp::server::StdioServerRunner runner(makeServer);
 ///   runner.run();
 /// @endcode
 ///
@@ -58,15 +58,15 @@ namespace mcp
 /// @code
 ///   StdioServerRunnerOptions options;
 ///   options.transportOptions.allowStderrLogs = true;
-///   ServerFactory makeServer = [] { return mcp::Server::create(); };
-///   mcp::StdioServerRunner runner(makeServer, options);
+///   ServerFactory makeServer = [] { return mcp::server::Server::create(); };
+///   mcp::server::StdioServerRunner runner(makeServer, options);
 ///   runner.run();
 /// @endcode
 ///
 /// For async usage:
 /// @code
-///   ServerFactory makeServer = [] { return mcp::Server::create(); };
-///   mcp::StdioServerRunner runner(makeServer);
+///   ServerFactory makeServer = [] { return mcp::server::Server::create(); };
+///   mcp::server::StdioServerRunner runner(makeServer);
 ///   auto thread = runner.startAsync();
 ///   // ... do other work ...
 ///   runner.stop();
@@ -130,4 +130,4 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server
