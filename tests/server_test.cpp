@@ -153,15 +153,15 @@ static auto makePromptDefinition(std::string name) -> mcp::PromptDefinition
 
 TEST_CASE("Server initialize result reflects configured capabilities and metadata", "[server][core][initialize]")
 {
-  mcp::PromptsCapability prompts;
+  mcp::lifecycle::session::PromptsCapability prompts;
   prompts.listChanged = true;
 
-  mcp::ToolsCapability tools;
+  mcp::lifecycle::session::ToolsCapability tools;
   tools.listChanged = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(mcp::LoggingCapability {}, std::nullopt, prompts, std::nullopt, tools, std::nullopt, std::nullopt);
-  configuration.serverInfo = mcp::Implementation("configured-server", "2.3.4");
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, prompts, std::nullopt, tools, std::nullopt, std::nullopt);
+  configuration.serverInfo = mcp::lifecycle::session::Implementation("configured-server", "2.3.4");
   configuration.instructions = "Use tools only when needed.";
 
   auto server = mcp::Server::create(std::move(configuration));
@@ -191,7 +191,7 @@ TEST_CASE("Server initialize result reflects configured capabilities and metadat
 TEST_CASE("Server enforces pre-initialization lifecycle rules", "[server][core][lifecycle]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(mcp::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -247,7 +247,7 @@ TEST_CASE("Server enforces pre-initialization lifecycle rules", "[server][core][
 TEST_CASE("Server completion enforces max values and preserves reference semantics", "[server][utilities][completion]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, mcp::CompletionsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, mcp::lifecycle::session::CompletionsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -380,7 +380,7 @@ TEST_CASE("Server logging/setLevel is capability-gated", "[server][utilities][lo
 TEST_CASE("Server logging level updates and filters outbound notifications", "[server][utilities][logging]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(mcp::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -436,7 +436,7 @@ TEST_CASE("Server logging level updates and filters outbound notifications", "[s
 TEST_CASE("Server returns method not found when a feature capability is not declared", "[server][core][capabilities]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(mcp::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
   server->registerRequestHandler("tools/list",
@@ -463,7 +463,7 @@ TEST_CASE("Server returns method not found when a feature capability is not decl
 TEST_CASE("Server tools list supports cursor pagination", "[server][tools][list]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
   for (std::size_t index = 0; index < kToolsListPageSize + 5; ++index)
@@ -515,7 +515,7 @@ TEST_CASE("Server tools list supports cursor pagination", "[server][tools][list]
 TEST_CASE("Server tools call differentiates unknown tool errors from input schema failures", "[server][tools][call]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -580,7 +580,7 @@ TEST_CASE("Server tools call differentiates unknown tool errors from input schem
 TEST_CASE("Server tools call validates structured output when output schema is declared", "[server][tools][output]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -657,15 +657,15 @@ TEST_CASE("Server tools call validates structured output when output schema is d
 
 TEST_CASE("Server tools/call task augmentation returns deferred result and enforces auth binding", "[server][tasks][tools]")
 {
-  mcp::ToolsCapability toolsCapability;
+  mcp::lifecycle::session::ToolsCapability toolsCapability;
 
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.list = true;
   tasksCapability.cancel = true;
   tasksCapability.toolsCall = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
   configuration.emitTaskStatusNotifications = true;
 
   auto server = mcp::Server::create(std::move(configuration));
@@ -767,15 +767,15 @@ TEST_CASE("Server tools/call task augmentation returns deferred result and enfor
 
 TEST_CASE("Server teardown is safe with in-flight task-augmented tools worker", "[server][tasks][tools][teardown]")
 {
-  mcp::ToolsCapability toolsCapability;
+  mcp::lifecycle::session::ToolsCapability toolsCapability;
 
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.toolsCall = true;
 
   auto taskStore = std::make_shared<mcp::util::InMemoryTaskStore>();
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
   configuration.emitTaskStatusNotifications = true;
   configuration.taskStore = taskStore;
 
@@ -844,13 +844,13 @@ TEST_CASE("Server teardown is safe with in-flight task-augmented tools worker", 
 
 TEST_CASE("Server tools/call enforces tool-level task support negotiation", "[server][tasks][negotiation]")
 {
-  mcp::ToolsCapability toolsCapability;
+  mcp::lifecycle::session::ToolsCapability toolsCapability;
 
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.toolsCall = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -904,15 +904,15 @@ TEST_CASE("Server tools/call enforces tool-level task support negotiation", "[se
 
 TEST_CASE("Server tasks/list and tasks/cancel are gated by sub-capabilities", "[server][tasks][capabilities]")
 {
-  mcp::ToolsCapability toolsCapability;
+  mcp::lifecycle::session::ToolsCapability toolsCapability;
 
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.list = false;
   tasksCapability.cancel = false;
   tasksCapability.toolsCall = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, tasksCapability, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -976,11 +976,11 @@ TEST_CASE("Server tasks/list and tasks/cancel are gated by sub-capabilities", "[
 
 TEST_CASE("Server emits tools list_changed notifications when enabled", "[server][tools][notifications]")
 {
-  mcp::ToolsCapability toolsCapability;
+  mcp::lifecycle::session::ToolsCapability toolsCapability;
   toolsCapability.listChanged = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -1025,12 +1025,12 @@ TEST_CASE("Server emits tools list_changed notifications when enabled", "[server
 
 TEST_CASE("Server resources list/read/templates support pagination and blob encoding", "[server][resources][core]")
 {
-  mcp::ResourcesCapability resourcesCapability;
+  mcp::lifecycle::session::ResourcesCapability resourcesCapability;
   resourcesCapability.subscribe = true;
   resourcesCapability.listChanged = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -1138,7 +1138,7 @@ TEST_CASE("Server resources list/read/templates support pagination and blob enco
 TEST_CASE("Server resources/read missing URI returns resource not found", "[server][resources][errors]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, mcp::ResourcesCapability {}, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ResourcesCapability {}, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
   completeInitialization(*server);
@@ -1165,11 +1165,11 @@ TEST_CASE("Server resource subscriptions are capability-gated and emit update no
 {
   SECTION("Subscription methods are unavailable when resources.subscribe is not declared")
   {
-    mcp::ResourcesCapability resourcesCapability;
+    mcp::lifecycle::session::ResourcesCapability resourcesCapability;
     resourcesCapability.subscribe = false;
 
     mcp::ServerConfiguration configuration;
-    configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
 
     auto server = mcp::Server::create(std::move(configuration));
     completeInitialization(*server);
@@ -1186,12 +1186,12 @@ TEST_CASE("Server resource subscriptions are capability-gated and emit update no
 
   SECTION("When enabled, subscribe and unsubscribe control resources/updated delivery")
   {
-    mcp::ResourcesCapability resourcesCapability;
+    mcp::lifecycle::session::ResourcesCapability resourcesCapability;
     resourcesCapability.subscribe = true;
     resourcesCapability.listChanged = true;
 
     mcp::ServerConfiguration configuration;
-    configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, resourcesCapability, std::nullopt, std::nullopt, std::nullopt);
 
     auto server = mcp::Server::create(std::move(configuration));
 
@@ -1274,7 +1274,7 @@ TEST_CASE("Server resource subscriptions are capability-gated and emit update no
 TEST_CASE("Server prompts list supports cursor pagination", "[server][prompts][list]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, mcp::PromptsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, mcp::lifecycle::session::PromptsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
   for (std::size_t index = 0; index < kPromptsListPageSize + 5; ++index)
@@ -1330,13 +1330,13 @@ TEST_CASE("Server prompts list supports cursor pagination", "[server][prompts][l
 
 TEST_CASE("Server list endpoint cursors are opaque, stable, and endpoint-scoped", "[server][utilities][pagination][list]")
 {
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.list = true;
   tasksCapability.toolsCall = true;
 
   mcp::ServerConfiguration configuration;
   configuration.capabilities =
-    mcp::ServerCapabilities(std::nullopt, std::nullopt, mcp::PromptsCapability {}, mcp::ResourcesCapability {}, mcp::ToolsCapability {}, tasksCapability, std::nullopt);
+    mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, mcp::lifecycle::session::PromptsCapability {}, mcp::lifecycle::session::ResourcesCapability {}, mcp::lifecycle::session::ToolsCapability {}, tasksCapability, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -1528,7 +1528,7 @@ TEST_CASE("Server list endpoint cursors are opaque, stable, and endpoint-scoped"
 TEST_CASE("Server prompts/get validates required and unknown arguments", "[server][prompts][get]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, mcp::PromptsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, mcp::lifecycle::session::PromptsCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -1608,11 +1608,11 @@ TEST_CASE("Server prompts/get validates required and unknown arguments", "[serve
 
 TEST_CASE("Server emits prompts list_changed notifications when enabled", "[server][prompts][notifications]")
 {
-  mcp::PromptsCapability promptsCapability;
+  mcp::lifecycle::session::PromptsCapability promptsCapability;
   promptsCapability.listChanged = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 

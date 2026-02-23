@@ -181,7 +181,8 @@ private:
 TEST_CASE("Legacy server compatibility supports initialize and tools/list over HTTP+SSE", "[conformance][legacy_server]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+  configuration.capabilities =
+    mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
   auto coreServer = mcp::Server::create(std::move(configuration));
 
   mcp::ToolDefinition tool;

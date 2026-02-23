@@ -185,12 +185,12 @@ auto main(int argc, char **argv) -> int
     auto makeServer = [&options, &serverRegistry]() -> std::shared_ptr<mcp::Server>
     {
       // Enable resource subscription and listChanged capabilities
-      mcp::ResourcesCapability resourcesCapability;
+      mcp::lifecycle::session::ResourcesCapability resourcesCapability;
       resourcesCapability.subscribe = true;
       resourcesCapability.listChanged = true;
 
       mcp::ServerConfiguration configuration;
-      configuration.capabilities = mcp::ServerCapabilities(std::nullopt,  // logging
+      configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt,  // logging
                                                            std::nullopt,  // completions
                                                            std::nullopt,  // prompts
                                                            resourcesCapability,  // resources
@@ -198,7 +198,7 @@ auto main(int argc, char **argv) -> int
                                                            std::nullopt,  // tasks
                                                            std::nullopt  // experimental
       );
-      configuration.serverInfo = mcp::Implementation("cpp-integration-server-resources-advanced", "1.0.0");
+      configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-server-resources-advanced", "1.0.0");
       configuration.instructions = "Advanced resources fixture server for reference SDK tests with templates and subscriptions.";
 
       const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
@@ -420,7 +420,7 @@ auto main(int argc, char **argv) -> int
                 if (server)
                 {
                   const auto sessionState = server->session()->state();
-                  if (sessionState == mcp::SessionState::kOperating)
+                  if (sessionState == mcp::lifecycle::session::SessionState::kOperating)
                   {
                     targetServer = std::move(server);
                     break;

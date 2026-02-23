@@ -59,7 +59,7 @@ auto makeJsonPostRequest(std::string body) -> mcp_http::ServerRequest
 class CapturingTransport final : public mcp::transport::Transport
 {
 public:
-  auto attach(std::weak_ptr<mcp::Session> session) -> void override
+  auto attach(std::weak_ptr<mcp::lifecycle::Session> session) -> void override
   {
     const std::scoped_lock lock(mutex_);
     session_ = std::move(session);
@@ -112,7 +112,7 @@ private:
   mutable std::mutex mutex_;
   mutable std::condition_variable messagesCv_;
   bool running_ = false;
-  std::weak_ptr<mcp::Session> session_;
+  std::weak_ptr<mcp::lifecycle::Session> session_;
   std::vector<mcp::jsonrpc::Message> messages_;
   std::size_t stopCallCount_ = 0;
 };

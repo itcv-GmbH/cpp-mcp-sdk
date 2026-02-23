@@ -8,7 +8,8 @@
 // NOLINTBEGIN(readability-function-cognitive-complexity, misc-const-correctness, bugprone-unchecked-optional-access, google-build-using-namespace, abseil-string-find-str-contains,
 // misc-include-cleaner)
 
-using namespace mcp;
+namespace detail = mcp::detail;
+using namespace mcp::lifecycle::session;
 
 TEST_CASE("Icon to JSON encodes required src field", "[initialize_codec][icon]")
 {

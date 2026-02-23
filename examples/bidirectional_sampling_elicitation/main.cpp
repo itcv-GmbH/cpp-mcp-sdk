@@ -71,7 +71,7 @@ auto main() -> int
   try
   {
     mcp::ServerConfiguration configuration;
-    configuration.serverInfo = mcp::Implementation("example-bidirectional-server", "1.0.0");
+    configuration.serverInfo = mcp::lifecycle::session::Implementation("example-bidirectional-server", "1.0.0");
 
     const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
     completeInitialization(*server);

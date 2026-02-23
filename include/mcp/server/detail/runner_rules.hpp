@@ -34,7 +34,7 @@ namespace mcp
 /// - Creates one Server instance per HTTP session when requireSessionId=true.
 /// - Uses the same lifecycle rules as individual runners for each transport.
 ///
-/// @note Session isolation is critical because mcp::Session lifecycle state (e.g., protocol version
+/// @note Session isolation is critical because mcp::lifecycle::Session lifecycle state (e.g., protocol version
 /// negotiation, capability initialization) is per-instance. Routing multiple sessions through a
 /// single Server instance would cause initialization/lifecycle state to be shared incorrectly.
 namespace runner

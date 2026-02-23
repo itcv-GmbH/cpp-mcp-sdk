@@ -158,13 +158,13 @@ auto main() -> int
 
     // Configure client initialization
     // Include roots capability to tell server we support server-initiated roots/list
-    mcp::RootsCapability rootsCapability;
+    mcp::lifecycle::session::RootsCapability rootsCapability;
     rootsCapability.listChanged = true;
 
     client->setInitializeConfiguration({
       .protocolVersion = std::string(mcp::kLatestProtocolVersion),
-      .capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt),
-      .clientInfo = mcp::Implementation(std::string(kClientInfoName), std::string(kClientInfoVersion)),
+      .capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt),
+      .clientInfo = mcp::lifecycle::session::Implementation(std::string(kClientInfoName), std::string(kClientInfoVersion)),
     });
 
     // Start client

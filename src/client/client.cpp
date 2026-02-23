@@ -37,7 +37,6 @@
 #include <mcp/server/prompts.hpp>
 #include <mcp/server/resources.hpp>
 #include <mcp/server/tools.hpp>
-#include <mcp/session.hpp>
 #include <mcp/transport/all.hpp>
 #include <mcp/transport/streamable_http_client_transport.hpp>
 #include <mcp/transport/transport.hpp>
@@ -452,7 +451,7 @@ static auto ensureServerCapabilityAvailable(const Client &client, std::string_vi
     return;
   }
 
-  throw CapabilityError("Server capability '" + std::string(capabilityName) + "' is required for method '" + std::string(method) + "'");
+  throw lifecycle::session::CapabilityError("Server capability '" + std::string(capabilityName) + "' is required for method '" + std::string(method) + "'");
 }
 
 static auto makeRootsUnsupportedResponse(const jsonrpc::RequestId &requestId, const std::string &reason) -> jsonrpc::Response
@@ -994,7 +993,7 @@ public:
   SubprocessStdioClientTransport(SubprocessStdioClientTransport &&) = delete;
   auto operator=(SubprocessStdioClientTransport &&) -> SubprocessStdioClientTransport & = delete;
 
-  auto attach(std::weak_ptr<Session> session) -> void override
+  auto attach(std::weak_ptr<lifecycle::Session> session) -> void override
   {
     const std::scoped_lock lock(mutex_);
     attachedSession_ = std::move(session);
@@ -1159,7 +1158,7 @@ private:
   mutable std::mutex mutex_;
   std::atomic<bool> running_ {false};
   transport::StdioClientOptions options_;
-  std::weak_ptr<Session> attachedSession_;
+  std::weak_ptr<lifecycle::Session> attachedSession_;
   transport::StdioSubprocess subprocess_;
   std::unique_ptr<detail::InboundLoop> readerLoop_;
   std::function<void(const jsonrpc::Message &)> inboundMessageHandler_;
@@ -1227,9 +1226,9 @@ Client::Client(std::shared_ptr<lifecycle::Session> session, sdk::ErrorReporter e
 
   taskReceiver_ = std::make_shared<util::TaskReceiver>(std::make_shared<util::InMemoryTaskStore>());
   taskReceiver_->setStatusObserver(
-    [weakSession = std::weak_ptr<Session>(session_), errorReporter = errorReporter_](const jsonrpc::RequestContext &, const util::Task &task) -> void
+    [weakSession = std::weak_ptr<lifecycle::Session>(session_), errorReporter = errorReporter_](const jsonrpc::RequestContext &, const util::Task &task) -> void
     {
-      const std::shared_ptr<Session> session = weakSession.lock();
+      const std::shared_ptr<lifecycle::Session> session = weakSession.lock();
       if (!session)
       {
         return;
@@ -1806,7 +1805,7 @@ Client::~Client() noexcept
   }
 }
 
-auto Client::session() const noexcept -> const std::shared_ptr<Session> &
+auto Client::session() const noexcept -> const std::shared_ptr<lifecycle::Session> &
 {
   return session_;
 }
@@ -1898,12 +1897,12 @@ auto Client::initializeConfiguration() const -> ClientInitializeConfiguration
   return initializeConfiguration_;
 }
 
-auto Client::initialize(RequestOptions options) -> std::future<jsonrpc::Response>
+auto Client::initialize(lifecycle::session::RequestOptions options) -> std::future<jsonrpc::Response>
 {
   return sendRequest(std::string(kInitializeMethod), jsonrpc::JsonValue::object(), options);
 }
 
-auto Client::listTools(std::optional<std::string> cursor, RequestOptions options) -> ListToolsResult
+auto Client::listTools(std::optional<std::string> cursor, lifecycle::session::RequestOptions options) -> ListToolsResult
 {
   ensureServerCapabilityAvailable(*this, "tools", kToolsListMethod);
 
@@ -1933,7 +1932,7 @@ auto Client::listTools(std::optional<std::string> cursor, RequestOptions options
   return parsedResult;
 }
 
-auto Client::callTool(const std::string &name, jsonrpc::JsonValue arguments, RequestOptions options) -> CallToolResult
+auto Client::callTool(const std::string &name, jsonrpc::JsonValue arguments, lifecycle::session::RequestOptions options) -> CallToolResult
 {
   ensureServerCapabilityAvailable(*this, "tools", kToolsCallMethod);
 
@@ -1971,7 +1970,7 @@ auto Client::callTool(const std::string &name, jsonrpc::JsonValue arguments, Req
   return parsedResult;
 }
 
-auto Client::listResources(std::optional<std::string> cursor, RequestOptions options) -> ListResourcesResult
+auto Client::listResources(std::optional<std::string> cursor, lifecycle::session::RequestOptions options) -> ListResourcesResult
 {
   ensureServerCapabilityAvailable(*this, "resources", kResourcesListMethod);
 
@@ -2001,7 +2000,7 @@ auto Client::listResources(std::optional<std::string> cursor, RequestOptions opt
   return parsedResult;
 }
 
-auto Client::readResource(const std::string &uri, RequestOptions options) -> ReadResourceResult
+auto Client::readResource(const std::string &uri, lifecycle::session::RequestOptions options) -> ReadResourceResult
 {
   ensureServerCapabilityAvailable(*this, "resources", kResourcesReadMethod);
 
@@ -2027,7 +2026,7 @@ auto Client::readResource(const std::string &uri, RequestOptions options) -> Rea
   return parsedResult;
 }
 
-auto Client::listResourceTemplates(std::optional<std::string> cursor, RequestOptions options) -> ListResourceTemplatesResult
+auto Client::listResourceTemplates(std::optional<std::string> cursor, lifecycle::session::RequestOptions options) -> ListResourceTemplatesResult
 {
   ensureServerCapabilityAvailable(*this, "resources", kResourcesTemplatesListMethod);
 
@@ -2057,7 +2056,7 @@ auto Client::listResourceTemplates(std::optional<std::string> cursor, RequestOpt
   return parsedResult;
 }
 
-auto Client::listPrompts(std::optional<std::string> cursor, RequestOptions options) -> ListPromptsResult
+auto Client::listPrompts(std::optional<std::string> cursor, lifecycle::session::RequestOptions options) -> ListPromptsResult
 {
   ensureServerCapabilityAvailable(*this, "prompts", kPromptsListMethod);
 
@@ -2087,7 +2086,7 @@ auto Client::listPrompts(std::optional<std::string> cursor, RequestOptions optio
   return parsedResult;
 }
 
-auto Client::getPrompt(const std::string &name, jsonrpc::JsonValue arguments, RequestOptions options) -> PromptGetResult
+auto Client::getPrompt(const std::string &name, jsonrpc::JsonValue arguments, lifecycle::session::RequestOptions options) -> PromptGetResult
 {
   ensureServerCapabilityAvailable(*this, "prompts", kPromptsGetMethod);
 
@@ -2204,7 +2203,7 @@ auto Client::clearUrlElicitationCompletionHandler() -> void
 
 auto Client::start() -> void
 {
-  session_->setRole(SessionRole::kClient);
+  session_->setRole(lifecycle::session::SessionRole::kClient);
   session_->start();
 
   std::shared_ptr<transport::Transport> transport;
@@ -2273,7 +2272,7 @@ auto Client::stop() -> void
   session_->stop();
 }
 
-auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestOptions options) -> std::future<jsonrpc::Response>
+auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, lifecycle::session::RequestOptions options) -> std::future<jsonrpc::Response>
 {
   jsonrpc::Request request;
   request.id = nextRequestId();
@@ -2327,7 +2326,7 @@ auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestO
         {
           session_->handleInitializeResponse(response);
         }
-        catch (const LifecycleError &error)
+        catch (const lifecycle::session::LifecycleError &error)
         {
           reportError(errorReporter_, "Client::sendRequest::handleInitializeResponse", error.what());
         }
@@ -2340,7 +2339,8 @@ auto Client::sendRequest(std::string method, jsonrpc::JsonValue params, RequestO
   return responseFuture;
 }
 
-auto Client::sendRequestAsync(std::string method, jsonrpc::JsonValue params, const ResponseCallback &callback, RequestOptions options) -> void
+auto Client::sendRequestAsync(std::string method, jsonrpc::JsonValue params, const lifecycle::session::ResponseCallback &callback, lifecycle::session::RequestOptions options)
+  -> void
 {
   auto responseFuture = sendRequest(std::move(method), std::move(params), options);
   auto responseFuturePtr = std::make_shared<std::future<jsonrpc::Response>>(std::move(responseFuture));
@@ -2435,7 +2435,7 @@ auto Client::handleResponse(const jsonrpc::RequestContext &context, const jsonrp
     {
       session_->handleInitializeResponse(response);
     }
-    catch (const LifecycleError &error)
+    catch (const lifecycle::session::LifecycleError &error)
     {
       reportError(errorReporter_, "Client::handleResponse::handleInitializeResponse", error.what());
       const bool dispatched = router_.dispatchResponse(context, response);
@@ -2486,7 +2486,7 @@ auto Client::negotiatedProtocolVersion() const noexcept -> std::optional<std::st
   return session_->negotiatedProtocolVersion();
 }
 
-auto Client::negotiatedParameters() const -> std::optional<NegotiatedParameters>
+auto Client::negotiatedParameters() const -> std::optional<lifecycle::session::NegotiatedParameters>
 {
   const auto &negotiated = session_->negotiatedParameters();
   if (!negotiated.has_value())
@@ -2497,7 +2497,7 @@ auto Client::negotiatedParameters() const -> std::optional<NegotiatedParameters>
   return negotiated;
 }
 
-auto Client::negotiatedClientCapabilities() const -> std::optional<ClientCapabilities>
+auto Client::negotiatedClientCapabilities() const -> std::optional<lifecycle::session::ClientCapabilities>
 {
   const auto negotiated = negotiatedParameters();
   if (!negotiated.has_value())
@@ -2508,7 +2508,7 @@ auto Client::negotiatedClientCapabilities() const -> std::optional<ClientCapabil
   return negotiated->clientCapabilities();
 }
 
-auto Client::negotiatedServerCapabilities() const -> std::optional<ServerCapabilities>
+auto Client::negotiatedServerCapabilities() const -> std::optional<lifecycle::session::ServerCapabilities>
 {
   const auto negotiated = negotiatedParameters();
   if (!negotiated.has_value())
@@ -2576,7 +2576,7 @@ auto Client::applyInitializeDefaults(jsonrpc::Request &request) const -> void
     }
     else
     {
-      const Implementation clientInfo {std::string(kDefaultClientName), std::string(kSdkVersion)};
+      const lifecycle::session::Implementation clientInfo {std::string(kDefaultClientName), std::string(kSdkVersion)};
       params["clientInfo"] = detail::implementationToJson(clientInfo);
     }
   }

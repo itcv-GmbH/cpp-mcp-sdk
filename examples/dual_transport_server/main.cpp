@@ -53,23 +53,23 @@ auto makeTextContent(const std::string &text) -> mcp::jsonrpc::JsonValue
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 auto makeServer() -> std::shared_ptr<mcp::Server>
 {
-  mcp::ToolsCapability toolsCapability;
+  mcp::lifecycle::session::ToolsCapability toolsCapability;
   toolsCapability.listChanged = true;
 
-  mcp::ResourcesCapability resourcesCapability;
+  mcp::lifecycle::session::ResourcesCapability resourcesCapability;
   resourcesCapability.listChanged = true;
 
-  mcp::PromptsCapability promptsCapability;
+  mcp::lifecycle::session::PromptsCapability promptsCapability;
   promptsCapability.listChanged = true;
 
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.toolsCall = true;
   tasksCapability.list = true;
   tasksCapability.cancel = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
-  configuration.serverInfo = mcp::Implementation("example-dual-transport-server", "1.0.0");
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
+  configuration.serverInfo = mcp::lifecycle::session::Implementation("example-dual-transport-server", "1.0.0");
   configuration.instructions = "Use tools for generated output and read resources for static context.";
 
   const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));

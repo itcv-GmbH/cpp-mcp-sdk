@@ -11,6 +11,9 @@
 
 using namespace mcp::lifecycle;
 using namespace mcp::lifecycle::session;
+namespace jsonrpc = mcp::jsonrpc;
+using mcp::kLatestProtocolVersion;
+using mcp::kLegacyProtocolVersion;
 
 TEST_CASE("Session starts in Created state", "[lifecycle][session]")
 {

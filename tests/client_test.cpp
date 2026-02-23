@@ -31,7 +31,7 @@
 class RecordingTransport final : public mcp::transport::Transport
 {
 public:
-  auto attach(std::weak_ptr<mcp::Session> session) -> void override
+  auto attach(std::weak_ptr<mcp::lifecycle::Session> session) -> void override
   {
     const std::scoped_lock lock(mutex_);
     attachedSession_ = std::move(session);
@@ -83,7 +83,7 @@ private:
   mutable std::mutex mutex_;
   mutable std::condition_variable messagesCv_;
   bool running_ = false;
-  std::weak_ptr<mcp::Session> attachedSession_;
+  std::weak_ptr<mcp::lifecycle::Session> attachedSession_;
   std::vector<mcp::jsonrpc::Message> messages_;
 };
 
@@ -95,7 +95,7 @@ public:
   {
   }
 
-  auto attach(std::weak_ptr<mcp::Session> session) -> void override
+  auto attach(std::weak_ptr<mcp::lifecycle::Session> session) -> void override
   {
     const std::scoped_lock lock(mutex_);
     attachedSession_ = std::move(session);
@@ -146,7 +146,7 @@ private:
   mutable std::mutex mutex_;
   bool running_ = false;
   std::size_t failuresRemaining_ = 0;
-  std::weak_ptr<mcp::Session> attachedSession_;
+  std::weak_ptr<mcp::lifecycle::Session> attachedSession_;
   std::vector<mcp::jsonrpc::Message> messages_;
 };
 
@@ -165,7 +165,7 @@ public:
     context_.sessionId = "in-memory-session";
   }
 
-  auto attach(std::weak_ptr<mcp::Session> session) -> void override
+  auto attach(std::weak_ptr<mcp::lifecycle::Session> session) -> void override
   {
     const std::scoped_lock lock(mutex_);
     attachedSession_ = std::move(session);
@@ -234,7 +234,7 @@ private:
   mutable std::mutex mutex_;
   bool running_ = false;
   mcp::jsonrpc::RequestContext context_;
-  std::weak_ptr<mcp::Session> attachedSession_;
+  std::weak_ptr<mcp::lifecycle::Session> attachedSession_;
   std::shared_ptr<mcp::Server> server_;
   std::weak_ptr<mcp::Client> client_;
 };
@@ -309,7 +309,7 @@ TEST_CASE("Client blocks feature requests before initialize", "[client][core][li
   client->attachTransport(transport);
   client->start();
 
-  REQUIRE_THROWS_AS(client->sendRequest("tools/list", mcp::jsonrpc::JsonValue::object()), mcp::LifecycleError);
+  REQUIRE_THROWS_AS(client->sendRequest("tools/list", mcp::jsonrpc::JsonValue::object()), mcp::lifecycle::session::LifecycleError);
 }
 
 TEST_CASE("Client initialize defaults to latest supported version and auto-sends initialized", "[client][core][initialize]")
@@ -355,18 +355,18 @@ TEST_CASE("Client initialize configuration applies declared capabilities", "[cli
   client->attachTransport(transport);
   client->start();
 
-  mcp::RootsCapability roots;
+  mcp::lifecycle::session::RootsCapability roots;
   roots.listChanged = true;
 
-  mcp::SamplingCapability sampling;
+  mcp::lifecycle::session::SamplingCapability sampling;
   sampling.context = true;
   sampling.tools = true;
 
-  mcp::ElicitationCapability elicitation;
+  mcp::lifecycle::session::ElicitationCapability elicitation;
   elicitation.form = true;
   elicitation.url = true;
 
-  mcp::TasksCapability tasks;
+  mcp::lifecycle::session::TasksCapability tasks;
   tasks.list = true;
   tasks.cancel = true;
   tasks.samplingCreateMessage = true;
@@ -374,8 +374,8 @@ TEST_CASE("Client initialize configuration applies declared capabilities", "[cli
 
   mcp::ClientInitializeConfiguration configuration;
   configuration.protocolVersion = "2024-11-05";
-  configuration.capabilities = mcp::ClientCapabilities(roots, sampling, elicitation, tasks, std::nullopt);
-  configuration.clientInfo = mcp::Implementation("host-app", "9.8.7");
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(roots, sampling, elicitation, tasks, std::nullopt);
+  configuration.clientInfo = mcp::lifecycle::session::Implementation("host-app", "9.8.7");
   client->setInitializeConfiguration(configuration);
 
   static_cast<void>(client->initialize());
@@ -410,7 +410,7 @@ TEST_CASE("Client only allows ping requests while initialize is in-flight", "[cl
 
   auto initializeFuture = client->initialize();
   REQUIRE_NOTHROW(client->sendRequest("ping", mcp::jsonrpc::JsonValue::object()));
-  REQUIRE_THROWS_AS(client->sendRequest("tools/list", mcp::jsonrpc::JsonValue::object()), mcp::LifecycleError);
+  REQUIRE_THROWS_AS(client->sendRequest("tools/list", mcp::jsonrpc::JsonValue::object()), mcp::lifecycle::session::LifecycleError);
 
   const auto outboundMessages = transport->messages();
   REQUIRE(outboundMessages.size() == 2);
@@ -435,14 +435,14 @@ TEST_CASE("Client surfaces initialize failures without sending initialized notif
   REQUIRE(outboundBeforeError.size() == 1);
   const auto &initializeRequest = std::get<mcp::jsonrpc::Request>(outboundBeforeError.front());
 
-  REQUIRE_THROWS_AS(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeFailedInitializeResponse(initializeRequest.id)), mcp::LifecycleError);
+  REQUIRE_THROWS_AS(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeFailedInitializeResponse(initializeRequest.id)), mcp::lifecycle::session::LifecycleError);
 
   const mcp::jsonrpc::Response initializeResult = initializeFuture.get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(initializeResult));
 
   const auto outboundAfterError = transport->messages();
   REQUIRE(outboundAfterError.size() == 1);
-  REQUIRE(client->session()->state() == mcp::SessionState::kCreated);
+  REQUIRE(client->session()->state() == mcp::lifecycle::session::SessionState::kCreated);
 }
 
 TEST_CASE("Client recovers from local initialize send failure and allows retry", "[client][core][initialize]")
@@ -455,10 +455,10 @@ TEST_CASE("Client recovers from local initialize send failure and allows retry",
   auto firstInitializeFuture = client->initialize();
   const mcp::jsonrpc::Response firstInitializeResult = firstInitializeFuture.get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::ErrorResponse>(firstInitializeResult));
-  REQUIRE(client->session()->state() == mcp::SessionState::kCreated);
+  REQUIRE(client->session()->state() == mcp::lifecycle::session::SessionState::kCreated);
 
   auto retryInitializeFuture = client->initialize();
-  REQUIRE(client->session()->state() == mcp::SessionState::kInitializing);
+  REQUIRE(client->session()->state() == mcp::lifecycle::session::SessionState::kInitializing);
 
   const auto outboundAfterRetry = transport->messages();
   REQUIRE(outboundAfterRetry.size() == 1);
@@ -470,7 +470,7 @@ TEST_CASE("Client recovers from local initialize send failure and allows retry",
 
   const mcp::jsonrpc::Response retryInitializeResult = retryInitializeFuture.get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(retryInitializeResult));
-  REQUIRE(client->session()->state() == mcp::SessionState::kOperating);
+  REQUIRE(client->session()->state() == mcp::lifecycle::session::SessionState::kOperating);
 
   const auto finalOutboundMessages = transport->messages();
   REQUIRE(finalOutboundMessages.size() == 2);
@@ -564,7 +564,7 @@ TEST_CASE("Client stop prevents pending async callbacks and teardown does not ha
   REQUIRE(stopFuture.wait_for(std::chrono::milliseconds {500}) == std::future_status::ready);
   stopFuture.get();
 
-  REQUIRE_THROWS_AS(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)), mcp::LifecycleError);
+  REQUIRE_THROWS_AS(client->handleResponse(mcp::jsonrpc::RequestContext {}, makeSuccessfulInitializeResponse(initializeRequest.id)), mcp::lifecycle::session::LifecycleError);
   REQUIRE(callbackStartedFuture.wait_for(std::chrono::milliseconds {150}) == std::future_status::timeout);
   REQUIRE_FALSE(callbackStarted.load());
 
@@ -699,11 +699,11 @@ TEST_CASE("Client exposes negotiated capabilities after initialize", "[client][c
   client->attachTransport(transport);
   client->start();
 
-  mcp::RootsCapability roots;
+  mcp::lifecycle::session::RootsCapability roots;
   roots.listChanged = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(roots, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(roots, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(configuration);
 
   auto initializeFuture = client->initialize();
@@ -720,21 +720,21 @@ TEST_CASE("Client exposes negotiated capabilities after initialize", "[client][c
 
   const auto negotiatedClientCapabilities = client->negotiatedClientCapabilities();
   REQUIRE(negotiatedClientCapabilities.has_value());
-  const auto negotiatedRoots = negotiatedClientCapabilities.has_value() ? negotiatedClientCapabilities->roots() : std::optional<mcp::RootsCapability> {};
+  const auto negotiatedRoots = negotiatedClientCapabilities.has_value() ? negotiatedClientCapabilities->roots() : std::optional<mcp::lifecycle::session::RootsCapability> {};
   REQUIRE(negotiatedRoots.has_value());
-  REQUIRE(negotiatedRoots.value_or(mcp::RootsCapability {}).listChanged);
+  REQUIRE(negotiatedRoots.value_or(mcp::lifecycle::session::RootsCapability {}).listChanged);
 
   const auto negotiatedServerCapabilities = client->negotiatedServerCapabilities();
   REQUIRE(negotiatedServerCapabilities.has_value());
-  const auto negotiatedTools = negotiatedServerCapabilities.has_value() ? negotiatedServerCapabilities->tools() : std::optional<mcp::ToolsCapability> {};
+  const auto negotiatedTools = negotiatedServerCapabilities.has_value() ? negotiatedServerCapabilities->tools() : std::optional<mcp::lifecycle::session::ToolsCapability> {};
   REQUIRE(negotiatedTools.has_value());
-  REQUIRE(negotiatedTools.value_or(mcp::ToolsCapability {}).listChanged);
+  REQUIRE(negotiatedTools.value_or(mcp::lifecycle::session::ToolsCapability {}).listChanged);
 }
 
 TEST_CASE("Client convenience APIs enforce negotiated capability gating", "[client][features][capabilities]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
   auto client = mcp::Client::create();
@@ -745,13 +745,13 @@ TEST_CASE("Client convenience APIs enforce negotiated capability gating", "[clie
   const auto initializeResponse = client->initialize().get();
   REQUIRE(std::holds_alternative<mcp::jsonrpc::SuccessResponse>(initializeResponse));
 
-  REQUIRE_THROWS_AS(client->listTools(), mcp::CapabilityError);
-  REQUIRE_THROWS_AS(client->callTool("echo", mcp::jsonrpc::JsonValue::object()), mcp::CapabilityError);
-  REQUIRE_THROWS_AS(client->listResources(), mcp::CapabilityError);
-  REQUIRE_THROWS_AS(client->readResource("resource://item-0"), mcp::CapabilityError);
-  REQUIRE_THROWS_AS(client->listResourceTemplates(), mcp::CapabilityError);
-  REQUIRE_THROWS_AS(client->listPrompts(), mcp::CapabilityError);
-  REQUIRE_THROWS_AS(client->getPrompt("example", mcp::jsonrpc::JsonValue::object()), mcp::CapabilityError);
+  REQUIRE_THROWS_AS(client->listTools(), mcp::lifecycle::session::CapabilityError);
+  REQUIRE_THROWS_AS(client->callTool("echo", mcp::jsonrpc::JsonValue::object()), mcp::lifecycle::session::CapabilityError);
+  REQUIRE_THROWS_AS(client->listResources(), mcp::lifecycle::session::CapabilityError);
+  REQUIRE_THROWS_AS(client->readResource("resource://item-0"), mcp::lifecycle::session::CapabilityError);
+  REQUIRE_THROWS_AS(client->listResourceTemplates(), mcp::lifecycle::session::CapabilityError);
+  REQUIRE_THROWS_AS(client->listPrompts(), mcp::lifecycle::session::CapabilityError);
+  REQUIRE_THROWS_AS(client->getPrompt("example", mcp::jsonrpc::JsonValue::object()), mcp::lifecycle::session::CapabilityError);
 }
 
 TEST_CASE("Client roots/list enforces negotiated capability and provider gating", "[client][roots][capabilities]")
@@ -763,10 +763,10 @@ TEST_CASE("Client roots/list enforces negotiated capability and provider gating"
     client->attachTransport(transport);
     client->start();
 
-    mcp::RootsCapability rootsCapability;
+    mcp::lifecycle::session::RootsCapability rootsCapability;
     rootsCapability.listChanged = true;
     mcp::ClientInitializeConfiguration configuration;
-    configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(configuration));
     client->setRootsProvider(
       [](const mcp::RootsListContext &) -> std::vector<mcp::RootEntry>
@@ -831,10 +831,10 @@ TEST_CASE("Client roots/list enforces negotiated capability and provider gating"
     client->attachTransport(transport);
     client->start();
 
-    mcp::RootsCapability rootsCapability;
+    mcp::lifecycle::session::RootsCapability rootsCapability;
     rootsCapability.listChanged = true;
     mcp::ClientInitializeConfiguration configuration;
-    configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(configuration));
 
     auto initializeFuture = client->initialize();
@@ -869,9 +869,9 @@ TEST_CASE("Client roots/list validates root URI scheme", "[client][roots][valida
   client->attachTransport(transport);
   client->start();
 
-  mcp::RootsCapability rootsCapability;
+  mcp::lifecycle::session::RootsCapability rootsCapability;
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setRootsProvider(
@@ -907,9 +907,9 @@ TEST_CASE("Client roots/list returns file roots from provider", "[client][roots]
   client->attachTransport(transport);
   client->start();
 
-  mcp::RootsCapability rootsCapability;
+  mcp::lifecycle::session::RootsCapability rootsCapability;
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setRootsProvider(
@@ -955,10 +955,10 @@ TEST_CASE("Client notifyRootsListChanged is gated by roots.listChanged", "[clien
     client->attachTransport(transport);
     client->start();
 
-    mcp::RootsCapability rootsCapability;
+    mcp::lifecycle::session::RootsCapability rootsCapability;
     rootsCapability.listChanged = false;
     mcp::ClientInitializeConfiguration configuration;
-    configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(configuration));
 
     auto initializeFuture = client->initialize();
@@ -980,10 +980,10 @@ TEST_CASE("Client notifyRootsListChanged is gated by roots.listChanged", "[clien
     client->attachTransport(transport);
     client->start();
 
-    mcp::RootsCapability rootsCapability;
+    mcp::lifecycle::session::RootsCapability rootsCapability;
     rootsCapability.listChanged = true;
     mcp::ClientInitializeConfiguration configuration;
-    configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(configuration));
 
     auto initializeFuture = client->initialize();
@@ -1013,9 +1013,9 @@ TEST_CASE("Client sampling/createMessage validates roles and tool capability", "
     client->attachTransport(transport);
     client->start();
 
-    mcp::SamplingCapability samplingCapability;
+    mcp::lifecycle::session::SamplingCapability samplingCapability;
     mcp::ClientInitializeConfiguration configuration;
-    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(configuration));
 
     client->setSamplingCreateMessageHandler(
@@ -1063,10 +1063,10 @@ TEST_CASE("Client sampling/createMessage validates roles and tool capability", "
     client->attachTransport(transport);
     client->start();
 
-    mcp::SamplingCapability samplingCapability;
+    mcp::lifecycle::session::SamplingCapability samplingCapability;
     samplingCapability.tools = false;
     mcp::ClientInitializeConfiguration configuration;
-    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(configuration));
 
     client->setSamplingCreateMessageHandler(
@@ -1116,9 +1116,9 @@ TEST_CASE("Client sampling/createMessage validates roles and tool capability", "
     client->attachTransport(transport);
     client->start();
 
-    mcp::SamplingCapability samplingCapability;
+    mcp::lifecycle::session::SamplingCapability samplingCapability;
     mcp::ClientInitializeConfiguration configuration;
-    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(configuration));
 
     client->setSamplingCreateMessageHandler(
@@ -1201,9 +1201,9 @@ TEST_CASE("Client sampling/createMessage validates roles and tool capability", "
     client->attachTransport(transport);
     client->start();
 
-    mcp::SamplingCapability samplingCapability;
+    mcp::lifecycle::session::SamplingCapability samplingCapability;
     mcp::ClientInitializeConfiguration configuration;
-    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(configuration));
 
     client->setSamplingCreateMessageHandler(
@@ -1290,10 +1290,10 @@ TEST_CASE("Client sampling/createMessage happy path and user rejection", "[clien
   client->attachTransport(transport);
   client->start();
 
-  mcp::SamplingCapability samplingCapability;
+  mcp::lifecycle::session::SamplingCapability samplingCapability;
   samplingCapability.tools = true;
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   auto initializeFuture = client->initialize();
@@ -1355,16 +1355,16 @@ TEST_CASE("Client sampling/createMessage supports task augmentation with deferre
   client->attachTransport(transport);
   client->start();
 
-  mcp::SamplingCapability samplingCapability;
+  mcp::lifecycle::session::SamplingCapability samplingCapability;
   samplingCapability.tools = true;
 
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.list = true;
   tasksCapability.cancel = true;
   tasksCapability.samplingCreateMessage = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, tasksCapability, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, tasksCapability, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setSamplingCreateMessageHandler(
@@ -1447,9 +1447,9 @@ TEST_CASE("Client sampling/createMessage ignores task metadata when tasks capabi
   client->attachTransport(transport);
   client->start();
 
-  mcp::SamplingCapability samplingCapability;
+  mcp::lifecycle::session::SamplingCapability samplingCapability;
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setSamplingCreateMessageHandler(
@@ -1499,14 +1499,14 @@ TEST_CASE("Client elicitation/create supports task augmentation", "[client][task
   client->attachTransport(transport);
   client->start();
 
-  mcp::ElicitationCapability elicitationCapability;
+  mcp::lifecycle::session::ElicitationCapability elicitationCapability;
   elicitationCapability.form = true;
 
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.elicitationCreate = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, tasksCapability, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, tasksCapability, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setFormElicitationHandler(
@@ -1570,14 +1570,14 @@ TEST_CASE("Client teardown is safe with in-flight task-augmented elicitation wor
   client->attachTransport(transport);
   client->start();
 
-  mcp::ElicitationCapability elicitationCapability;
+  mcp::lifecycle::session::ElicitationCapability elicitationCapability;
   elicitationCapability.form = true;
 
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.elicitationCreate = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, tasksCapability, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, tasksCapability, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   std::promise<void> handlerEnteredPromise;
@@ -1608,7 +1608,7 @@ TEST_CASE("Client teardown is safe with in-flight task-augmented elicitation wor
   static_cast<void>(initializeFuture.get());
 
   const std::size_t messageCountBeforeTask = transport->messages().size();
-  std::shared_ptr<mcp::Session> retainedSession = client->session();
+  std::shared_ptr<mcp::lifecycle::Session> retainedSession = client->session();
 
   mcp::jsonrpc::Request request;
   request.id = std::int64_t {9312};
@@ -1649,15 +1649,15 @@ TEST_CASE("Client tasks/list and tasks/cancel are gated by negotiated sub-capabi
   client->attachTransport(transport);
   client->start();
 
-  mcp::SamplingCapability samplingCapability;
+  mcp::lifecycle::session::SamplingCapability samplingCapability;
 
-  mcp::TasksCapability tasksCapability;
+  mcp::lifecycle::session::TasksCapability tasksCapability;
   tasksCapability.list = false;
   tasksCapability.cancel = false;
   tasksCapability.samplingCreateMessage = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, tasksCapability, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, std::nullopt, tasksCapability, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setSamplingCreateMessageHandler(
@@ -1772,11 +1772,11 @@ TEST_CASE("Client elicitation/create enforces capability and mode gating", "[cli
     client->attachTransport(transport);
     client->start();
 
-    mcp::ElicitationCapability elicitationCapability;
+    mcp::lifecycle::session::ElicitationCapability elicitationCapability;
     elicitationCapability.form = true;
 
     mcp::ClientInitializeConfiguration configuration;
-    configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+    configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(configuration));
 
     client->setFormElicitationHandler(
@@ -1817,12 +1817,12 @@ TEST_CASE("Client elicitation/create supports accept/decline/cancel action model
   client->attachTransport(transport);
   client->start();
 
-  mcp::ElicitationCapability elicitationCapability;
+  mcp::lifecycle::session::ElicitationCapability elicitationCapability;
   elicitationCapability.form = true;
   elicitationCapability.url = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setFormElicitationHandler(
@@ -1947,11 +1947,11 @@ TEST_CASE("Client elicitation/create enforces flat primitive form schema restric
   client->attachTransport(transport);
   client->start();
 
-  mcp::ElicitationCapability elicitationCapability;
+  mcp::lifecycle::session::ElicitationCapability elicitationCapability;
   elicitationCapability.form = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setFormElicitationHandler(
@@ -2011,11 +2011,11 @@ TEST_CASE("Client elicitation/create URL mode rejects malformed absolute URLs", 
   client->attachTransport(transport);
   client->start();
 
-  mcp::ElicitationCapability elicitationCapability;
+  mcp::lifecycle::session::ElicitationCapability elicitationCapability;
   elicitationCapability.url = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setUrlElicitationHandler(
@@ -2080,11 +2080,11 @@ TEST_CASE("Client tracks URL elicitation completion notifications and ignores un
   client->attachTransport(transport);
   client->start();
 
-  mcp::ElicitationCapability elicitationCapability;
+  mcp::lifecycle::session::ElicitationCapability elicitationCapability;
   elicitationCapability.url = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, std::nullopt, elicitationCapability, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setUrlElicitationHandler(
@@ -2282,12 +2282,12 @@ TEST_CASE("Client pagination helpers enforce max page limit", "[client][paginati
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("Client pagination helpers pass and honor cursors for list endpoints", "[client][pagination][helpers]")
 {
-  mcp::ToolsCapability toolsCapability;
-  mcp::ResourcesCapability resourcesCapability;
-  mcp::PromptsCapability promptsCapability;
+  mcp::lifecycle::session::ToolsCapability toolsCapability;
+  mcp::lifecycle::session::ResourcesCapability resourcesCapability;
+  mcp::lifecycle::session::PromptsCapability promptsCapability;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -2437,12 +2437,12 @@ TEST_CASE("Client pagination helpers pass and honor cursors for list endpoints",
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 TEST_CASE("Client convenience APIs support local in-memory round-trips and pagination helpers", "[client][features][roundtrip]")
 {
-  mcp::ToolsCapability toolsCapability;
-  mcp::ResourcesCapability resourcesCapability;
-  mcp::PromptsCapability promptsCapability;
+  mcp::lifecycle::session::ToolsCapability toolsCapability;
+  mcp::lifecycle::session::ResourcesCapability resourcesCapability;
+  mcp::lifecycle::session::PromptsCapability promptsCapability;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
 
   auto server = mcp::Server::create(std::move(configuration));
 
@@ -2637,9 +2637,9 @@ TEST_CASE("Client server-initiated request handling does not deadlock during sto
   client->attachTransport(transport);
   client->start();
 
-  mcp::RootsCapability rootsCapability;
+  mcp::lifecycle::session::RootsCapability rootsCapability;
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   client->setRootsProvider(
@@ -2726,13 +2726,13 @@ TEST_CASE("Client provider exceptions result in deterministic JSON-RPC error res
   client->attachTransport(transport);
   client->start();
 
-  mcp::RootsCapability rootsCapability;
-  mcp::SamplingCapability samplingCapability;
-  mcp::ElicitationCapability elicitationCapability;
+  mcp::lifecycle::session::RootsCapability rootsCapability;
+  mcp::lifecycle::session::SamplingCapability samplingCapability;
+  mcp::lifecycle::session::ElicitationCapability elicitationCapability;
   elicitationCapability.form = true;
 
   mcp::ClientInitializeConfiguration configuration;
-  configuration.capabilities = mcp::ClientCapabilities(rootsCapability, samplingCapability, elicitationCapability, std::nullopt, std::nullopt);
+  configuration.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, samplingCapability, elicitationCapability, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(std::move(configuration));
 
   auto initializeFuture = client->initialize();
@@ -2818,11 +2818,11 @@ TEST_CASE("Client provider exceptions result in deterministic JSON-RPC error res
     client->attachTransport(transport);
     client->start();
 
-    mcp::ElicitationCapability urlElicitationCapability;
+    mcp::lifecycle::session::ElicitationCapability urlElicitationCapability;
     urlElicitationCapability.url = true;
 
     mcp::ClientInitializeConfiguration urlConfiguration;
-    urlConfiguration.capabilities = mcp::ClientCapabilities(std::nullopt, std::nullopt, urlElicitationCapability, std::nullopt, std::nullopt);
+    urlConfiguration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, std::nullopt, urlElicitationCapability, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(urlConfiguration));
 
     auto urlInitFuture = client->initialize();

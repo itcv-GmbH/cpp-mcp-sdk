@@ -24,8 +24,8 @@
 #include <jsoncons_ext/jsonschema/validation_message.hpp>
 #include <mcp/detail/base64url.hpp>
 #include <mcp/detail/thread_boundary.hpp>
-#include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/all.hpp>
+#include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/outbound_request_options.hpp>
 #include <mcp/jsonrpc/router_options.hpp>
 #include <mcp/lifecycle/session.hpp>
@@ -414,7 +414,7 @@ auto makeLifecycleRejectedResponse(const jsonrpc::RequestId &requestId, std::str
   return jsonrpc::makeErrorResponse(jsonrpc::makeInvalidRequestError(std::nullopt, message), requestId);
 }
 
-auto defaultServerInfo() -> Implementation
+auto defaultServerInfo() -> lifecycle::session::Implementation
 {
   return {std::string(detail::kDefaultServerName), std::string(kSdkVersion)};
 }
@@ -598,7 +598,7 @@ auto capabilityForMethod(std::string_view method) -> std::optional<std::string_v
 
 struct Server::TaskStatusObserverState
 {
-  std::weak_ptr<Session> session;
+  std::weak_ptr<lifecycle::Session> session;
   bool emitTaskStatusNotifications = false;
   mutable std::mutex mutex;
   jsonrpc::OutboundMessageSender outboundMessageSender;
@@ -646,7 +646,7 @@ auto ResourceContent::blobBytes(std::string uri,
   return blobBase64(std::move(uri), detail::encodeStandardBase64(byteView), std::move(mimeType), std::move(annotations), std::move(metadata));
 }
 
-auto Server::create(SessionOptions options) -> std::shared_ptr<Server>
+auto Server::create(lifecycle::session::SessionOptions options) -> std::shared_ptr<Server>
 {
   ServerConfiguration configuration;
   configuration.sessionOptions = std::move(options);
@@ -655,16 +655,16 @@ auto Server::create(SessionOptions options) -> std::shared_ptr<Server>
 
 auto Server::create(ServerConfiguration configuration) -> std::shared_ptr<Server>
 {
-  auto session = std::make_shared<Session>(configuration.sessionOptions);
+  auto session = std::make_shared<lifecycle::Session>(configuration.sessionOptions);
   return std::make_shared<Server>(std::move(session), std::move(configuration));
 }
 
-Server::Server(std::shared_ptr<Session> session)
+Server::Server(std::shared_ptr<lifecycle::Session> session)
   : Server(std::move(session), ServerConfiguration {})
 {
 }
 
-Server::Server(std::shared_ptr<Session> session, ServerConfiguration configuration)
+Server::Server(std::shared_ptr<lifecycle::Session> session, ServerConfiguration configuration)
   : session_(std::move(session))
   , configuration_(std::move(configuration))
   , router_(jsonrpc::RouterOptions {.errorReporter = configuration_.sessionOptions.errorReporter})
@@ -674,7 +674,7 @@ Server::Server(std::shared_ptr<Session> session, ServerConfiguration configurati
     throw std::invalid_argument("Server requires a non-null session");
   }
 
-  session_->setRole(SessionRole::kServer);
+  session_->setRole(lifecycle::session::SessionRole::kServer);
 
   if (!configuration_.serverInfo.has_value())
   {
@@ -700,7 +700,7 @@ Server::Server(std::shared_ptr<Session> session, ServerConfiguration configurati
         return;
       }
 
-      const std::shared_ptr<Session> session = observerState->session.lock();
+      const std::shared_ptr<lifecycle::Session> session = observerState->session.lock();
       if (!session || !session->canSendNotification(detail::kTasksStatusNotificationMethod))
       {
         return;
@@ -740,14 +740,14 @@ auto Server::configuration() const noexcept -> const ServerConfiguration &
   return configuration_;
 }
 
-auto Server::session() const noexcept -> const std::shared_ptr<Session> &
+auto Server::session() const noexcept -> const std::shared_ptr<lifecycle::Session> &
 {
   return session_;
 }
 
 auto Server::start() -> void
 {
-  session_->setRole(SessionRole::kServer);
+  session_->setRole(lifecycle::session::SessionRole::kServer);
   session_->start();
 }
 
@@ -837,7 +837,8 @@ auto Server::handleResponse(const jsonrpc::RequestContext &context, const jsonrp
 auto Server::sendRequest(const jsonrpc::RequestContext &context, jsonrpc::Request request, jsonrpc::OutboundRequestOptions options) -> std::future<jsonrpc::Response>
 {
   const jsonrpc::JsonValue lifecycleParams = request.params.has_value() ? *request.params : jsonrpc::JsonValue::object();
-  session_->enforceOutboundRequestLifecycle(request.method, lifecycleParams, RequestOptions {.timeout = options.timeout, .cancelOnTimeout = options.cancelOnTimeout});
+  session_->enforceOutboundRequestLifecycle(
+    request.method, lifecycleParams, lifecycle::session::RequestOptions {.timeout = options.timeout, .cancelOnTimeout = options.cancelOnTimeout});
   return router_.sendRequest(context, std::move(request), std::move(options));
 }
 

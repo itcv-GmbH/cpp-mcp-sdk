@@ -4,10 +4,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <mcp/jsonrpc/all.hpp>
+#include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/server/server.hpp>
-#include <mcp/session.hpp>
 
 namespace
 {
@@ -52,7 +52,8 @@ auto dispatchRequest(mcp::Server &server, const mcp::jsonrpc::Request &request) 
 TEST_CASE("Server enforces initialize then initialized ordering", "[conformance][lifecycle]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+  configuration.capabilities =
+    mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
   const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
 
@@ -76,7 +77,8 @@ TEST_CASE("Server enforces initialize then initialized ordering", "[conformance]
 TEST_CASE("Initialized notification before initialize does not unlock feature methods", "[conformance][lifecycle]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::ToolsCapability {}, std::nullopt, std::nullopt);
+  configuration.capabilities =
+    mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
   const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
 

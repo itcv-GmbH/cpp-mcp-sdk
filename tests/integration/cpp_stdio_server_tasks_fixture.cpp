@@ -114,23 +114,23 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
 
     auto makeServer = [&serverRegistry]() -> std::shared_ptr<mcp::Server>
     {
-      mcp::ToolsCapability toolsCapability;
+      mcp::lifecycle::session::ToolsCapability toolsCapability;
       toolsCapability.listChanged = false;
 
-      mcp::ResourcesCapability resourcesCapability;
+      mcp::lifecycle::session::ResourcesCapability resourcesCapability;
       resourcesCapability.subscribe = false;
       resourcesCapability.listChanged = false;
 
-      mcp::PromptsCapability promptsCapability;
+      mcp::lifecycle::session::PromptsCapability promptsCapability;
       promptsCapability.listChanged = false;
 
       // Enable tasks capability
-      mcp::TasksCapability tasksCapability;
+      mcp::lifecycle::session::TasksCapability tasksCapability;
       tasksCapability.list = true;
       tasksCapability.cancel = true;
       tasksCapability.toolsCall = true;  // Enable task-augmented tool calls
 
-      mcp::ServerCapabilities capabilities(std::nullopt,  // logging
+      mcp::lifecycle::session::ServerCapabilities capabilities(std::nullopt,  // logging
                                            std::nullopt,  // completions
                                            promptsCapability,  // prompts
                                            resourcesCapability,  // resources
@@ -141,7 +141,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
 
       mcp::ServerConfiguration configuration;
       configuration.capabilities = std::move(capabilities);
-      configuration.serverInfo = mcp::Implementation("cpp-integration-stdio-server-tasks", "1.0.0");
+      configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-stdio-server-tasks", "1.0.0");
       configuration.instructions = "STDIO integration fixture server for reference SDK tasks tests.";
       configuration.taskStore = std::make_shared<mcp::util::InMemoryTaskStore>();
       configuration.defaultTaskPollInterval = 1000;
@@ -260,7 +260,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
                 if (server)
                 {
                   const auto sessionState = server->session()->state();
-                  if (sessionState == mcp::SessionState::kOperating)
+                  if (sessionState == mcp::lifecycle::session::SessionState::kOperating)
                   {
                     targetServer = std::move(server);
                     break;

@@ -140,16 +140,16 @@ auto main(int argc, char **argv) -> int
     auto makeServer = [&options]() -> std::shared_ptr<mcp::Server>
     {
       // Register utilities capability (logging and completions)
-      mcp::LoggingCapability loggingCapability;
-      mcp::CompletionsCapability completionsCapability;
-      mcp::PromptsCapability promptsCapability;
-      mcp::ResourcesCapability resourcesCapability;
-      mcp::ToolsCapability toolsCapability;
+      mcp::lifecycle::session::LoggingCapability loggingCapability;
+      mcp::lifecycle::session::CompletionsCapability completionsCapability;
+      mcp::lifecycle::session::PromptsCapability promptsCapability;
+      mcp::lifecycle::session::ResourcesCapability resourcesCapability;
+      mcp::lifecycle::session::ToolsCapability toolsCapability;
 
       mcp::ServerConfiguration configuration;
       configuration.capabilities =
-        mcp::ServerCapabilities(loggingCapability, completionsCapability, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
-      configuration.serverInfo = mcp::Implementation("cpp-integration-utilities-server", "1.0.0");
+        mcp::lifecycle::session::ServerCapabilities(loggingCapability, completionsCapability, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
+      configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-utilities-server", "1.0.0");
       configuration.instructions = "Integration fixture server for reference SDK utility tests.";
 
       const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));

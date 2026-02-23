@@ -284,18 +284,18 @@ auto main(int argc, char **argv) -> int
 
     auto makeServer = [&options]() -> std::shared_ptr<mcp::Server>
     {
-      mcp::ToolsCapability toolsCapability;
-      mcp::ResourcesCapability resourcesCapability;
-      mcp::PromptsCapability promptsCapability;
+      mcp::lifecycle::session::ToolsCapability toolsCapability;
+      mcp::lifecycle::session::ResourcesCapability resourcesCapability;
+      mcp::lifecycle::session::PromptsCapability promptsCapability;
 
-      mcp::TasksCapability tasksCapability;
+      mcp::lifecycle::session::TasksCapability tasksCapability;
       tasksCapability.list = true;
       tasksCapability.cancel = true;
       tasksCapability.toolsCall = true;
 
       mcp::ServerConfiguration configuration;
-      configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
-      configuration.serverInfo = mcp::Implementation("cpp-integration-server-tasks", "1.0.0");
+      configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
+      configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-server-tasks", "1.0.0");
       configuration.instructions = "Integration fixture server for reference SDK tasks tests.";
       configuration.emitTaskStatusNotifications = true;
 

@@ -105,11 +105,11 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
 
     auto makeServer = [&serverRegistry]() -> std::shared_ptr<mcp::Server>
     {
-      mcp::LoggingCapability loggingCapability;
-      mcp::CompletionsCapability completionsCapability;
+      mcp::lifecycle::session::LoggingCapability loggingCapability;
+      mcp::lifecycle::session::CompletionsCapability completionsCapability;
 
       mcp::ServerConfiguration configuration;
-      configuration.capabilities = mcp::ServerCapabilities(loggingCapability,
+      configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(loggingCapability,
                                                            completionsCapability,
                                                            std::nullopt,  // prompts
                                                            std::nullopt,  // resources
@@ -118,7 +118,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
                                                            std::nullopt  // experimental
       );
 
-      configuration.serverInfo = mcp::Implementation("cpp-integration-stdio-server-utilities", "1.0.0");
+      configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-stdio-server-utilities", "1.0.0");
       configuration.instructions = "STDIO integration fixture server for reference SDK utilities tests.";
 
       const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
@@ -242,7 +242,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
                 if (server)
                 {
                   const auto sessionState = server->session()->state();
-                  if (sessionState == mcp::SessionState::kOperating)
+                  if (sessionState == mcp::lifecycle::session::SessionState::kOperating)
                   {
                     targetServer = std::move(server);
                     break;

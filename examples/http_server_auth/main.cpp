@@ -175,15 +175,15 @@ auto parseOptions(const std::vector<std::string> &arguments) -> Options  // NOLI
 
 auto createServer() -> std::shared_ptr<mcp::Server>
 {
-  mcp::ToolsCapability toolsCapability;
+  mcp::lifecycle::session::ToolsCapability toolsCapability;
   toolsCapability.listChanged = true;
 
-  mcp::PromptsCapability promptsCapability;
+  mcp::lifecycle::session::PromptsCapability promptsCapability;
   promptsCapability.listChanged = true;
 
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
-  configuration.serverInfo = mcp::Implementation("example-http-auth-server", "1.0.0");
+  configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
+  configuration.serverInfo = mcp::lifecycle::session::Implementation("example-http-auth-server", "1.0.0");
   configuration.instructions = "Send a bearer token to call tools.";
 
   const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));

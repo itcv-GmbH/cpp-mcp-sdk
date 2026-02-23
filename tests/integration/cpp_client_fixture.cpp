@@ -232,14 +232,14 @@ auto main(int argc, char **argv) -> int
     bool observedSamplingRequest = false;
     bool observedElicitationRequest = false;
 
-    mcp::SamplingCapability samplingCapability;
+    mcp::lifecycle::session::SamplingCapability samplingCapability;
     samplingCapability.tools = true;
 
-    mcp::ElicitationCapability elicitationCapability;
+    mcp::lifecycle::session::ElicitationCapability elicitationCapability;
     elicitationCapability.form = true;
 
     mcp::ClientInitializeConfiguration initializeConfiguration;
-    initializeConfiguration.capabilities = mcp::ClientCapabilities(std::nullopt, samplingCapability, elicitationCapability, std::nullopt, std::nullopt);
+    initializeConfiguration.capabilities = mcp::lifecycle::session::ClientCapabilities(std::nullopt, samplingCapability, elicitationCapability, std::nullopt, std::nullopt);
     client->setInitializeConfiguration(std::move(initializeConfiguration));
 
     client->setSamplingCreateMessageHandler(

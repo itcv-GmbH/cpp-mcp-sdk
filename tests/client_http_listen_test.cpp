@@ -141,12 +141,12 @@ TEST_CASE("mcp::Client receives and responds to server-initiated roots/list over
 
   // Step 5: Run initialization
   // Set up client capabilities to declare roots support - required for handling roots/list requests
-  mcp::RootsCapability rootsCapability;
+  mcp::lifecycle::session::RootsCapability rootsCapability;
   rootsCapability.listChanged = true;
 
   mcp::ClientInitializeConfiguration initConfig;
-  initConfig.clientInfo = mcp::Implementation {"test-client", "1.0.0"};
-  initConfig.capabilities = mcp::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  initConfig.clientInfo = mcp::lifecycle::session::Implementation {"test-client", "1.0.0"};
+  initConfig.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
   client->setInitializeConfiguration(initConfig);
 
   auto initFuture = client->initialize();

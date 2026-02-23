@@ -10,7 +10,6 @@
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
 #include <mcp/server/server.hpp>
-#include <mcp/session.hpp>
 
 namespace
 {
@@ -55,7 +54,8 @@ auto assertErrorCode(const mcp::jsonrpc::Response &response, mcp::JsonRpcErrorCo
 TEST_CASE("Feature methods are gated by negotiated capabilities", "[conformance][capabilities]")
 {
   mcp::ServerConfiguration configuration;
-  configuration.capabilities = mcp::ServerCapabilities(mcp::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  configuration.capabilities =
+    mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   const std::shared_ptr<mcp::Server> server = mcp::Server::create(std::move(configuration));
 
@@ -79,8 +79,8 @@ TEST_CASE("Experimental capabilities are passed through during negotiation", "[c
 {
   SECTION("server preserves client experimental capability object")
   {
-    mcp::Session serverSession;
-    serverSession.setRole(mcp::SessionRole::kServer);
+    mcp::lifecycle::Session serverSession;
+    serverSession.setRole(mcp::lifecycle::session::SessionRole::kServer);
 
     mcp::jsonrpc::Request initializeRequest = makeInitializeRequest(10);
     (*initializeRequest.params)["capabilities"]["experimental"] = mcp::jsonrpc::JsonValue::object();
@@ -98,8 +98,8 @@ TEST_CASE("Experimental capabilities are passed through during negotiation", "[c
 
   SECTION("client preserves server experimental capability object")
   {
-    mcp::Session clientSession;
-    clientSession.setRole(mcp::SessionRole::kClient);
+    mcp::lifecycle::Session clientSession;
+    clientSession.setRole(mcp::lifecycle::session::SessionRole::kClient);
 
     REQUIRE_NOTHROW(clientSession.sendRequest("initialize", mcp::jsonrpc::JsonValue::object()));
 
