@@ -15,7 +15,6 @@
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/transport/all.hpp>
-
 #include <mcp/util/all.hpp>
 
 namespace

@@ -21,12 +21,12 @@
 #include <mcp/server/prompt_handler.hpp>
 #include <mcp/server/registered_prompt.hpp>
 #include <mcp/server/registered_resource.hpp>
+#include <mcp/server/registered_tool.hpp>
 #include <mcp/server/resource_definition.hpp>
 #include <mcp/server/resource_read_handler.hpp>
 #include <mcp/server/resource_subscription.hpp>
 #include <mcp/server/resource_template_definition.hpp>
 #include <mcp/server/server_configuration.hpp>
-#include <mcp/server/registered_tool.hpp>
 #include <mcp/server/tool_definition.hpp>
 #include <mcp/server/tool_handler.hpp>
 #include <mcp/session.hpp>

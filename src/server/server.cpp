@@ -34,8 +34,8 @@
 #include <mcp/sdk/error_reporter.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/server/server.hpp>
 #include <mcp/server/all.hpp>
+#include <mcp/server/server.hpp>
 #include <mcp/util/all.hpp>
 
 namespace mcp::server
