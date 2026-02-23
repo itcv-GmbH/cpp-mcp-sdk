@@ -35,52 +35,52 @@
 #include <mcp/sdk/version.hpp>
 #include <mcp/server/all.hpp>
 #include <mcp/server/server.hpp>
-#include "mcp/jsonrpc/types.hpp"
-#include "mcp/schema/validation_diagnostic.hpp"
-#include "mcp/server/log_level.hpp"
-#include "mcp/jsonrpc/response.hpp"
-#include "mcp/jsonrpc/success_response.hpp"
-#include "mcp/jsonrpc/response_factories.hpp"
+
 #include "mcp/jsonrpc/error_factories.hpp"
-#include "mcp/server/tool_definition.hpp"
-#include "mcp/jsonrpc/request_context.hpp"
-#include "mcp/server/call_tool_result.hpp"
-#include "mcp/server/tool_handler.hpp"
-#include "mcp/server/tool_call_context.hpp"
-#include "mcp/lifecycle/session/implementation.hpp"
-#include "mcp/server/list_endpoint.hpp"
-#include "mcp/server/resource_content.hpp"
-#include "mcp/server/resource_content_kind.hpp"
-#include "mcp/lifecycle/session/session_options.hpp"
-#include "mcp/server/server_configuration.hpp"
-#include "mcp/lifecycle/session/session_role.hpp"
-#include "mcp/util/in_memory_task_store.hpp"
-#include "mcp/util/task_receiver.hpp"
-#include "mcp/util/task.hpp"
 #include "mcp/jsonrpc/notification.hpp"
 #include "mcp/jsonrpc/request.hpp"
+#include "mcp/jsonrpc/request_context.hpp"
+#include "mcp/jsonrpc/response.hpp"
+#include "mcp/jsonrpc/response_factories.hpp"
+#include "mcp/jsonrpc/success_response.hpp"
+#include "mcp/jsonrpc/types.hpp"
+#include "mcp/lifecycle/session/implementation.hpp"
 #include "mcp/lifecycle/session/request_options.hpp"
-#include "mcp/schema/validation_result.hpp"
+#include "mcp/lifecycle/session/session_options.hpp"
+#include "mcp/lifecycle/session/session_role.hpp"
 #include "mcp/schema/tool_schema_kind.hpp"
-#include "mcp/server/registered_tool.hpp"
-#include "mcp/server/resource_definition.hpp"
-#include "mcp/server/resource_read_handler.hpp"
-#include "mcp/server/registered_resource.hpp"
-#include "mcp/server/resource_subscription.hpp"
-#include "mcp/server/resource_template_definition.hpp"
-#include "mcp/server/prompt_definition.hpp"
-#include "mcp/server/prompt_handler.hpp"
-#include "mcp/server/registered_prompt.hpp"
-#include "mcp/server/pagination_window.hpp"
-#include "mcp/util/task_augmentation_request.hpp"
-#include "mcp/util/create_task_result.hpp"
-#include "mcp/util/task_status.hpp"
-#include "mcp/server/resource_read_context.hpp"
-#include "mcp/server/prompt_get_result.hpp"
-#include "mcp/server/prompt_get_context.hpp"
+#include "mcp/schema/validation_diagnostic.hpp"
+#include "mcp/schema/validation_result.hpp"
+#include "mcp/server/call_tool_result.hpp"
 #include "mcp/server/completion_request.hpp"
 #include "mcp/server/completion_result.hpp"
-
+#include "mcp/server/list_endpoint.hpp"
+#include "mcp/server/log_level.hpp"
+#include "mcp/server/pagination_window.hpp"
+#include "mcp/server/prompt_definition.hpp"
+#include "mcp/server/prompt_get_context.hpp"
+#include "mcp/server/prompt_get_result.hpp"
+#include "mcp/server/prompt_handler.hpp"
+#include "mcp/server/registered_prompt.hpp"
+#include "mcp/server/registered_resource.hpp"
+#include "mcp/server/registered_tool.hpp"
+#include "mcp/server/resource_content.hpp"
+#include "mcp/server/resource_content_kind.hpp"
+#include "mcp/server/resource_definition.hpp"
+#include "mcp/server/resource_read_context.hpp"
+#include "mcp/server/resource_read_handler.hpp"
+#include "mcp/server/resource_subscription.hpp"
+#include "mcp/server/resource_template_definition.hpp"
+#include "mcp/server/server_configuration.hpp"
+#include "mcp/server/tool_call_context.hpp"
+#include "mcp/server/tool_definition.hpp"
+#include "mcp/server/tool_handler.hpp"
+#include "mcp/util/create_task_result.hpp"
+#include "mcp/util/in_memory_task_store.hpp"
+#include "mcp/util/task.hpp"
+#include "mcp/util/task_augmentation_request.hpp"
+#include "mcp/util/task_receiver.hpp"
+#include "mcp/util/task_status.hpp"
 
 namespace mcp::server::detail
 {
@@ -634,9 +634,7 @@ auto capabilityForMethod(std::string_view method) -> std::optional<std::string_v
   return std::nullopt;
 }
 
-} // namespace mcp::server::detail
-
-
+}  // namespace mcp::server::detail
 
 namespace mcp::server
 {
