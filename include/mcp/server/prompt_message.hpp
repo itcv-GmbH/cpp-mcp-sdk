@@ -4,7 +4,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct PromptMessage
@@ -13,4 +13,4 @@ struct PromptMessage
   jsonrpc::JsonValue content = jsonrpc::JsonValue::object();
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

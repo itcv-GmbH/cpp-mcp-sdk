@@ -19,7 +19,7 @@
 #include <mcp/sdk/version.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/all.hpp>
 #include <mcp/transport/all.hpp>
 #include <mcp/transport/transport.hpp>
 
@@ -127,7 +127,7 @@ auto makeMinimalServer() -> std::shared_ptr<mcp::server::Server>
 {
   auto server = mcp::server::Server::create();
 
-  mcp::ToolDefinition definition;
+  mcp::server::ToolDefinition definition;
   definition.name = "ping";
   definition.description = "ping tool";
   definition.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -135,9 +135,9 @@ auto makeMinimalServer() -> std::shared_ptr<mcp::server::Server>
   definition.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
 
   server->registerTool(std::move(definition),
-                       [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       [](const mcp::server::ToolCallContext &) -> mcp::server::CallToolResult
                        {
-                         mcp::CallToolResult result;
+                         mcp::server::CallToolResult result;
                          result.content = mcp::jsonrpc::JsonValue::array();
                          result.content.push_back(mcp::jsonrpc::JsonValue::object());
                          result.content[0]["type"] = "text";

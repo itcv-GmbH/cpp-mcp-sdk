@@ -201,7 +201,7 @@ auto main(int argc, char **argv) -> int
       mcp::jsonrpc::JsonValue emitParams = mcp::jsonrpc::JsonValue::object();
       emitParams["uri"] = "resource://python-server/info";
 
-      mcp::CallToolResult emitResult = client->callTool("emit_resource_updated", std::move(emitParams));
+      mcp::server::CallToolResult emitResult = client->callTool("emit_resource_updated", std::move(emitParams));
       if (emitResult.isError)
       {
         std::cerr << "emit_resource_updated tool returned error" << '\n';
@@ -224,7 +224,7 @@ auto main(int argc, char **argv) -> int
 
     // Test 4: Trigger list changed notification
     {
-      mcp::CallToolResult emitListChangedResult = client->callTool("emit_resources_list_changed", mcp::jsonrpc::JsonValue::object());
+      mcp::server::CallToolResult emitListChangedResult = client->callTool("emit_resources_list_changed", mcp::jsonrpc::JsonValue::object());
       if (emitListChangedResult.isError)
       {
         std::cerr << "emit_resources_list_changed tool returned error" << '\n';

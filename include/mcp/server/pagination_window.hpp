@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct PaginationWindow
@@ -14,4 +14,4 @@ struct PaginationWindow
   std::optional<std::string> nextCursor;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

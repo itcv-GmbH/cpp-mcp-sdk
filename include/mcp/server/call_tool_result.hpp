@@ -4,7 +4,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct CallToolResult
@@ -15,4 +15,4 @@ struct CallToolResult
   std::optional<jsonrpc::JsonValue> metadata;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

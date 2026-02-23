@@ -3,7 +3,7 @@
 #include <mcp/server/resource_definition.hpp>
 #include <mcp/server/resource_read_handler.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct RegisteredResource
@@ -12,4 +12,4 @@ struct RegisteredResource
   ResourceReadHandler handler;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

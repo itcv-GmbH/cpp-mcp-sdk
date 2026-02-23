@@ -10,7 +10,7 @@
 #include <mcp/sdk/version.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/all.hpp>
 
 namespace
 {
@@ -35,7 +35,7 @@ static auto createMinimalServer() -> std::shared_ptr<mcp::server::Server>
   auto server = mcp::server::Server::create();
 
   // Register at least one tool so the server has tools capability
-  mcp::ToolDefinition toolDef;
+  mcp::server::ToolDefinition toolDef;
   toolDef.name = "ping";
   toolDef.description = "A simple ping tool for testing";
   toolDef.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -43,9 +43,9 @@ static auto createMinimalServer() -> std::shared_ptr<mcp::server::Server>
   toolDef.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
 
   server->registerTool(std::move(toolDef),
-                       [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                       [](const mcp::server::ToolCallContext &) -> mcp::server::CallToolResult
                        {
-                         mcp::CallToolResult result;
+                         mcp::server::CallToolResult result;
                          result.content = mcp::jsonrpc::JsonValue::array();
                          result.content.push_back(mcp::jsonrpc::JsonValue::object());
                          result.content[0]["type"] = "text";

@@ -7,7 +7,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/prompt_argument_definition.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct PromptDefinition
@@ -20,4 +20,4 @@ struct PromptDefinition
   std::optional<jsonrpc::JsonValue> metadata;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

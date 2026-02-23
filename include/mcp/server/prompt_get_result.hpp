@@ -6,7 +6,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/prompt_message.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct PromptGetResult
@@ -16,4 +16,4 @@ struct PromptGetResult
   std::optional<jsonrpc::JsonValue> metadata;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

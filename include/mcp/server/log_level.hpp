@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace mcp
+namespace mcp::server
 {
 
 enum class LogLevel : std::uint8_t
@@ -17,4 +17,4 @@ enum class LogLevel : std::uint8_t
   kEmergency,
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

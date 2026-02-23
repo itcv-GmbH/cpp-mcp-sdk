@@ -6,14 +6,14 @@
 #include <vector>
 
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/tool_definition.hpp>
 
 namespace mcp
 {
 
 struct ListToolsResult
 {
-  std::vector<ToolDefinition> tools;
+  std::vector<server::ToolDefinition> tools;
   std::optional<std::string> nextCursor;
 };
 

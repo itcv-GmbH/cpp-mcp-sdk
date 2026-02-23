@@ -6,7 +6,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 enum class CompletionReferenceType : std::uint8_t
@@ -24,4 +24,4 @@ struct CompletionRequest
   std::optional<jsonrpc::JsonValue> contextArguments;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

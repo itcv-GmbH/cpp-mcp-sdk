@@ -51,7 +51,7 @@ auto dispatchRequest(mcp::server::Server &server, const mcp::jsonrpc::Request &r
 
 TEST_CASE("Server enforces initialize then initialized ordering", "[conformance][lifecycle]")
 {
-  mcp::ServerConfiguration configuration;
+  mcp::server::ServerConfiguration configuration;
   configuration.capabilities =
     mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 
@@ -76,7 +76,7 @@ TEST_CASE("Server enforces initialize then initialized ordering", "[conformance]
 
 TEST_CASE("Initialized notification before initialize does not unlock feature methods", "[conformance][lifecycle]")
 {
-  mcp::ServerConfiguration configuration;
+  mcp::server::ServerConfiguration configuration;
   configuration.capabilities =
     mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
 

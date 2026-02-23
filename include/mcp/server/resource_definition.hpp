@@ -5,7 +5,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct ResourceDefinition
@@ -21,4 +21,4 @@ struct ResourceDefinition
   std::optional<jsonrpc::JsonValue> metadata;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

@@ -53,7 +53,7 @@ auto assertErrorCode(const mcp::jsonrpc::Response &response, mcp::JsonRpcErrorCo
 
 TEST_CASE("Feature methods are gated by negotiated capabilities", "[conformance][capabilities]")
 {
-  mcp::ServerConfiguration configuration;
+  mcp::server::ServerConfiguration configuration;
   configuration.capabilities =
     mcp::lifecycle::session::ServerCapabilities(mcp::lifecycle::session::LoggingCapability {}, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 

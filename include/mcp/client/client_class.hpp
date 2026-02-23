@@ -27,9 +27,8 @@
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/error_reporter.hpp>
-#include <mcp/server/prompts.hpp>
-#include <mcp/server/resources.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/prompt_get_result.hpp>
+#include <mcp/server/call_tool_result.hpp>
 #include <mcp/session.hpp>
 #include <mcp/transport/all.hpp>
 #include <mcp/transport/transport.hpp>
@@ -157,12 +156,12 @@ public:
   auto initialize(lifecycle::session::RequestOptions options = {}) -> std::future<jsonrpc::Response>;
 
   auto listTools(std::optional<std::string> cursor = std::nullopt, lifecycle::session::RequestOptions options = {}) -> ListToolsResult;
-  auto callTool(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), lifecycle::session::RequestOptions options = {}) -> CallToolResult;
+  auto callTool(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), lifecycle::session::RequestOptions options = {}) -> server::CallToolResult;
   auto listResources(std::optional<std::string> cursor = std::nullopt, lifecycle::session::RequestOptions options = {}) -> ListResourcesResult;
   auto readResource(const std::string &uri, lifecycle::session::RequestOptions options = {}) -> ReadResourceResult;
   auto listResourceTemplates(std::optional<std::string> cursor = std::nullopt, lifecycle::session::RequestOptions options = {}) -> ListResourceTemplatesResult;
   auto listPrompts(std::optional<std::string> cursor = std::nullopt, lifecycle::session::RequestOptions options = {}) -> ListPromptsResult;
-  auto getPrompt(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), lifecycle::session::RequestOptions options = {}) -> PromptGetResult;
+  auto getPrompt(const std::string &name, jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object(), lifecycle::session::RequestOptions options = {}) -> server::PromptGetResult;
   auto setRootsProvider(RootsProvider provider) -> void;
   auto clearRootsProvider() -> void;
   auto notifyRootsListChanged() -> bool;

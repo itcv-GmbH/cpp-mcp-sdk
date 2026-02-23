@@ -4,7 +4,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct ToolCallContext
@@ -14,4 +14,4 @@ struct ToolCallContext
   jsonrpc::JsonValue arguments = jsonrpc::JsonValue::object();
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

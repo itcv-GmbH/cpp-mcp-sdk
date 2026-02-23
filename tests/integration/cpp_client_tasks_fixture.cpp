@@ -171,7 +171,7 @@ auto main(int argc, char **argv) -> int
       createParams["arguments"] = mcp::jsonrpc::JsonValue::object();
       createParams["arguments"]["text"] = "test";
 
-      mcp::CallToolResult createResult = client->callTool("tasks_create", std::move(createParams));
+      mcp::server::CallToolResult createResult = client->callTool("tasks_create", std::move(createParams));
       if (createResult.isError)
       {
         std::cerr << "tasks_create tool returned error" << '\n';

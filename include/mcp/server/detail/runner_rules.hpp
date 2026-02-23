@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-namespace mcp::server
+namespace mcp::server::detail
 {
 
 /// @brief Runner behavior rules for different transport configurations.
@@ -99,4 +99,4 @@ inline constexpr std::string_view kStopTriggers =
 
 }  // namespace runner
 
-}  // namespace mcp::server
+}  // namespace mcp::server::detail

@@ -3,7 +3,7 @@
 #include <mcp/server/tool_definition.hpp>
 #include <mcp/server/tool_handler.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct RegisteredTool
@@ -12,4 +12,4 @@ struct RegisteredTool
   ToolHandler handler;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

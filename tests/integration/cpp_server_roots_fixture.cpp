@@ -258,7 +258,7 @@ auto main(int argc, char **argv) -> int
       mcp::lifecycle::session::ResourcesCapability resourcesCapability;
       mcp::lifecycle::session::PromptsCapability promptsCapability;
 
-      mcp::ServerConfiguration configuration;
+      mcp::server::ServerConfiguration configuration;
       configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-server", "1.0.0");
       configuration.instructions = "Integration fixture server for reference SDK tests.";
@@ -272,7 +272,7 @@ auto main(int argc, char **argv) -> int
       }
 
       // Tool to trigger roots change - signals to the Python test script that it should mutate roots
-      mcp::ToolDefinition triggerRootsChangeTool;
+      mcp::server::ToolDefinition triggerRootsChangeTool;
       triggerRootsChangeTool.name = std::string(kTriggerRootsChangeToolName);
       triggerRootsChangeTool.description = "Signal to the test harness that roots should be changed";
       triggerRootsChangeTool.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -280,9 +280,9 @@ auto main(int argc, char **argv) -> int
       triggerRootsChangeTool.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
 
       server->registerTool(std::move(triggerRootsChangeTool),
-                           [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                           [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                            {
-                             mcp::CallToolResult result;
+                             mcp::server::CallToolResult result;
                              result.content = mcp::jsonrpc::JsonValue::array();
                              mcp::jsonrpc::JsonValue textContent = mcp::jsonrpc::JsonValue::object();
                              textContent["type"] = "text";

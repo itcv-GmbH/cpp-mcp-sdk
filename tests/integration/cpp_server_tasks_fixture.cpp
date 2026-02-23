@@ -293,7 +293,7 @@ auto main(int argc, char **argv) -> int
       tasksCapability.cancel = true;
       tasksCapability.toolsCall = true;
 
-      mcp::ServerConfiguration configuration;
+      mcp::server::ServerConfiguration configuration;
       configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-server-tasks", "1.0.0");
       configuration.instructions = "Integration fixture server for reference SDK tasks tests.";
@@ -309,7 +309,7 @@ auto main(int argc, char **argv) -> int
       g_server = server;
 
       // Register tool to start a deterministic long-running task
-      mcp::ToolDefinition longTaskTool;
+      mcp::server::ToolDefinition longTaskTool;
       longTaskTool.name = "cpp_start_long_task";
       longTaskTool.description = "Start a deterministic long-running task that takes 5 seconds";
       longTaskTool.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -322,9 +322,9 @@ auto main(int argc, char **argv) -> int
       longTaskTool.inputSchema["required"] = mcp::jsonrpc::JsonValue::array();
 
       server->registerTool(std::move(longTaskTool),
-                           [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                           [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                            {
-                             mcp::CallToolResult result;
+                             mcp::server::CallToolResult result;
                              result.content = mcp::jsonrpc::JsonValue::array();
 
                              // Default to 5 seconds if not specified

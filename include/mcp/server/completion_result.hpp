@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct CompletionResult
@@ -15,4 +15,4 @@ struct CompletionResult
   std::optional<bool> hasMore;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

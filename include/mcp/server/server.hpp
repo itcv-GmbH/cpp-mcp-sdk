@@ -12,14 +12,23 @@
 
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/server/completion_types.hpp>
+#include <mcp/server/completion_request.hpp>
+#include <mcp/server/completion_result.hpp>
 #include <mcp/server/list_endpoint.hpp>
 #include <mcp/server/log_level.hpp>
 #include <mcp/server/pagination_window.hpp>
-#include <mcp/server/prompts.hpp>
-#include <mcp/server/resources.hpp>
+#include <mcp/server/prompt_definition.hpp>
+#include <mcp/server/prompt_handler.hpp>
+#include <mcp/server/registered_prompt.hpp>
+#include <mcp/server/registered_resource.hpp>
+#include <mcp/server/resource_definition.hpp>
+#include <mcp/server/resource_read_handler.hpp>
+#include <mcp/server/resource_subscription.hpp>
+#include <mcp/server/resource_template_definition.hpp>
 #include <mcp/server/server_configuration.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/registered_tool.hpp>
+#include <mcp/server/tool_definition.hpp>
+#include <mcp/server/tool_handler.hpp>
 #include <mcp/session.hpp>
 #include <mcp/util/all.hpp>
 

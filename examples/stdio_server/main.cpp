@@ -11,11 +11,9 @@
 
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/lifecycle/session.hpp>
-#include <mcp/server/prompts.hpp>
-#include <mcp/server/resources.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/stdio_runner.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/all.hpp>
 
 namespace
 {
@@ -48,7 +46,7 @@ auto createServer() -> std::shared_ptr<mcp::server::Server>
   tasksCapability.list = true;
   tasksCapability.cancel = true;
 
-  mcp::ServerConfiguration configuration;
+  mcp::server::ServerConfiguration configuration;
   configuration.capabilities =
     mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, tasksCapability, std::nullopt);
   configuration.serverInfo = mcp::lifecycle::session::Implementation("example-stdio-server", "1.0.0");
@@ -56,7 +54,7 @@ auto createServer() -> std::shared_ptr<mcp::server::Server>
 
   const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
-  mcp::ToolDefinition echoTool;
+  mcp::server::ToolDefinition echoTool;
   echoTool.name = "echo";
   echoTool.description = "Echo text from arguments.text";
   echoTool.execution = mcp::jsonrpc::JsonValue::object();
@@ -70,15 +68,15 @@ auto createServer() -> std::shared_ptr<mcp::server::Server>
   echoTool.inputSchema["required"].push_back("text");
 
   server->registerTool(std::move(echoTool),
-                       [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                       [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                        {
-                         mcp::CallToolResult result;
+                         mcp::server::CallToolResult result;
                          result.content = mcp::jsonrpc::JsonValue::array();
                          result.content.push_back(makeTextContent("echo: " + context.arguments["text"].as<std::string>()));
                          return result;
                        });
 
-  mcp::ToolDefinition delayedTool;
+  mcp::server::ToolDefinition delayedTool;
   delayedTool.name = "delayed_echo";
   delayedTool.description = "Sleep briefly, then echo arguments.text";
   delayedTool.execution = mcp::jsonrpc::JsonValue::object();
@@ -92,46 +90,46 @@ auto createServer() -> std::shared_ptr<mcp::server::Server>
   delayedTool.inputSchema["required"].push_back("text");
 
   server->registerTool(std::move(delayedTool),
-                       [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                       [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                        {
                          std::this_thread::sleep_for(std::chrono::milliseconds(kDelayedEchoMilliseconds));
 
-                         mcp::CallToolResult result;
+                         mcp::server::CallToolResult result;
                          result.content = mcp::jsonrpc::JsonValue::array();
                          result.content.push_back(makeTextContent("delayed: " + context.arguments["text"].as<std::string>()));
                          return result;
                        });
 
-  mcp::ResourceDefinition resource;
+  mcp::server::ResourceDefinition resource;
   resource.uri = "resource://server/about";
   resource.name = "about";
   resource.description = "Server metadata";
   resource.mimeType = "text/plain";
 
   server->registerResource(std::move(resource),
-                           [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                           [](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>
                            {
                              return {
-                               mcp::ResourceContent::text("resource://server/about", "Example stdio server with tools/resources/prompts/tasks support.", std::string("text/plain")),
+                               mcp::server::ResourceContent::text("resource://server/about", "Example stdio server with tools/resources/prompts/tasks support.", std::string("text/plain")),
                              };
                            });
 
-  mcp::PromptDefinition prompt;
+  mcp::server::PromptDefinition prompt;
   prompt.name = "explain-topic";
   prompt.description = "Generate a one-line explanatory prompt";
 
-  mcp::PromptArgumentDefinition topicArgument;
+  mcp::server::PromptArgumentDefinition topicArgument;
   topicArgument.name = "topic";
   topicArgument.required = true;
   prompt.arguments.push_back(std::move(topicArgument));
 
   server->registerPrompt(std::move(prompt),
-                         [](const mcp::PromptGetContext &context) -> mcp::PromptGetResult
+                         [](const mcp::server::PromptGetContext &context) -> mcp::server::PromptGetResult
                          {
-                           mcp::PromptGetResult result;
+                           mcp::server::PromptGetResult result;
                            result.description = "Single user message prompt";
 
-                           mcp::PromptMessage message;
+                           mcp::server::PromptMessage message;
                            message.role = "user";
                            message.content = mcp::jsonrpc::JsonValue::object();
                            message.content["type"] = "text";

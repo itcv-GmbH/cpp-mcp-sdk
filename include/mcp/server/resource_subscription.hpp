@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct ResourceSubscription
@@ -11,4 +11,4 @@ struct ResourceSubscription
   std::string uri;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

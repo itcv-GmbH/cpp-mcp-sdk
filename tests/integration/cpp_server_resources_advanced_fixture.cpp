@@ -189,7 +189,7 @@ auto main(int argc, char **argv) -> int
       resourcesCapability.subscribe = true;
       resourcesCapability.listChanged = true;
 
-      mcp::ServerConfiguration configuration;
+      mcp::server::ServerConfiguration configuration;
       configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt,  // logging
                                                            std::nullopt,  // completions
                                                            std::nullopt,  // prompts
@@ -210,37 +210,37 @@ auto main(int argc, char **argv) -> int
       }
 
       // Register a concrete resource
-      mcp::ResourceDefinition infoResource;
+      mcp::server::ResourceDefinition infoResource;
       infoResource.uri = "resource://cpp-server-advanced/info";
       infoResource.name = "cpp-server-advanced-info";
       infoResource.description = "Reference data exposed by the C++ advanced resources integration fixture";
       infoResource.mimeType = "text/plain";
 
       server->registerResource(std::move(infoResource),
-                               [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                               [](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>
                                {
                                  return {
-                                   mcp::ResourceContent::text("resource://cpp-server-advanced/info", "cpp integration advanced resource", std::string("text/plain")),
+                                   mcp::server::ResourceContent::text("resource://cpp-server-advanced/info", "cpp integration advanced resource", std::string("text/plain")),
                                  };
                                });
 
       // Register a second concrete resource that will be used for subscription testing
-      mcp::ResourceDefinition dynamicResource;
+      mcp::server::ResourceDefinition dynamicResource;
       dynamicResource.uri = "resource://cpp-server-advanced/dynamic";
       dynamicResource.name = "cpp-server-advanced-dynamic";
       dynamicResource.description = "Dynamic resource for subscription testing";
       dynamicResource.mimeType = "application/json";
 
       server->registerResource(std::move(dynamicResource),
-                               [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                               [](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>
                                {
                                  return {
-                                   mcp::ResourceContent::text("resource://cpp-server-advanced/dynamic", R"({"value": "initial"})", std::string("application/json")),
+                                   mcp::server::ResourceContent::text("resource://cpp-server-advanced/dynamic", R"({"value": "initial"})", std::string("application/json")),
                                  };
                                });
 
       // Register a resource template for resources/templates/list
-      mcp::ResourceTemplateDefinition templateDefinition;
+      mcp::server::ResourceTemplateDefinition templateDefinition;
       templateDefinition.uriTemplate = "resource://cpp-server-advanced/item/{id}";
       templateDefinition.name = "cpp-server-advanced-item-template";
       templateDefinition.description = "Template for generating item resources";
@@ -315,11 +315,11 @@ auto main(int argc, char **argv) -> int
                                      });
 
       // Register a tool that emits resource updated notification to all subscribers
-      mcp::ToolDefinition updateResourceTool;
+      mcp::server::ToolDefinition updateResourceTool;
       updateResourceTool.name = "cpp_emit_resource_updated";
       updateResourceTool.description = "Emit resource updated notification to all subscribers";
       server->registerTool(updateResourceTool,
-                           [&](const mcp::ToolCallContext &ctx)
+                           [&](const mcp::server::ToolCallContext &ctx)
                            {
                              // Emit notification to all subscribers using notifyResourceUpdated
                              std::vector<std::string> urisToUpdate;
@@ -340,7 +340,7 @@ auto main(int argc, char **argv) -> int
                                server->notifyResourceUpdated(uri, ctx.requestContext);
                              }
 
-                             mcp::CallToolResult result;
+                             mcp::server::CallToolResult result;
                              result.content = mcp::jsonrpc::JsonValue::array();
                              // Create text content in MCP format: {"type": "text", "text": "..."}
                              mcp::jsonrpc::JsonValue textContent = mcp::jsonrpc::JsonValue::object();

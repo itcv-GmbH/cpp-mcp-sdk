@@ -34,10 +34,8 @@
 #include <mcp/sdk/error_reporter.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/server/prompts.hpp>
-#include <mcp/server/resources.hpp>
 #include <mcp/server/server.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/all.hpp>
 #include <mcp/util/all.hpp>
 
 namespace mcp::server
@@ -241,9 +239,9 @@ auto makeTextContentBlock(std::string_view text) -> jsonrpc::JsonValue
   return content;
 }
 
-auto makeSchemaValidationErrorResult(std::string_view message, const std::vector<schema::ValidationDiagnostic> &diagnostics) -> mcp::CallToolResult
+auto makeSchemaValidationErrorResult(std::string_view message, const std::vector<schema::ValidationDiagnostic> &diagnostics) -> mcp::server::CallToolResult
 {
-  mcp::CallToolResult result;
+  mcp::server::CallToolResult result;
   result.content = makeTextContentBlock(message);
   result.isError = true;
 
@@ -598,7 +596,7 @@ auto capabilityForMethod(std::string_view method) -> std::optional<std::string_v
 
 }  // namespace mcp::server
 
-namespace mcp
+namespace mcp::server
 {
 
 auto ResourceContent::text(std::string uri,
@@ -643,7 +641,7 @@ auto ResourceContent::blobBytes(std::string uri,
   return blobBase64(std::move(uri), server::detail::encodeStandardBase64(byteView), std::move(mimeType), std::move(annotations), std::move(metadata));
 }
 
-}  // namespace mcp
+}  // namespace mcp::server
 
 namespace mcp::server
 {

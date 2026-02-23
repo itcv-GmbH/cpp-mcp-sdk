@@ -180,19 +180,19 @@ private:
 
 TEST_CASE("Legacy server compatibility supports initialize and tools/list over HTTP+SSE", "[conformance][legacy_server]")
 {
-  mcp::ServerConfiguration configuration;
+  mcp::server::ServerConfiguration configuration;
   configuration.capabilities =
     mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, mcp::lifecycle::session::ToolsCapability {}, std::nullopt, std::nullopt);
   auto coreServer = mcp::server::Server::create(std::move(configuration));
 
-  mcp::ToolDefinition tool;
+  mcp::server::ToolDefinition tool;
   tool.name = "legacy-tool";
   tool.inputSchema = mcp::jsonrpc::JsonValue::object();
   tool.inputSchema["type"] = "object";
   coreServer->registerTool(std::move(tool),
-                           [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                           [](const mcp::server::ToolCallContext &) -> mcp::server::CallToolResult
                            {
-                             mcp::CallToolResult result;
+                             mcp::server::CallToolResult result;
                              result.content = mcp::jsonrpc::JsonValue::array();
                              return result;
                            });

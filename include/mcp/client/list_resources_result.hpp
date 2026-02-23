@@ -6,14 +6,14 @@
 #include <vector>
 
 #include <mcp/jsonrpc/all.hpp>
-#include <mcp/server/resources.hpp>
+#include <mcp/server/resource_definition.hpp>
 
 namespace mcp
 {
 
 struct ListResourcesResult
 {
-  std::vector<ResourceDefinition> resources;
+  std::vector<server::ResourceDefinition> resources;
   std::optional<std::string> nextCursor;
 };
 

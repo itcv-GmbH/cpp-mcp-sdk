@@ -189,7 +189,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       mcp::lifecycle::session::ResourcesCapability resourcesCapability;
       mcp::lifecycle::session::PromptsCapability promptsCapability;
 
-      mcp::ServerConfiguration configuration;
+      mcp::server::ServerConfiguration configuration;
       configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-stdio-server", "1.0.0");
       configuration.instructions = "STDIO integration fixture server for reference SDK tests.";
@@ -202,7 +202,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
         serverRegistry->servers.push_back(server);
       }
 
-      mcp::ToolDefinition echoTool;
+      mcp::server::ToolDefinition echoTool;
       echoTool.name = "cpp_echo";
       echoTool.description = "Echo text from arguments.text";
       echoTool.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -214,44 +214,44 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       echoTool.inputSchema["required"].push_back("text");
 
       server->registerTool(std::move(echoTool),
-                           [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                           [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                            {
-                             mcp::CallToolResult result;
+                             mcp::server::CallToolResult result;
                              result.content = mcp::jsonrpc::JsonValue::array();
                              result.content.push_back(makeTextContent("cpp echo: " + context.arguments["text"].as<std::string>()));
                              return result;
                            });
 
-      mcp::ResourceDefinition infoResource;
+      mcp::server::ResourceDefinition infoResource;
       infoResource.uri = "resource://cpp-stdio-server/info";
       infoResource.name = "cpp-stdio-server-info";
       infoResource.description = "Reference data exposed by the C++ STDIO integration fixture";
       infoResource.mimeType = "text/plain";
 
       server->registerResource(std::move(infoResource),
-                               [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                               [](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>
                                {
                                  return {
-                                   mcp::ResourceContent::text("resource://cpp-stdio-server/info", "cpp stdio integration resource", std::string("text/plain")),
+                                   mcp::server::ResourceContent::text("resource://cpp-stdio-server/info", "cpp stdio integration resource", std::string("text/plain")),
                                  };
                                });
 
-      mcp::PromptDefinition prompt;
+      mcp::server::PromptDefinition prompt;
       prompt.name = "cpp_stdio_server_prompt";
       prompt.description = "Returns a prompt with the provided topic";
 
-      mcp::PromptArgumentDefinition topicArgument;
+      mcp::server::PromptArgumentDefinition topicArgument;
       topicArgument.name = "topic";
       topicArgument.required = true;
       prompt.arguments.push_back(std::move(topicArgument));
 
       server->registerPrompt(std::move(prompt),
-                             [](const mcp::PromptGetContext &context) -> mcp::PromptGetResult
+                             [](const mcp::server::PromptGetContext &context) -> mcp::server::PromptGetResult
                              {
-                               mcp::PromptGetResult result;
+                               mcp::server::PromptGetResult result;
                                result.description = "C++ STDIO integration prompt";
 
-                               mcp::PromptMessage message;
+                               mcp::server::PromptMessage message;
                                message.role = "user";
                                message.content = mcp::jsonrpc::JsonValue::object();
                                message.content["type"] = "text";

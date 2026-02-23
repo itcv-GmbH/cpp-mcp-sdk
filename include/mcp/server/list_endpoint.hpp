@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace mcp
+namespace mcp::server
 {
 
 enum class ListEndpoint : std::uint8_t
@@ -14,4 +14,4 @@ enum class ListEndpoint : std::uint8_t
   kTasks,
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

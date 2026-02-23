@@ -220,7 +220,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       resourcesCapability.listChanged = true;
       mcp::lifecycle::session::PromptsCapability promptsCapability;
 
-      mcp::ServerConfiguration configuration;
+      mcp::server::ServerConfiguration configuration;
       configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-stdio-server-resources", "1.0.0");
       configuration.instructions = "STDIO integration fixture server for reference SDK tests - resources advanced.";
@@ -234,37 +234,37 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       }
 
       // Register a regular resource
-      mcp::ResourceDefinition infoResource;
+      mcp::server::ResourceDefinition infoResource;
       infoResource.uri = "resource://cpp-stdio-server/info";
       infoResource.name = "cpp-stdio-server-info";
       infoResource.description = "Reference data exposed by the C++ STDIO integration fixture";
       infoResource.mimeType = "text/plain";
 
       server->registerResource(std::move(infoResource),
-                               [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                               [](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>
                                {
                                  return {
-                                   mcp::ResourceContent::text("resource://cpp-stdio-server/info", "cpp stdio integration resource", std::string("text/plain")),
+                                   mcp::server::ResourceContent::text("resource://cpp-stdio-server/info", "cpp stdio integration resource", std::string("text/plain")),
                                  };
                                });
 
       // Register a dynamic resource for subscription tests
-      mcp::ResourceDefinition dynamicResource;
+      mcp::server::ResourceDefinition dynamicResource;
       dynamicResource.uri = "resource://cpp-stdio-server/dynamic";
       dynamicResource.name = "cpp-stdio-server-dynamic";
       dynamicResource.description = "Dynamic resource for subscription testing";
       dynamicResource.mimeType = "text/plain";
 
       server->registerResource(std::move(dynamicResource),
-                               [](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>
+                               [](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>
                                {
                                  return {
-                                   mcp::ResourceContent::text("resource://cpp-stdio-server/dynamic", "dynamic content", std::string("text/plain")),
+                                   mcp::server::ResourceContent::text("resource://cpp-stdio-server/dynamic", "dynamic content", std::string("text/plain")),
                                  };
                                });
 
       // Register resource template: user profile
-      mcp::ResourceTemplateDefinition userProfileTemplate;
+      mcp::server::ResourceTemplateDefinition userProfileTemplate;
       userProfileTemplate.uriTemplate = "resource://cpp-stdio-server/user/{userId}";
       userProfileTemplate.name = "cpp-stdio-server-user-profile";
       userProfileTemplate.description = "User profile resource with userId template parameter";
@@ -273,7 +273,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       server->registerResourceTemplate(std::move(userProfileTemplate));
 
       // Register resource template: system status
-      mcp::ResourceTemplateDefinition systemStatusTemplate;
+      mcp::server::ResourceTemplateDefinition systemStatusTemplate;
       systemStatusTemplate.uriTemplate = "resource://cpp-stdio-server/system/{systemId}";
       systemStatusTemplate.name = "cpp-stdio-server-system-status";
       systemStatusTemplate.description = "System status resource with systemId template parameter";
@@ -282,7 +282,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       server->registerResourceTemplate(std::move(systemStatusTemplate));
 
       // Register tool to trigger resource updates (for testing notifications)
-      mcp::ToolDefinition updateTool;
+      mcp::server::ToolDefinition updateTool;
       updateTool.name = "cpp_update_resource";
       updateTool.description = "Trigger a resource update notification";
       updateTool.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -294,9 +294,9 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       updateTool.inputSchema["required"].push_back("uri");
 
       server->registerTool(std::move(updateTool),
-                           [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                           [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                            {
-                             mcp::CallToolResult result;
+                             mcp::server::CallToolResult result;
                              result.content = mcp::jsonrpc::JsonValue::array();
 
                              const std::string &uri = context.arguments["uri"].as<std::string>();

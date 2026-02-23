@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace mcp
+namespace mcp::server
 {
 
 enum class ResourceContentKind : std::uint8_t
@@ -11,4 +11,4 @@ enum class ResourceContentKind : std::uint8_t
   kBlobBase64,
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

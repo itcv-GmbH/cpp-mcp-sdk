@@ -97,9 +97,9 @@ auto parseOptions(int argc, char **argv) -> Options
   return options;
 }
 
-auto hasTool(const std::vector<mcp::ToolDefinition> &tools, std::string_view name) -> bool
+auto hasTool(const std::vector<mcp::server::ToolDefinition> &tools, std::string_view name) -> bool
 {
-  for (const mcp::ToolDefinition &tool : tools)
+  for (const mcp::server::ToolDefinition &tool : tools)
   {
     if (tool.name == name)
     {
@@ -110,9 +110,9 @@ auto hasTool(const std::vector<mcp::ToolDefinition> &tools, std::string_view nam
   return false;
 }
 
-auto hasResource(const std::vector<mcp::ResourceDefinition> &resources, std::string_view uri) -> bool
+auto hasResource(const std::vector<mcp::server::ResourceDefinition> &resources, std::string_view uri) -> bool
 {
-  for (const mcp::ResourceDefinition &resource : resources)
+  for (const mcp::server::ResourceDefinition &resource : resources)
   {
     if (resource.uri == uri)
     {
@@ -123,9 +123,9 @@ auto hasResource(const std::vector<mcp::ResourceDefinition> &resources, std::str
   return false;
 }
 
-auto hasPrompt(const std::vector<mcp::PromptDefinition> &prompts, std::string_view name) -> bool
+auto hasPrompt(const std::vector<mcp::server::PromptDefinition> &prompts, std::string_view name) -> bool
 {
-  for (const mcp::PromptDefinition &prompt : prompts)
+  for (const mcp::server::PromptDefinition &prompt : prompts)
   {
     if (prompt.name == name)
     {
@@ -136,7 +136,7 @@ auto hasPrompt(const std::vector<mcp::PromptDefinition> &prompts, std::string_vi
   return false;
 }
 
-auto firstTextContent(const mcp::CallToolResult &result) -> std::string
+auto firstTextContent(const mcp::server::CallToolResult &result) -> std::string
 {
   if (!result.content.is_array() || result.content.empty())
   {
@@ -152,9 +152,9 @@ auto firstTextContent(const mcp::CallToolResult &result) -> std::string
   return entry["text"].as<std::string>();
 }
 
-auto promptContainsTopic(const mcp::PromptGetResult &promptResult, std::string_view topic) -> bool
+auto promptContainsTopic(const mcp::server::PromptGetResult &promptResult, std::string_view topic) -> bool
 {
-  for (const mcp::PromptMessage &message : promptResult.messages)
+  for (const mcp::server::PromptMessage &message : promptResult.messages)
   {
     if (!message.content.is_object() || !message.content.contains("text") || !message.content["text"].is_string())
     {
@@ -340,7 +340,7 @@ auto main(int argc, char **argv) -> int
 
     mcp::jsonrpc::JsonValue toolArguments = mcp::jsonrpc::JsonValue::object();
     toolArguments["text"] = "from-cpp";
-    const mcp::CallToolResult toolResult = client->callTool("python_echo", std::move(toolArguments));
+    const mcp::server::CallToolResult toolResult = client->callTool("python_echo", std::move(toolArguments));
     if (toolResult.isError)
     {
       const std::string errorText = firstTextContent(toolResult);
@@ -388,7 +388,7 @@ auto main(int argc, char **argv) -> int
 
     mcp::jsonrpc::JsonValue promptArguments = mcp::jsonrpc::JsonValue::object();
     promptArguments["topic"] = "interop";
-    const mcp::PromptGetResult promptResult = client->getPrompt("python_server_prompt", std::move(promptArguments));
+    const mcp::server::PromptGetResult promptResult = client->getPrompt("python_server_prompt", std::move(promptArguments));
     if (!promptContainsTopic(promptResult, "interop"))
     {
       std::cerr << "Reference prompt result did not include expected topic" << '\n';

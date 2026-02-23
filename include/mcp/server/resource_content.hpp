@@ -8,7 +8,7 @@
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/server/resource_content_kind.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct ResourceContent
@@ -39,4 +39,4 @@ struct ResourceContent
                         std::optional<jsonrpc::JsonValue> metadata = std::nullopt) -> ResourceContent;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

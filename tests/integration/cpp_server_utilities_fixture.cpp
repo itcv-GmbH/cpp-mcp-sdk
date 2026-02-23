@@ -146,7 +146,7 @@ auto main(int argc, char **argv) -> int
       mcp::lifecycle::session::ResourcesCapability resourcesCapability;
       mcp::lifecycle::session::ToolsCapability toolsCapability;
 
-      mcp::ServerConfiguration configuration;
+      mcp::server::ServerConfiguration configuration;
       configuration.capabilities =
         mcp::lifecycle::session::ServerCapabilities(loggingCapability, completionsCapability, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-utilities-server", "1.0.0");
@@ -182,19 +182,19 @@ auto main(int argc, char **argv) -> int
                                                              // Map string level to LogLevel enum
                                                              if (level == "debug")
                                                              {
-                                                               server->emitLogMessage(context, mcp::LogLevel::kDebug, "Log level set to debug");
+                                                               server->emitLogMessage(context, mcp::server::LogLevel::kDebug, "Log level set to debug");
                                                              }
                                                              else if (level == "info")
                                                              {
-                                                               server->emitLogMessage(context, mcp::LogLevel::kInfo, "Log level set to info");
+                                                               server->emitLogMessage(context, mcp::server::LogLevel::kInfo, "Log level set to info");
                                                              }
                                                              else if (level == "warning" || level == "warn")
                                                              {
-                                                               server->emitLogMessage(context, mcp::LogLevel::kWarning, "Log level set to warning");
+                                                               server->emitLogMessage(context, mcp::server::LogLevel::kWarning, "Log level set to warning");
                                                              }
                                                              else if (level == "error")
                                                              {
-                                                               server->emitLogMessage(context, mcp::LogLevel::kError, "Log level set to error");
+                                                               server->emitLogMessage(context, mcp::server::LogLevel::kError, "Log level set to error");
                                                              }
                                                            }
 

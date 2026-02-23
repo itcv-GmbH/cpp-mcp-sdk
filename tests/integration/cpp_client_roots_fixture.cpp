@@ -144,7 +144,7 @@ auto main(int argc, char **argv) -> int
     // Test 1: Call a tool to trigger roots/list request from server
     // This tool signals to the server that it's ready to receive roots/list
     {
-      mcp::CallToolResult toolResult = client->callTool("cpp_trigger_roots_change", mcp::jsonrpc::JsonValue::object());
+      mcp::server::CallToolResult toolResult = client->callTool("cpp_trigger_roots_change", mcp::jsonrpc::JsonValue::object());
 
       // Wait for notification to potentially arrive after triggering roots change
       std::this_thread::sleep_for(std::chrono::milliseconds(500));

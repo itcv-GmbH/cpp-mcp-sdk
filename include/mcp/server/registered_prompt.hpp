@@ -3,7 +3,7 @@
 #include <mcp/server/prompt_definition.hpp>
 #include <mcp/server/prompt_handler.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct RegisteredPrompt
@@ -12,4 +12,4 @@ struct RegisteredPrompt
   PromptHandler handler;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

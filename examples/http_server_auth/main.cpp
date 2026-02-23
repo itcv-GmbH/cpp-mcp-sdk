@@ -16,7 +16,7 @@
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/server.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/all.hpp>
 #include <mcp/transport/all.hpp>
 
 namespace
@@ -181,14 +181,14 @@ auto createServer() -> std::shared_ptr<mcp::server::Server>
   mcp::lifecycle::session::PromptsCapability promptsCapability;
   promptsCapability.listChanged = true;
 
-  mcp::ServerConfiguration configuration;
+  mcp::server::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, std::nullopt, toolsCapability, std::nullopt, std::nullopt);
   configuration.serverInfo = mcp::lifecycle::session::Implementation("example-http-auth-server", "1.0.0");
   configuration.instructions = "Send a bearer token to call tools.";
 
   const std::shared_ptr<mcp::server::Server> server = mcp::server::Server::create(std::move(configuration));
 
-  mcp::ToolDefinition whoAmITool;
+  mcp::server::ToolDefinition whoAmITool;
   whoAmITool.name = "who_am_i";
   whoAmITool.description = "Return authorization context from bearer token";
   whoAmITool.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -196,9 +196,9 @@ auto createServer() -> std::shared_ptr<mcp::server::Server>
   whoAmITool.inputSchema["properties"] = mcp::jsonrpc::JsonValue::object();
 
   server->registerTool(std::move(whoAmITool),
-                       [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                       [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                        {
-                         mcp::CallToolResult result;
+                         mcp::server::CallToolResult result;
                          result.content = mcp::jsonrpc::JsonValue::array();
 
                          mcp::jsonrpc::JsonValue content = mcp::jsonrpc::JsonValue::object();

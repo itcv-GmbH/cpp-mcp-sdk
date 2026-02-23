@@ -22,10 +22,8 @@
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/sdk/errors.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/server/prompts.hpp>
-#include <mcp/server/resources.hpp>
 #include <mcp/server/server.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/all.hpp>
 #include <mcp/transport/transport.hpp>
 
 class RecordingTransport final : public mcp::transport::Transport
@@ -274,9 +272,9 @@ static auto makeFailedInitializeResponse(const mcp::jsonrpc::RequestId &requestI
   return mcp::jsonrpc::Response {std::move(response)};
 }
 
-static auto makeToolDefinition(std::string name) -> mcp::ToolDefinition
+static auto makeToolDefinition(std::string name) -> mcp::server::ToolDefinition
 {
-  mcp::ToolDefinition definition;
+  mcp::server::ToolDefinition definition;
   definition.name = std::move(name);
   definition.description = "tool description";
   definition.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -289,13 +287,13 @@ static auto makeToolDefinition(std::string name) -> mcp::ToolDefinition
   return definition;
 }
 
-static auto makePromptDefinition(std::string name) -> mcp::PromptDefinition
+static auto makePromptDefinition(std::string name) -> mcp::server::PromptDefinition
 {
-  mcp::PromptDefinition definition;
+  mcp::server::PromptDefinition definition;
   definition.name = std::move(name);
   definition.description = "prompt description";
 
-  mcp::PromptArgumentDefinition argument;
+  mcp::server::PromptArgumentDefinition argument;
   argument.name = "topic";
   argument.required = true;
   definition.arguments.push_back(std::move(argument));
@@ -733,7 +731,7 @@ TEST_CASE("Client exposes negotiated capabilities after initialize", "[client][c
 
 TEST_CASE("Client convenience APIs enforce negotiated capability gating", "[client][features][capabilities]")
 {
-  mcp::ServerConfiguration configuration;
+  mcp::server::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
   auto server = mcp::server::Server::create(std::move(configuration));
@@ -2269,8 +2267,8 @@ TEST_CASE("Client pagination helpers enforce max page limit", "[client][paginati
 
   try
   {
-    static_cast<void>(client->collectAllPages<mcp::ResourceDefinition>(
-      fetchPage, [](const mcp::ListResourcesResult &page) -> const std::vector<mcp::ResourceDefinition> & { return page.resources; }, std::nullopt, 1));
+    static_cast<void>(client->collectAllPages<mcp::server::ResourceDefinition>(
+      fetchPage, [](const mcp::ListResourcesResult &page) -> const std::vector<mcp::server::ResourceDefinition> & { return page.resources; }, std::nullopt, 1));
     FAIL("Expected max page limit failure in collectAllPages");
   }
   catch (const std::runtime_error &error)
@@ -2286,7 +2284,7 @@ TEST_CASE("Client pagination helpers pass and honor cursors for list endpoints",
   mcp::lifecycle::session::ResourcesCapability resourcesCapability;
   mcp::lifecycle::session::PromptsCapability promptsCapability;
 
-  mcp::ServerConfiguration configuration;
+  mcp::server::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
 
   auto server = mcp::server::Server::create(std::move(configuration));
@@ -2294,35 +2292,35 @@ TEST_CASE("Client pagination helpers pass and honor cursors for list endpoints",
   for (std::size_t index = 0; index < kRoundTripItemCount; ++index)
   {
     server->registerTool(makeToolDefinition("cursor-tool-" + std::to_string(index)),
-                         [](const mcp::ToolCallContext &) -> mcp::CallToolResult
+                         [](const mcp::server::ToolCallContext &) -> mcp::server::CallToolResult
                          {
-                           mcp::CallToolResult result;
+                           mcp::server::CallToolResult result;
                            result.content = mcp::jsonrpc::JsonValue::array();
                            return result;
                          });
 
     const std::string uri = "resource://cursor-item-" + std::to_string(index);
-    mcp::ResourceDefinition resourceDefinition;
+    mcp::server::ResourceDefinition resourceDefinition;
     resourceDefinition.uri = uri;
     resourceDefinition.name = "cursor-resource-" + std::to_string(index);
     // NOLINTNEXTLINE(bugprone-exception-escape)
     server->registerResource(resourceDefinition,
-                             [uri](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>  // NOLINT(bugprone-exception-escape)
+                             [uri](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>  // NOLINT(bugprone-exception-escape)
                              {
                                return {
-                                 mcp::ResourceContent::text(uri, "value-" + uri, std::string("text/plain")),
+                                 mcp::server::ResourceContent::text(uri, "value-" + uri, std::string("text/plain")),
                                };
                              });
 
-    mcp::ResourceTemplateDefinition templateDefinition;
+    mcp::server::ResourceTemplateDefinition templateDefinition;
     templateDefinition.uriTemplate = "resource://cursor-template/{id-" + std::to_string(index) + "}";
     templateDefinition.name = "cursor-template-" + std::to_string(index);
     server->registerResourceTemplate(std::move(templateDefinition));
 
     server->registerPrompt(makePromptDefinition("cursor-prompt-" + std::to_string(index)),
-                           [](const mcp::PromptGetContext &) -> mcp::PromptGetResult
+                           [](const mcp::server::PromptGetContext &) -> mcp::server::PromptGetResult
                            {
-                             mcp::PromptGetResult result;
+                             mcp::server::PromptGetResult result;
                              result.messages = {};
                              return result;
                            });
@@ -2420,13 +2418,13 @@ TEST_CASE("Client pagination helpers pass and honor cursors for list endpoints",
   REQUIRE(firstToolsPage.nextCursor.has_value());
 
   std::vector<std::optional<std::string>> resumedToolsRequestCursors;
-  const auto resumedTools = client->collectAllPages<mcp::ToolDefinition>(
+  const auto resumedTools = client->collectAllPages<mcp::server::ToolDefinition>(
     [&client, &resumedToolsRequestCursors](const std::optional<std::string> &cursor) -> mcp::ListToolsResult
     {
       resumedToolsRequestCursors.push_back(cursor);
       return client->listTools(cursor);
     },
-    [](const mcp::ListToolsResult &page) -> const std::vector<mcp::ToolDefinition> & { return page.tools; },
+    [](const mcp::ListToolsResult &page) -> const std::vector<mcp::server::ToolDefinition> & { return page.tools; },
     firstToolsPage.nextCursor);
 
   REQUIRE(resumedToolsRequestCursors.size() == 1);
@@ -2441,7 +2439,7 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
   mcp::lifecycle::session::ResourcesCapability resourcesCapability;
   mcp::lifecycle::session::PromptsCapability promptsCapability;
 
-  mcp::ServerConfiguration configuration;
+  mcp::server::ServerConfiguration configuration;
   configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(std::nullopt, std::nullopt, promptsCapability, resourcesCapability, toolsCapability, std::nullopt, std::nullopt);
 
   auto server = mcp::server::Server::create(std::move(configuration));
@@ -2450,9 +2448,9 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
   {
     const std::string toolName = "tool-" + std::to_string(index);
     server->registerTool(makeToolDefinition(toolName),
-                         [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                         [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                          {
-                           mcp::CallToolResult result;
+                           mcp::server::CallToolResult result;
                            result.content = mcp::jsonrpc::JsonValue::array();
 
                            mcp::jsonrpc::JsonValue text = mcp::jsonrpc::JsonValue::object();
@@ -2463,30 +2461,30 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
                          });
 
     const std::string uri = "resource://item-" + std::to_string(index);
-    mcp::ResourceDefinition resourceDefinition;
+    mcp::server::ResourceDefinition resourceDefinition;
     resourceDefinition.uri = uri;
     resourceDefinition.name = "resource-" + std::to_string(index);
     // NOLINTNEXTLINE(bugprone-exception-escape)
     server->registerResource(resourceDefinition,
-                             [uri](const mcp::ResourceReadContext &) -> std::vector<mcp::ResourceContent>  // NOLINT(bugprone-exception-escape)
+                             [uri](const mcp::server::ResourceReadContext &) -> std::vector<mcp::server::ResourceContent>  // NOLINT(bugprone-exception-escape)
                              {
                                return {
-                                 mcp::ResourceContent::text(uri, "value-" + uri, std::string("text/plain")),
+                                 mcp::server::ResourceContent::text(uri, "value-" + uri, std::string("text/plain")),
                                };
                              });
 
-    mcp::ResourceTemplateDefinition templateDefinition;
+    mcp::server::ResourceTemplateDefinition templateDefinition;
     templateDefinition.uriTemplate = "resource://template/{id-" + std::to_string(index) + "}";
     templateDefinition.name = "template-" + std::to_string(index);
     server->registerResourceTemplate(std::move(templateDefinition));
 
     server->registerPrompt(makePromptDefinition("prompt-" + std::to_string(index)),
-                           [](const mcp::PromptGetContext &context) -> mcp::PromptGetResult
+                           [](const mcp::server::PromptGetContext &context) -> mcp::server::PromptGetResult
                            {
-                             mcp::PromptGetResult result;
+                             mcp::server::PromptGetResult result;
                              result.description = "generated prompt";
 
-                             mcp::PromptMessage message;
+                             mcp::server::PromptMessage message;
                              message.role = "user";
                              message.content = mcp::jsonrpc::JsonValue::object();
                              message.content["type"] = "text";
@@ -2509,8 +2507,8 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
   REQUIRE(firstToolsPage.nextCursor.has_value());
 
   const auto allTools =
-    client->collectAllPages<mcp::ToolDefinition>([&client](const std::optional<std::string> &cursor) -> mcp::ListToolsResult { return client->listTools(cursor); },
-                                                 [](const mcp::ListToolsResult &page) -> const std::vector<mcp::ToolDefinition> & { return page.tools; });
+    client->collectAllPages<mcp::server::ToolDefinition>([&client](const std::optional<std::string> &cursor) -> mcp::ListToolsResult { return client->listTools(cursor); },
+                                                 [](const mcp::ListToolsResult &page) -> const std::vector<mcp::server::ToolDefinition> & { return page.tools; });
   REQUIRE(allTools.size() == kRoundTripItemCount);
 
   std::size_t resourcePages = 0;
@@ -2527,17 +2525,17 @@ TEST_CASE("Client convenience APIs support local in-memory round-trips and pagin
   const auto readResult = client->readResource("resource://item-0");
   REQUIRE(readResult.contents.size() == 1);
   REQUIRE(readResult.contents[0].uri == "resource://item-0");
-  REQUIRE(readResult.contents[0].kind == mcp::ResourceContentKind::kText);
+  REQUIRE(readResult.contents[0].kind == mcp::server::ResourceContentKind::kText);
   REQUIRE(readResult.contents[0].value == "value-resource://item-0");
 
-  const auto allTemplates = client->collectAllPages<mcp::ResourceTemplateDefinition>(
+  const auto allTemplates = client->collectAllPages<mcp::server::ResourceTemplateDefinition>(
     [&client](const std::optional<std::string> &cursor) -> mcp::ListResourceTemplatesResult { return client->listResourceTemplates(cursor); },
-    [](const mcp::ListResourceTemplatesResult &page) -> const std::vector<mcp::ResourceTemplateDefinition> & { return page.resourceTemplates; });
+    [](const mcp::ListResourceTemplatesResult &page) -> const std::vector<mcp::server::ResourceTemplateDefinition> & { return page.resourceTemplates; });
   REQUIRE(allTemplates.size() == kRoundTripItemCount);
 
   const auto allPrompts =
-    client->collectAllPages<mcp::PromptDefinition>([&client](const std::optional<std::string> &cursor) -> mcp::ListPromptsResult { return client->listPrompts(cursor); },
-                                                   [](const mcp::ListPromptsResult &page) -> const std::vector<mcp::PromptDefinition> & { return page.prompts; });
+    client->collectAllPages<mcp::server::PromptDefinition>([&client](const std::optional<std::string> &cursor) -> mcp::ListPromptsResult { return client->listPrompts(cursor); },
+                                                   [](const mcp::ListPromptsResult &page) -> const std::vector<mcp::server::PromptDefinition> & { return page.prompts; });
   REQUIRE(allPrompts.size() == kRoundTripItemCount);
 
   mcp::jsonrpc::JsonValue toolArgs = mcp::jsonrpc::JsonValue::object();

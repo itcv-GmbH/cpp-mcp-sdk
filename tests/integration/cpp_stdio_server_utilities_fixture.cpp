@@ -108,7 +108,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       mcp::lifecycle::session::LoggingCapability loggingCapability;
       mcp::lifecycle::session::CompletionsCapability completionsCapability;
 
-      mcp::ServerConfiguration configuration;
+      mcp::server::ServerConfiguration configuration;
       configuration.capabilities = mcp::lifecycle::session::ServerCapabilities(loggingCapability,
                                                            completionsCapability,
                                                            std::nullopt,  // prompts
@@ -169,12 +169,12 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
 
       // Set up completion handler for completion/complete requests
       server->setCompletionHandler(
-        [](const mcp::CompletionRequest &request) -> mcp::CompletionResult
+        [](const mcp::server::CompletionRequest &request) -> mcp::server::CompletionResult
         {
-          mcp::CompletionResult result;
+          mcp::server::CompletionResult result;
 
           // Provide completion suggestions based on the reference type and argument value
-          if (request.referenceType == mcp::CompletionReferenceType::kPrompt)
+          if (request.referenceType == mcp::server::CompletionReferenceType::kPrompt)
           {
             // For prompts, suggest some prompt names
             if (request.argumentValue.empty())
@@ -187,7 +187,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
               result.values.push_back("test_prompt");
             }
           }
-          else if (request.referenceType == mcp::CompletionReferenceType::kResource)
+          else if (request.referenceType == mcp::server::CompletionReferenceType::kResource)
           {
             // For resources, suggest some resource URIs
             if (request.argumentValue.empty())

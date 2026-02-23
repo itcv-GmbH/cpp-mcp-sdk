@@ -139,7 +139,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
                                            std::nullopt  // experimental
       );
 
-      mcp::ServerConfiguration configuration;
+      mcp::server::ServerConfiguration configuration;
       configuration.capabilities = std::move(capabilities);
       configuration.serverInfo = mcp::lifecycle::session::Implementation("cpp-integration-stdio-server-tasks", "1.0.0");
       configuration.instructions = "STDIO integration fixture server for reference SDK tasks tests.";
@@ -156,7 +156,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       }
 
       // Register a tool that supports task augmentation for long-running tasks
-      mcp::ToolDefinition longRunningTaskTool;
+      mcp::server::ToolDefinition longRunningTaskTool;
       longRunningTaskTool.name = "cpp_long_running_task";
       longRunningTaskTool.description = "Creates a deterministic long-running task for testing";
       longRunningTaskTool.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -173,7 +173,7 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       longRunningTaskTool.inputSchema["required"].push_back("text");
 
       server->registerTool(std::move(longRunningTaskTool),
-                           [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                           [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                            {
                              // Get arguments
                              std::string text = "default";
@@ -196,14 +196,14 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
                                std::this_thread::sleep_for(std::chrono::milliseconds(kTaskProgressIntervalMs));
                              }
 
-                             mcp::CallToolResult result;
+                             mcp::server::CallToolResult result;
                              result.content = mcp::jsonrpc::JsonValue::array();
                              result.content.push_back(makeTextContent("Task completed: " + text + " (processed " + std::to_string(steps) + " steps)"));
                              return result;
                            });
 
       // Simple echo tool for basic testing
-      mcp::ToolDefinition echoTool;
+      mcp::server::ToolDefinition echoTool;
       echoTool.name = "cpp_echo";
       echoTool.description = "Echo text from arguments.text";
       echoTool.inputSchema = mcp::jsonrpc::JsonValue::object();
@@ -215,9 +215,9 @@ auto main(int /*argc*/, char ** /*argv*/) -> int
       echoTool.inputSchema["required"].push_back("text");
 
       server->registerTool(std::move(echoTool),
-                           [](const mcp::ToolCallContext &context) -> mcp::CallToolResult
+                           [](const mcp::server::ToolCallContext &context) -> mcp::server::CallToolResult
                            {
-                             mcp::CallToolResult result;
+                             mcp::server::CallToolResult result;
                              result.content = mcp::jsonrpc::JsonValue::array();
                              result.content.push_back(makeTextContent("cpp echo: " + context.arguments["text"].as<std::string>()));
                              return result;

@@ -1,16 +1,10 @@
 #pragma once
 
-#include <mcp/transport/all.hpp>
+#include <mcp/server/streamable_http_server_runner_options.hpp>
 
-namespace mcp::server
+namespace mcp::server::detail
 {
 
-/// Configuration options for the Streamable HTTP server runner.
-struct StreamableHttpServerRunnerOptions
-{
-  /// Options passed through to the underlying Streamable HTTP transport.
-  /// Controls endpoint configuration, TLS, authorization, etc.
-  transport::http::StreamableHttpServerOptions transportOptions;
-};
+using StreamableHttpServerRunnerOptions = mcp::server::StreamableHttpServerRunnerOptions;
 
-}  // namespace mcp::server
+}  // namespace mcp::server::detail

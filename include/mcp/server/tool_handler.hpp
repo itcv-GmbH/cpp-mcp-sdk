@@ -5,9 +5,9 @@
 #include <mcp/server/call_tool_result.hpp>
 #include <mcp/server/tool_call_context.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 using ToolHandler = std::function<CallToolResult(const ToolCallContext &)>;
 
-}  // namespace mcp
+}  // namespace mcp::server

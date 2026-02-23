@@ -1,24 +1,34 @@
-#pragma once
-
-// Umbrella header for MCP server module
-// This header includes all server-related headers
-
-// Core server
-#include <mcp/server/server.hpp>
-#include <mcp/server/server_configuration.hpp>
-
-// Tools, Resources, Prompts
-#include <mcp/server/prompts.hpp>
-#include <mcp/server/resources.hpp>
-#include <mcp/server/tools.hpp>
-
-// Runners
+#include <mcp/server/call_tool_result.hpp>
 #include <mcp/server/combined_runner.hpp>
-#include <mcp/server/stdio_runner.hpp>
-#include <mcp/server/streamable_http_runner.hpp>
-
-// Supporting types
-#include <mcp/server/completion_types.hpp>
+#include <mcp/server/combined_server_runner_options.hpp>
+#include <mcp/server/completion_request.hpp>
+#include <mcp/server/completion_result.hpp>
 #include <mcp/server/list_endpoint.hpp>
 #include <mcp/server/log_level.hpp>
 #include <mcp/server/pagination_window.hpp>
+#include <mcp/server/prompt_argument_definition.hpp>
+#include <mcp/server/prompt_definition.hpp>
+#include <mcp/server/prompt_get_context.hpp>
+#include <mcp/server/prompt_get_result.hpp>
+#include <mcp/server/prompt_handler.hpp>
+#include <mcp/server/prompt_message.hpp>
+#include <mcp/server/registered_prompt.hpp>
+#include <mcp/server/registered_resource.hpp>
+#include <mcp/server/registered_tool.hpp>
+#include <mcp/server/resource_content.hpp>
+#include <mcp/server/resource_content_kind.hpp>
+#include <mcp/server/resource_definition.hpp>
+#include <mcp/server/resource_read_context.hpp>
+#include <mcp/server/resource_read_handler.hpp>
+#include <mcp/server/resource_subscription.hpp>
+#include <mcp/server/resource_template_definition.hpp>
+#include <mcp/server/server.hpp>
+#include <mcp/server/server_configuration.hpp>
+#include <mcp/server/server_factory.hpp>
+#include <mcp/server/stdio_runner.hpp>
+#include <mcp/server/stdio_server_runner_options.hpp>
+#include <mcp/server/streamable_http_runner.hpp>
+#include <mcp/server/streamable_http_server_runner_options.hpp>
+#include <mcp/server/tool_call_context.hpp>
+#include <mcp/server/tool_definition.hpp>
+#include <mcp/server/tool_handler.hpp>

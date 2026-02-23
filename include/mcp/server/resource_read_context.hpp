@@ -4,7 +4,7 @@
 
 #include <mcp/jsonrpc/all.hpp>
 
-namespace mcp
+namespace mcp::server
 {
 
 struct ResourceReadContext
@@ -13,4 +13,4 @@ struct ResourceReadContext
   std::string uri;
 };
 
-}  // namespace mcp
+}  // namespace mcp::server

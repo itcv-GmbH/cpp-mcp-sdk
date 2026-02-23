@@ -34,9 +34,7 @@
 #include <mcp/schema/validator.hpp>
 #include <mcp/sdk/error_reporter.hpp>
 #include <mcp/sdk/version.hpp>
-#include <mcp/server/prompts.hpp>
-#include <mcp/server/resources.hpp>
-#include <mcp/server/tools.hpp>
+#include <mcp/server/all.hpp>
 #include <mcp/transport/all.hpp>
 #include <mcp/transport/streamable_http_client_transport.hpp>
 #include <mcp/transport/transport.hpp>
@@ -161,14 +159,14 @@ static auto parseCursor(const jsonrpc::JsonValue &result, std::string_view metho
   return result["nextCursor"].as<std::string>();
 }
 
-static auto parseToolDefinition(const jsonrpc::JsonValue &toolJson) -> ToolDefinition
+static auto parseToolDefinition(const jsonrpc::JsonValue &toolJson) -> server::ToolDefinition
 {
   if (!toolJson.is_object() || !toolJson.contains("name") || !toolJson["name"].is_string() || !toolJson.contains("inputSchema") || !toolJson["inputSchema"].is_object())
   {
     throw std::runtime_error("Invalid tools/list response: tool definition is missing required fields");
   }
 
-  ToolDefinition definition;
+  server::ToolDefinition definition;
   definition.name = toolJson["name"].as<std::string>();
   definition.inputSchema = toolJson["inputSchema"];
 
@@ -210,14 +208,14 @@ static auto parseToolDefinition(const jsonrpc::JsonValue &toolJson) -> ToolDefin
   return definition;
 }
 
-static auto parseResourceDefinition(const jsonrpc::JsonValue &resourceJson) -> ResourceDefinition
+static auto parseResourceDefinition(const jsonrpc::JsonValue &resourceJson) -> server::ResourceDefinition
 {
   if (!resourceJson.is_object() || !resourceJson.contains("uri") || !resourceJson["uri"].is_string() || !resourceJson.contains("name") || !resourceJson["name"].is_string())
   {
     throw std::runtime_error("Invalid resources/list response: resource definition is missing required fields");
   }
 
-  ResourceDefinition definition;
+  server::ResourceDefinition definition;
   definition.uri = resourceJson["uri"].as<std::string>();
   definition.name = resourceJson["name"].as<std::string>();
 
@@ -259,14 +257,14 @@ static auto parseResourceDefinition(const jsonrpc::JsonValue &resourceJson) -> R
   return definition;
 }
 
-static auto parseResourceContent(const jsonrpc::JsonValue &contentJson) -> ResourceContent
+static auto parseResourceContent(const jsonrpc::JsonValue &contentJson) -> server::ResourceContent
 {
   if (!contentJson.is_object() || !contentJson.contains("uri") || !contentJson["uri"].is_string())
   {
     throw std::runtime_error("Invalid resources/read response: content is missing required uri field");
   }
 
-  ResourceContent content;
+  server::ResourceContent content;
   content.uri = contentJson["uri"].as<std::string>();
 
   if (contentJson.contains("mimeType") && contentJson["mimeType"].is_string())
@@ -286,14 +284,14 @@ static auto parseResourceContent(const jsonrpc::JsonValue &contentJson) -> Resou
 
   if (contentJson.contains("text") && contentJson["text"].is_string())
   {
-    content.kind = ResourceContentKind::kText;
+    content.kind = server::ResourceContentKind::kText;
     content.value = contentJson["text"].as<std::string>();
     return content;
   }
 
   if (contentJson.contains("blob") && contentJson["blob"].is_string())
   {
-    content.kind = ResourceContentKind::kBlobBase64;
+    content.kind = server::ResourceContentKind::kBlobBase64;
     content.value = contentJson["blob"].as<std::string>();
     return content;
   }
@@ -301,7 +299,7 @@ static auto parseResourceContent(const jsonrpc::JsonValue &contentJson) -> Resou
   throw std::runtime_error("Invalid resources/read response: content must include either text or blob");
 }
 
-static auto parseResourceTemplateDefinition(const jsonrpc::JsonValue &templateJson) -> ResourceTemplateDefinition
+static auto parseResourceTemplateDefinition(const jsonrpc::JsonValue &templateJson) -> server::ResourceTemplateDefinition
 {
   if (!templateJson.is_object() || !templateJson.contains("uriTemplate") || !templateJson["uriTemplate"].is_string() || !templateJson.contains("name")
       || !templateJson["name"].is_string())
@@ -309,7 +307,7 @@ static auto parseResourceTemplateDefinition(const jsonrpc::JsonValue &templateJs
     throw std::runtime_error("Invalid resources/templates/list response: resource template is missing required fields");
   }
 
-  ResourceTemplateDefinition definition;
+  server::ResourceTemplateDefinition definition;
   definition.uriTemplate = templateJson["uriTemplate"].as<std::string>();
   definition.name = templateJson["name"].as<std::string>();
 
@@ -346,14 +344,14 @@ static auto parseResourceTemplateDefinition(const jsonrpc::JsonValue &templateJs
   return definition;
 }
 
-static auto parsePromptArgument(const jsonrpc::JsonValue &argumentJson) -> PromptArgumentDefinition
+static auto parsePromptArgument(const jsonrpc::JsonValue &argumentJson) -> server::PromptArgumentDefinition
 {
   if (!argumentJson.is_object() || !argumentJson.contains("name") || !argumentJson["name"].is_string())
   {
     throw std::runtime_error("Invalid prompts/list response: prompt argument is missing required name field");
   }
 
-  PromptArgumentDefinition argument;
+  server::PromptArgumentDefinition argument;
   argument.name = argumentJson["name"].as<std::string>();
 
   if (argumentJson.contains("title") && argumentJson["title"].is_string())
@@ -379,14 +377,14 @@ static auto parsePromptArgument(const jsonrpc::JsonValue &argumentJson) -> Promp
   return argument;
 }
 
-static auto parsePromptDefinition(const jsonrpc::JsonValue &promptJson) -> PromptDefinition
+static auto parsePromptDefinition(const jsonrpc::JsonValue &promptJson) -> server::PromptDefinition
 {
   if (!promptJson.is_object() || !promptJson.contains("name") || !promptJson["name"].is_string())
   {
     throw std::runtime_error("Invalid prompts/list response: prompt definition is missing required name field");
   }
 
-  PromptDefinition definition;
+  server::PromptDefinition definition;
   definition.name = promptJson["name"].as<std::string>();
 
   if (promptJson.contains("title") && promptJson["title"].is_string())
@@ -425,14 +423,14 @@ static auto parsePromptDefinition(const jsonrpc::JsonValue &promptJson) -> Promp
   return definition;
 }
 
-static auto parsePromptMessage(const jsonrpc::JsonValue &messageJson) -> PromptMessage
+static auto parsePromptMessage(const jsonrpc::JsonValue &messageJson) -> server::PromptMessage
 {
   if (!messageJson.is_object() || !messageJson.contains("role") || !messageJson["role"].is_string() || !messageJson.contains("content") || !messageJson["content"].is_object())
   {
     throw std::runtime_error("Invalid prompts/get response: message must include role and object content");
   }
 
-  PromptMessage message;
+  server::PromptMessage message;
   message.role = messageJson["role"].as<std::string>();
   message.content = messageJson["content"];
   return message;
@@ -1932,7 +1930,7 @@ auto Client::listTools(std::optional<std::string> cursor, lifecycle::session::Re
   return parsedResult;
 }
 
-auto Client::callTool(const std::string &name, jsonrpc::JsonValue arguments, lifecycle::session::RequestOptions options) -> CallToolResult
+auto Client::callTool(const std::string &name, jsonrpc::JsonValue arguments, lifecycle::session::RequestOptions options) -> server::CallToolResult
 {
   ensureServerCapabilityAvailable(*this, "tools", kToolsCallMethod);
 
@@ -1949,7 +1947,7 @@ auto Client::callTool(const std::string &name, jsonrpc::JsonValue arguments, lif
     throw std::runtime_error("Invalid tools/call response: content must be an array");
   }
 
-  CallToolResult parsedResult;
+  server::CallToolResult parsedResult;
   parsedResult.content = result["content"];
 
   if (result.contains("structuredContent"))
@@ -2086,7 +2084,7 @@ auto Client::listPrompts(std::optional<std::string> cursor, lifecycle::session::
   return parsedResult;
 }
 
-auto Client::getPrompt(const std::string &name, jsonrpc::JsonValue arguments, lifecycle::session::RequestOptions options) -> PromptGetResult
+auto Client::getPrompt(const std::string &name, jsonrpc::JsonValue arguments, lifecycle::session::RequestOptions options) -> server::PromptGetResult
 {
   ensureServerCapabilityAvailable(*this, "prompts", kPromptsGetMethod);
 
@@ -2103,7 +2101,7 @@ auto Client::getPrompt(const std::string &name, jsonrpc::JsonValue arguments, li
     throw std::runtime_error("Invalid prompts/get response: messages must be an array");
   }
 
-  PromptGetResult parsedResult;
+  server::PromptGetResult parsedResult;
 
   if (result.contains("description") && result["description"].is_string())
   {
