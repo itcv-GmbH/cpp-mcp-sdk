@@ -36,6 +36,15 @@ Unix presets use Ninja (single-config).
 | `MCP_SDK_ENABLE_AUTH` | ON | Enable OAuth features |
 | `MCP_SDK_INTEGRATION_TESTS` | OFF | Build integration tests |
 
+### Build Timeout
+
+Set tool call timeout to 20 minutes for builds:
+
+```bash
+# When using bash tool, set timeout to 1200000ms (20 minutes)
+timeout: 1200000
+```
+
 ### Dependencies
 
 Managed via vcpkg (requires `VCPKG_ROOT` env var): jsoncons, Boost.Asio, Boost.Beast, Boost.Process, OpenSSL, Catch2.
