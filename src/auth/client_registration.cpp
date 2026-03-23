@@ -1,5 +1,6 @@
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 // jsoncons::JsonValue operator[] is a map lookup, not array indexing - safe by design
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -682,8 +683,7 @@ auto resolveClientRegistration(const ResolveClientRegistrationRequest &request) 
                                 "URL, or enable dynamic registration when the authorization server exposes registration_endpoint.");
 }
 
+// NOLINTEND(llvm-prefer-static-over-anonymous-namespace, readability-static-definition-in-anonymous-namespace)
 // NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 }  // namespace mcp::auth
-
-// NOLINTEND(llvm-prefer-static-over-anonymous-namespace, readability-static-definition-in-anonymous-namespace)

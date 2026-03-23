@@ -11,6 +11,7 @@ Checks: "*,\
   -llvm-header-guard,\
   -llvm-include-order,\
   -llvmlibc-*,\
+  -llvm-use-ranges,\
   -modernize-use-nodiscard,\
   -misc-non-private-member-variables-in-classes,\
   -misc-use-internal-linkage,\
