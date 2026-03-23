@@ -306,4 +306,4 @@ Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
-**Built with ❤️ by ORDIS Co., Ltd.**
+**Built with ❤️ in Bangkok by ORDIS Co., Ltd.**
