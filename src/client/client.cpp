@@ -1274,11 +1274,13 @@ Client::Client(std::shared_ptr<lifecycle::Session> session, sdk::ErrorReporter e
   , asyncWorkPool_(std::make_unique<boost::asio::thread_pool>(kClientAsyncWorkerCount))
   , callbackDispatchPool_(std::make_unique<boost::asio::thread_pool>(kClientCallbackWorkerCount))
   , errorReporter_(std::move(errorReporter))
-  , router_([&errorReporter]() -> jsonrpc::RouterOptions {
-      jsonrpc::RouterOptions opts;
-      opts.errorReporter = errorReporter;
-      return opts;
-    }())
+  , router_(
+      [errorReporter = errorReporter_]() -> jsonrpc::RouterOptions
+      {
+        jsonrpc::RouterOptions opts;
+        opts.errorReporter = errorReporter;
+        return opts;
+      }())
 {
   if (!session_)
   {

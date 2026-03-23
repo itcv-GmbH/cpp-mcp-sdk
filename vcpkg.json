@@ -24,6 +24,14 @@
       "platform": "!uwp"
     },
     {
+      "name": "boost-filesystem",
+      "version>=": "1.88.0"
+    },
+    {
+      "name": "boost-system",
+      "version>=": "1.88.0"
+    },
+    {
       "name": "openssl",
       "version>=": "3.3.0"
     },

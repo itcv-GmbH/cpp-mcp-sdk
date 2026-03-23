@@ -148,11 +148,13 @@ Server::Server(std::shared_ptr<lifecycle::Session> session)
 Server::Server(std::shared_ptr<lifecycle::Session> session, ServerConfiguration configuration)
   : session_(std::move(session))
   , configuration_(std::move(configuration))
-  , router_([&configuration]() -> jsonrpc::RouterOptions {
-      jsonrpc::RouterOptions opts;
-      opts.errorReporter = configuration.sessionOptions.errorReporter;
-      return opts;
-    }())
+  , router_(
+      [errorReporter = configuration_.sessionOptions.errorReporter]() -> jsonrpc::RouterOptions
+      {
+        jsonrpc::RouterOptions opts;
+        opts.errorReporter = errorReporter;
+        return opts;
+      }())
 {
   if (!session_)
   {
@@ -325,8 +327,7 @@ auto Server::sendRequest(const jsonrpc::RequestContext &context, jsonrpc::Reques
   lifecycle::session::RequestOptions requestOptions;
   requestOptions.timeout = options.timeout;
   requestOptions.cancelOnTimeout = options.cancelOnTimeout;
-  session_->enforceOutboundRequestLifecycle(
-    request.method, lifecycleParams, requestOptions);
+  session_->enforceOutboundRequestLifecycle(request.method, lifecycleParams, requestOptions);
   return router_.sendRequest(context, std::move(request), std::move(options));
 }
 

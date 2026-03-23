@@ -29,6 +29,8 @@
 #  include <windows.h>
 #endif
 
+#include <boost/version.hpp>
+
 // Boost.Process headers differ by version:
 // - Boost 1.71 and earlier: flat structure (boost/process/*.hpp)
 // - Boost 1.75+: v1 subdirectory (boost/process/v1/*.hpp)
