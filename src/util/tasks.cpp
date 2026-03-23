@@ -569,20 +569,27 @@ auto InMemoryTaskStore::createTask(TaskCreateOptions options) -> TaskRecordResul
   {
     if (*options.ttl < 0)
     {
-      return {.error = TaskStoreError::kLimitExceeded, .errorMessage = std::string("Task ttl must be greater than or equal to zero milliseconds")};
+      TaskRecordResult result;
+      result.error = TaskStoreError::kLimitExceeded;
+      result.errorMessage = std::string("Task ttl must be greater than or equal to zero milliseconds");
+      return result;
     }
 
     if (*options.ttl > impl_->options.maxTaskTtlMilliseconds)
     {
-      return {.error = TaskStoreError::kLimitExceeded,
-              .errorMessage = std::string("Task ttl exceeds configured maximum of ") + std::to_string(impl_->options.maxTaskTtlMilliseconds) + " milliseconds"};
+      TaskRecordResult result;
+      result.error = TaskStoreError::kLimitExceeded;
+      result.errorMessage = std::string("Task ttl exceeds configured maximum of ") + std::to_string(impl_->options.maxTaskTtlMilliseconds) + " milliseconds";
+      return result;
     }
   }
 
   if (impl_->countActiveTasksForAuthContext(options.authContext) >= impl_->options.maxActiveTasksPerAuthContext)
   {
-    return {.error = TaskStoreError::kLimitExceeded,
-            .errorMessage = std::string("Active task limit reached for auth context (max ") + std::to_string(impl_->options.maxActiveTasksPerAuthContext) + ")"};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kLimitExceeded;
+    result.errorMessage = std::string("Active task limit reached for auth context (max ") + std::to_string(impl_->options.maxActiveTasksPerAuthContext) + ")";
+    return result;
   }
 
   std::string taskId;
@@ -624,15 +631,22 @@ auto InMemoryTaskStore::getTask(std::string_view taskId, const std::optional<std
   const auto taskIter = impl_->tasks.find(std::string(taskId));
   if (taskIter == impl_->tasks.end())
   {
-    return {.error = TaskStoreError::kNotFound};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kNotFound;
+    return result;
   }
 
   if (!Impl::checkAccess(taskIter->second, authContext))
   {
-    return {.error = TaskStoreError::kAccessDenied};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kAccessDenied;
+    return result;
   }
 
-  return {.error = TaskStoreError::kNone, .task = taskIter->second.task};
+  TaskRecordResult result;
+  result.error = TaskStoreError::kNone;
+  result.task = taskIter->second.task;
+  return result;
 }
 
 auto InMemoryTaskStore::listTasks(const std::optional<std::string> &authContext) -> std::vector<Task>
@@ -673,29 +687,41 @@ auto InMemoryTaskStore::updateTaskStatus(std::string_view taskId, TaskStatus sta
   const auto taskIter = impl_->tasks.find(std::string(taskId));
   if (taskIter == impl_->tasks.end())
   {
-    return {.error = TaskStoreError::kNotFound};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kNotFound;
+    return result;
   }
 
   if (!Impl::checkAccess(taskIter->second, authContext))
   {
-    return {.error = TaskStoreError::kAccessDenied};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kAccessDenied;
+    return result;
   }
 
   if (isTerminalTaskStatus(taskIter->second.task.status))
   {
-    return {.error = TaskStoreError::kTerminalImmutable, .task = taskIter->second.task};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kTerminalImmutable;
+    result.task = taskIter->second.task;
+    return result;
   }
 
   if (!isValidTaskStatusTransition(taskIter->second.task.status, status))
   {
-    return {.error = TaskStoreError::kInvalidTransition, .task = taskIter->second.task};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kInvalidTransition;
+    result.task = taskIter->second.task;
+    return result;
   }
 
   taskIter->second.task.status = status;
   taskIter->second.task.statusMessage = std::move(statusMessage);
   taskIter->second.task.lastUpdatedAt = detail::toIso8601Utc(impl_->nowSystem());
 
-  TaskRecordResult result {.error = TaskStoreError::kNone, .task = taskIter->second.task};
+  TaskRecordResult result;
+  result.error = TaskStoreError::kNone;
+  result.task = taskIter->second.task;
   impl_->condition.notify_all();
   return result;
 }
@@ -712,22 +738,32 @@ auto InMemoryTaskStore::setTaskResult(std::string_view taskId,
   const auto taskIter = impl_->tasks.find(std::string(taskId));
   if (taskIter == impl_->tasks.end())
   {
-    return {.error = TaskStoreError::kNotFound};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kNotFound;
+    return result;
   }
 
   if (!Impl::checkAccess(taskIter->second, authContext))
   {
-    return {.error = TaskStoreError::kAccessDenied};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kAccessDenied;
+    return result;
   }
 
   if (isTerminalTaskStatus(taskIter->second.task.status))
   {
-    return {.error = TaskStoreError::kTerminalImmutable, .task = taskIter->second.task};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kTerminalImmutable;
+    result.task = taskIter->second.task;
+    return result;
   }
 
   if (!isTerminalTaskStatus(terminalStatus) || !isValidTaskStatusTransition(taskIter->second.task.status, terminalStatus))
   {
-    return {.error = TaskStoreError::kInvalidTransition, .task = taskIter->second.task};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kInvalidTransition;
+    result.task = taskIter->second.task;
+    return result;
   }
 
   taskIter->second.task.status = terminalStatus;
@@ -736,7 +772,9 @@ auto InMemoryTaskStore::setTaskResult(std::string_view taskId,
   taskIter->second.result = std::move(result);
   taskIter->second.errorPayload.reset();
 
-  TaskRecordResult mutationResult {.error = TaskStoreError::kNone, .task = taskIter->second.task};
+  TaskRecordResult mutationResult;
+  mutationResult.error = TaskStoreError::kNone;
+  mutationResult.task = taskIter->second.task;
   impl_->condition.notify_all();
   return mutationResult;
 }
@@ -753,22 +791,32 @@ auto InMemoryTaskStore::setTaskError(std::string_view taskId,
   const auto taskIter = impl_->tasks.find(std::string(taskId));
   if (taskIter == impl_->tasks.end())
   {
-    return {.error = TaskStoreError::kNotFound};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kNotFound;
+    return result;
   }
 
   if (!Impl::checkAccess(taskIter->second, authContext))
   {
-    return {.error = TaskStoreError::kAccessDenied};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kAccessDenied;
+    return result;
   }
 
   if (isTerminalTaskStatus(taskIter->second.task.status))
   {
-    return {.error = TaskStoreError::kTerminalImmutable, .task = taskIter->second.task};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kTerminalImmutable;
+    result.task = taskIter->second.task;
+    return result;
   }
 
   if (!isTerminalTaskStatus(terminalStatus) || !isValidTaskStatusTransition(taskIter->second.task.status, terminalStatus))
   {
-    return {.error = TaskStoreError::kInvalidTransition, .task = taskIter->second.task};
+    TaskRecordResult result;
+    result.error = TaskStoreError::kInvalidTransition;
+    result.task = taskIter->second.task;
+    return result;
   }
 
   taskIter->second.task.status = terminalStatus;
@@ -777,7 +825,9 @@ auto InMemoryTaskStore::setTaskError(std::string_view taskId,
   taskIter->second.errorPayload = std::move(error);
   taskIter->second.result.reset();
 
-  TaskRecordResult mutationResult {.error = TaskStoreError::kNone, .task = taskIter->second.task};
+  TaskRecordResult mutationResult;
+  mutationResult.error = TaskStoreError::kNone;
+  mutationResult.task = taskIter->second.task;
   impl_->condition.notify_all();
   return mutationResult;
 }
@@ -799,12 +849,16 @@ auto InMemoryTaskStore::waitForTaskTerminal(std::string_view taskId, const std::
     const auto taskIter = impl_->tasks.find(std::string(taskId));
     if (taskIter == impl_->tasks.end())
     {
-      return {.error = TaskStoreError::kNotFound};
+      TaskTerminalResult result;
+      result.error = TaskStoreError::kNotFound;
+      return result;
     }
 
     if (!Impl::checkAccess(taskIter->second, authContext))
     {
-      return {.error = TaskStoreError::kAccessDenied};
+      TaskTerminalResult result;
+      result.error = TaskStoreError::kAccessDenied;
+      return result;
     }
 
     if (isTerminalTaskStatus(taskIter->second.task.status))

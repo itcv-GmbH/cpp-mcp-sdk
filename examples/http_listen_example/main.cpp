@@ -175,11 +175,11 @@ auto main() -> int
     mcp::lifecycle::session::RootsCapability rootsCapability;
     rootsCapability.listChanged = true;
 
-    client->setInitializeConfiguration({
-      .protocolVersion = std::string(mcp::kLatestProtocolVersion),
-      .capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt),
-      .clientInfo = mcp::lifecycle::session::Implementation(std::string(kClientInfoName), std::string(kClientInfoVersion)),
-    });
+    mcp::client::ClientInitializeConfiguration initConfig;
+    initConfig.protocolVersion = std::string(mcp::kLatestProtocolVersion);
+    initConfig.capabilities = mcp::lifecycle::session::ClientCapabilities(rootsCapability, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    initConfig.clientInfo = mcp::lifecycle::session::Implementation(std::string(kClientInfoName), std::string(kClientInfoVersion));
+    client->setInitializeConfiguration(initConfig);
 
     // Start client
     client->start();

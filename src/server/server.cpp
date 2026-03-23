@@ -148,7 +148,11 @@ Server::Server(std::shared_ptr<lifecycle::Session> session)
 Server::Server(std::shared_ptr<lifecycle::Session> session, ServerConfiguration configuration)
   : session_(std::move(session))
   , configuration_(std::move(configuration))
-  , router_(jsonrpc::RouterOptions {.errorReporter = configuration_.sessionOptions.errorReporter})
+  , router_([&configuration]() -> jsonrpc::RouterOptions {
+      jsonrpc::RouterOptions opts;
+      opts.errorReporter = configuration.sessionOptions.errorReporter;
+      return opts;
+    }())
 {
   if (!session_)
   {
@@ -318,8 +322,11 @@ auto Server::handleResponse(const jsonrpc::RequestContext &context, const jsonrp
 auto Server::sendRequest(const jsonrpc::RequestContext &context, jsonrpc::Request request, jsonrpc::OutboundRequestOptions options) -> std::future<jsonrpc::Response>
 {
   const jsonrpc::JsonValue lifecycleParams = request.params.has_value() ? *request.params : jsonrpc::JsonValue::object();
+  lifecycle::session::RequestOptions requestOptions;
+  requestOptions.timeout = options.timeout;
+  requestOptions.cancelOnTimeout = options.cancelOnTimeout;
   session_->enforceOutboundRequestLifecycle(
-    request.method, lifecycleParams, lifecycle::session::RequestOptions {.timeout = options.timeout, .cancelOnTimeout = options.cancelOnTimeout});
+    request.method, lifecycleParams, requestOptions);
   return router_.sendRequest(context, std::move(request), std::move(options));
 }
 

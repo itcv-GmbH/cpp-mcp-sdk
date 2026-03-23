@@ -54,7 +54,9 @@ struct StdioServerRunner::Impl
 
   static auto writeMessage(const jsonrpc::Message &message, std::ostream &output) -> void
   {
-    const auto serialized = jsonrpc::serializeMessage(message, jsonrpc::EncodeOptions {.disallowEmbeddedNewlines = true});
+    jsonrpc::EncodeOptions options;
+    options.disallowEmbeddedNewlines = true;
+    const auto serialized = jsonrpc::serializeMessage(message, options);
     output << serialized << '\n';
     output.flush();
   }
