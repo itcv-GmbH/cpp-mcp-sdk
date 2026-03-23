@@ -441,12 +441,26 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
           try
           {
             Response response = handlerFuture.get();
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4573)  // MSVC false positive: static method doesn't need 'this'
+#endif
             Router::completeInboundRequest(inboundState, *contextPtr, requestId);
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
             detail::setPromiseValueNoThrow(*responsePromise, std::move(response));
           }
           catch (...)
           {
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4573)  // MSVC false positive: static method doesn't need 'this'
+#endif
             Router::completeInboundRequest(inboundState, *contextPtr, requestId);
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
             detail::setPromiseValueNoThrow(*responsePromise, Response {makeErrorResponse(makeInternalError(std::nullopt, "Request handler threw an exception."), requestId)});
             reportCurrentException(errorReporter, "Router::dispatchRequest");
           }
