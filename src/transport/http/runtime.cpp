@@ -703,7 +703,12 @@ struct HttpClientRuntime::Impl
 
       if (options_.tls.verifyPeer)
       {
+        // Use rfc2818_verification for Boost < 1.73, host_name_verification for newer versions
+#if BOOST_VERSION >= 107300
         stream.set_verify_callback(ssl::host_name_verification(sniHost));
+#else
+        stream.set_verify_callback(ssl::rfc2818_verification(sniHost));
+#endif
       }
     }
 

@@ -19,13 +19,36 @@
 #include <variant>
 #include <vector>
 
-#include <boost/process/v1/args.hpp>
-#include <boost/process/v1/child.hpp>  // NOLINT(misc-include-cleaner)
-#include <boost/process/v1/env.hpp>
-#include <boost/process/v1/environment.hpp>
-#include <boost/process/v1/io.hpp>
-#include <boost/process/v1/pipe.hpp>
-#include <boost/process/v1/start_dir.hpp>
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
+
+// Boost.Process headers differ by version:
+// - Boost 1.71 and earlier: flat structure (boost/process/*.hpp)
+// - Boost 1.75+: v1 subdirectory (boost/process/v1/*.hpp)
+#if BOOST_VERSION < 107500
+#  include <boost/process/args.hpp>
+#  include <boost/process/child.hpp>  // NOLINT(misc-include-cleaner)
+#  include <boost/process/env.hpp>
+#  include <boost/process/environment.hpp>
+#  include <boost/process/io.hpp>
+#  include <boost/process/pipe.hpp>
+#  include <boost/process/start_dir.hpp>
+#else
+#  include <boost/process/v1/args.hpp>
+#  include <boost/process/v1/child.hpp>  // NOLINT(misc-include-cleaner)
+#  include <boost/process/v1/env.hpp>
+#  include <boost/process/v1/environment.hpp>
+#  include <boost/process/v1/io.hpp>
+#  include <boost/process/v1/pipe.hpp>
+#  include <boost/process/v1/start_dir.hpp>
+#endif
 
 #include "mcp/jsonrpc/encode_options.hpp"
 #include "mcp/jsonrpc/error_factories.hpp"
@@ -312,7 +335,14 @@ static auto routeFramedInput(jsonrpc::Router &router, std::istream &input, std::
 namespace
 {
 
+// Boost.Process namespace differs by version:
+// - Boost 1.71 and earlier: boost::process
+// - Boost 1.75+: boost::process::v1
+#if BOOST_VERSION < 107500
+namespace bp = boost::process;
+#else
 namespace bp = boost::process::v1;
+#endif
 
 constexpr auto kShutdownForceWaitTimeout = std::chrono::milliseconds {500};
 constexpr auto kProcessPollInterval = std::chrono::milliseconds {10};
@@ -393,7 +423,7 @@ auto signalProcess(ProcessType &process, int signalNumber) -> void
 
 struct StdioSubprocess::Impl
 {
-  bp::child process;  // NOLINT(misc-include-cleaner)
+  bp::child process;
   bp::opstream stdinPipe;
   bp::ipstream stdoutPipe;
   bp::ipstream stderrPipe;
@@ -404,6 +434,8 @@ struct StdioSubprocess::Impl
   mutable std::mutex stderrMutex;
   std::string capturedStderr;
   ErrorReporter errorReporter;
+
+  Impl() = default;
 
   auto startStderrCapture() -> void
   {
