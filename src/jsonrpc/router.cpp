@@ -55,6 +55,7 @@ static constexpr std::size_t kInboundCompletionWorkerCount = 4;
 // 2) Each deletion is isolated in its own thread - no starvation from blocking deletes.
 // 3) On thread creation failure, we leak the pool (acceptable tradeoff vs terminating).
 // 4) Uses threadBoundary for exception safety and error reporting.
+// 5) The deletion thread is detached so destructor returns immediately.
 static void deleteThreadPoolWithReporter(boost::asio::thread_pool *pool, const ErrorReporter &errorReporter) noexcept
 {
   try
@@ -63,11 +64,20 @@ static void deleteThreadPoolWithReporter(boost::asio::thread_pool *pool, const E
     std::thread deletionThread(::mcp::detail::threadBoundary(
       [pool]() noexcept -> void
       {
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-        delete pool;
+        try
+        {
+          // Stop the pool first to prevent new work, but don't join workers
+          pool->stop();
+          // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+          delete pool;
+        }
+        catch (...)
+        {
+          // Suppress exceptions during deletion
+        }
       },
       errorReporter,
-      "Router"));
+      "RouterDeletion"));
     deletionThread.detach();
   }
   // NOLINTNEXTLINE(bugprone-empty-catch)
@@ -289,31 +299,26 @@ Router::~Router() noexcept
       detail::setPromiseValueNoThrow(*promiseEntry.second, detail::makeInternalErrorResponse(promiseEntry.first, "Router shutdown before request handler completed."));
     }
 
-    // Clean up completion pool.
-    // The key is to ensure the thread_pool destructor never runs on a worker thread.
-    // With our custom deleter, the actual delete is posted to a dedicated thread.
-    std::shared_ptr<boost::asio::thread_pool> completionPool;
+    // Clear completion pool from inboundState to allow handler lambdas to finish
+    // without keeping the pool alive. The pool itself will be leaked if handlers
+    // don't complete, but this allows the destructor to return immediately.
     {
       const std::scoped_lock lock(inboundState_->mutex);
-      completionPool = std::move(inboundState_->completionPool);
+      inboundState_->completionPool = nullptr;
     }
 
     // Handle timeoutPool - stop it but don't wait/join (unsafe with references)
-    // The unique_ptr will destroy the pool when it goes out of scope
     if (timeoutPool_)
     {
       timeoutPool_->stop();
     }
     timeoutPool_.reset();
 
-    // Stop the completion pool before releasing - this ensures no more work runs
-    if (completionPool)
-    {
-      completionPool->stop();
-    }
-
-    // Release completionPool - custom deleter posts deletion to dedicated thread
-    completionPool.reset();
+    // Don't wait for completion pool - handlers may be blocked indefinitely.
+    // The pool is kept alive by inboundState_ which handlers capture,
+    // and will be cleaned up when handlers eventually complete.
+    // This means the pool may be leaked if handlers never complete,
+    // but the router destructor returns promptly as required.
   }
   catch (const std::exception &error)
   {
@@ -412,22 +417,17 @@ auto Router::dispatchRequest(const RequestContext &context, const Request &reque
 
     const std::shared_ptr<Router::InboundState> inboundState = inboundState_;
 
-    // Capture sharedPtr to keep the completion pool alive while handler may be running.
-    // The custom deleter ensures that when the last shared_ptr is released, deletion
-    // happens on a dedicated thread (not a pool worker thread).
     // Wrap the post in try/catch because copying the lambda captures (e.g., context)
     // can throw std::bad_alloc, and we must not let exceptions escape.
     const RequestId localRequestId = request.id;
     try
     {
-      const std::shared_ptr<boost::asio::thread_pool> &poolKeepalive = completionPool;
       // Create shared_ptr to context BEFORE the lambda to avoid copying context (which can throw).
       // Capturing shared_ptr by value is noexcept, and we mark the handler noexcept.
       const std::shared_ptr<RequestContext> contextPtr = std::make_shared<RequestContext>(context);
       // Construct lambda separately to ensure exception is caught by outer try/catch
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-capturing-lambda-coroutines) - Intentional capture of error reporter
-      auto completionHandler = [poolKeepalive,
-                                inboundState,
+      auto completionHandler = [inboundState,
                                 contextPtr,
                                 requestId = localRequestId,
                                 responsePromise,

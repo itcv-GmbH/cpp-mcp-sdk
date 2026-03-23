@@ -263,13 +263,21 @@ TEST_CASE("Router shutdown with in-flight requests completes without throwing", 
   REQUIRE(sentCount.load() == static_cast<std::size_t>(kConcurrentRequestCount));
 
   // Shutdown should not throw
+  // Use std::thread instead of std::async to avoid thread pool exhaustion
   REQUIRE_NOTHROW(
     [&]() -> void
     {
-      std::future<void> destroyFuture = std::async(std::launch::async, [&router]() -> void { router.reset(); });
+      std::promise<void> destroyPromise;
+      std::future<void> destroyFuture = destroyPromise.get_future();
+      std::thread destroyThread([&]() -> void
+                                {
+                                  router.reset();
+                                  destroyPromise.set_value();
+                                });
 
       REQUIRE(destroyFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
-      destroyFuture.get();
+
+      destroyThread.join();
     }());
 
   // All futures should be resolved (with error since router shut down)
@@ -350,13 +358,22 @@ TEST_CASE("Router shutdown during concurrent dispatchRequest completes all promi
   }
 
   // Shutdown without releasing handlers - should not throw
+  // Use std::thread instead of std::async to avoid thread pool exhaustion
+  // since handlers already occupy many async threads
   REQUIRE_NOTHROW(
     [&]() -> void
     {
-      std::future<void> destroyFuture = std::async(std::launch::async, [&router]() -> void { router.reset(); });
+      std::promise<void> destroyPromise;
+      std::future<void> destroyFuture = destroyPromise.get_future();
+      std::thread destroyThread([&]() -> void
+                                {
+                                  router.reset();
+                                  destroyPromise.set_value();
+                                });
 
       REQUIRE(destroyFuture.wait_for(std::chrono::milliseconds(kResponseWaitMillis)) == std::future_status::ready);
-      destroyFuture.get();
+
+      destroyThread.join();
     }());
 
   // Now release the handlers (they should complete in the background)
