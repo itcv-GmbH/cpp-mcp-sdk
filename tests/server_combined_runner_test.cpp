@@ -125,14 +125,14 @@ TEST_CASE("CombinedServerRunner handles stdio-only mode with in-memory streams",
 
   std::istringstream input(inputStream.str());
   std::ostringstream output;
-  std::ostringstream stderr;
+  std::ostringstream stderrOutput;
 
   // Create options with stdio-only mode and custom streams
   mcp::server::CombinedServerRunnerOptions options;
   options.enableStdio = true;
   options.stdioInput = &input;
   options.stdioOutput = &output;
-  options.stdioError = &stderr;
+  options.stdioError = &stderrOutput;
 
   // Create runner with factory that produces minimal server
   mcp::server::CombinedServerRunner runner(createMinimalServer, options);
@@ -188,7 +188,7 @@ TEST_CASE("CombinedServerRunner handles both-enabled mode without hangs", "[serv
 
   std::istringstream input(inputStream.str());
   std::ostringstream output;
-  std::ostringstream stderr;
+  std::ostringstream stderrOutput;
 
   // Create options with both HTTP and stdio enabled
   mcp::server::CombinedServerRunnerOptions options;
@@ -197,7 +197,7 @@ TEST_CASE("CombinedServerRunner handles both-enabled mode without hangs", "[serv
   options.httpOptions.transportOptions.http.endpoint.bindAddress = "127.0.0.1";
   options.stdioInput = &input;
   options.stdioOutput = &output;
-  options.stdioError = &stderr;
+  options.stdioError = &stderrOutput;
 
   // Create runner as shared_ptr to safely share ownership with stdio thread
   auto runner = std::make_shared<mcp::server::CombinedServerRunner>(createMinimalServer, options);

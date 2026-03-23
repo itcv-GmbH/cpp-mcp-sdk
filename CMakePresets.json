@@ -80,6 +80,7 @@
       "inherits": "base",
       "displayName": "Windows Release",
       "description": "Release build for Windows with multi-config support",
+      "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "condition": {
         "type": "equals",
@@ -92,6 +93,7 @@
       "inherits": "base",
       "displayName": "Windows Debug",
       "description": "Debug build for Windows with multi-config support",
+      "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "condition": {
         "type": "equals",
@@ -104,6 +106,7 @@
       "inherits": ["vcpkg-base"],
       "displayName": "vcpkg Windows Release",
       "description": "Release build with vcpkg for Windows",
+      "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "condition": {
         "type": "equals",

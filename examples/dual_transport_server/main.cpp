@@ -12,12 +12,15 @@
 #include <utility>
 #include <vector>
 
-#include <fcntl.h>
+#ifndef _WIN32
+#  include <fcntl.h>
+#  include <unistd.h>
+#endif
+
 #include <mcp/server/all.hpp>
 #include <mcp/server/combined_runner.hpp>
 #include <mcp/server/stdio_runner.hpp>
 #include <mcp/server/streamable_http_runner.hpp>
-#include <unistd.h>
 
 #include "mcp/jsonrpc/types.hpp"
 #include "mcp/lifecycle/session/prompts_capability.hpp"

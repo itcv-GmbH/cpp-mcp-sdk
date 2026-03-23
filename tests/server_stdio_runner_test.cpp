@@ -67,11 +67,11 @@ TEST_CASE("StdioServerRunner handles valid initialize flow", "[server][stdio_run
 
   std::istringstream input(inputStream.str());
   std::ostringstream output;
-  std::ostringstream stderr;
+  std::ostringstream stderrOutput;
 
   // Create runner with factory that produces minimal server
   mcp::server::StdioServerRunner runner(createMinimalServer);
-  runner.run(input, output, stderr);
+  runner.run(input, output, stderrOutput);
 
   // Parse stdout - should contain exactly one JSON-RPC response (the initialize response)
   const std::string outputStr = output.str();
@@ -96,10 +96,10 @@ TEST_CASE("StdioServerRunner handles malformed JSON with parse error", "[server]
 
   std::istringstream input(inputStream.str());
   std::ostringstream output;
-  std::ostringstream stderr;
+  std::ostringstream stderrOutput;
 
   mcp::server::StdioServerRunner runner(createMinimalServer);
-  runner.run(input, output, stderr);
+  runner.run(input, output, stderrOutput);
 
   // Parse stdout - should contain two JSON-RPC messages:
   // 1. initialize response
@@ -141,10 +141,10 @@ TEST_CASE("StdioServerRunner never writes diagnostics to stdout", "[server][stdi
 
   std::istringstream input(inputStream.str());
   std::ostringstream output;
-  std::ostringstream stderr;
+  std::ostringstream stderrOutput;
 
   mcp::server::StdioServerRunner runner(createMinimalServer);
-  runner.run(input, output, stderr);
+  runner.run(input, output, stderrOutput);
 
   // stdout should contain ONLY valid JSON-RPC messages (newline-delimited)
   const std::string outputStr = output.str();
@@ -162,11 +162,11 @@ TEST_CASE("StdioServerRunner never writes diagnostics to stdout", "[server][stdi
     REQUIRE_NOTHROW(mcp::jsonrpc::parseMessage(line));
   }
 
-  // Verify stderr received diagnostics (for the malformed JSON case)
-  // Note: stderr may or may not contain logs depending on error handling path
+  // Verify stderrOutput received diagnostics (for the malformed JSON case)
+  // Note: stderrOutput may or may not contain logs depending on error handling path
 }
 
-TEST_CASE("StdioServerRunner writes diagnostics to stderr when allowed", "[server][stdio_runner]")
+TEST_CASE("StdioServerRunner writes diagnostics to stderrOutput when allowed", "[server][stdio_runner]")
 {
   // Create input: initialize request + notification + invalid JSON + EOF
   std::ostringstream inputStream;
@@ -176,18 +176,18 @@ TEST_CASE("StdioServerRunner writes diagnostics to stderr when allowed", "[serve
 
   std::istringstream input(inputStream.str());
   std::ostringstream output;
-  std::ostringstream stderr;
+  std::ostringstream stderrOutput;
 
-  // Enable stderr logging
+  // Enable stderrOutput logging
   mcp::server::StdioServerRunnerOptions options;
   options.transportOptions.allowStderrLogs = true;
 
   mcp::server::StdioServerRunner runner(createMinimalServer, options);
-  runner.run(input, output, stderr);
+  runner.run(input, output, stderrOutput);
 
-  // With allowStderrLogs=true, stderr should contain diagnostics
-  const std::string stderrStr = stderr.str();
-  // stderr may contain parse error diagnostics - verify it's not empty
+  // With allowStderrLogs=true, stderrOutput should contain diagnostics
+  const std::string stderrOutputStr = stderrOutput.str();
+  // stderrOutput may contain parse error diagnostics - verify it's not empty
   // (exact content depends on error handling path)
-  REQUIRE_FALSE(stderrStr.empty());
+  REQUIRE_FALSE(stderrOutputStr.empty());
 }

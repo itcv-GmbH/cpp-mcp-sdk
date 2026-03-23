@@ -1,165 +1,178 @@
 # AGENTS.md - MCP C++ SDK Development Guide
 
-## Project Overview
-Model Context Protocol (MCP) SDK for C++ - A CMake-based C++17 library for implementing MCP servers and clients.
+Model Context Protocol (MCP) SDK for C++ - A CMake-based C++20 library for implementing MCP servers and clients.
 
 ## Build Commands
 
-### Configure & Build
+### Quick Start (any platform)
 
-**Quick start (fresh machine / unknown dependency state):**
 ```bash
-# 1) Configure with vcpkg toolchain (installs/uses managed dependencies)
-cmake --preset vcpkg-unix-release
-
-# 2) Build in parallel while reserving 4 CPU cores
-JOBS=$(( $(sysctl -n hw.ncpu) - 4 ))
-if [ "$JOBS" -lt 1 ]; then JOBS=1; fi
-cmake --build build/vcpkg-unix-release --parallel "$JOBS"
-
-# 3) Run tests
-ctest --test-dir build/vcpkg-unix-release
+cmake --preset vcpkg-unix-release            # macOS/Linux
+cmake --preset vcpkg-windows-release          # Windows
+cmake --build build/vcpkg-unix-release        # macOS/Linux
+cmake --build build/vcpkg-windows-release --config Release --parallel  # Windows
 ```
 
-**Preset selection (macOS/Linux):**
-- Use `vcpkg-unix-release` by default (most reliable in fresh/CI-like environments).
-- Use `unix-release` only when dependencies are already discoverable without the vcpkg toolchain.
+### Presets
 
-**First-time setup (dependencies required):**
-```bash
-# Configure with vcpkg preset to install dependencies (jsoncons, Boost, etc.)
-cmake --preset vcpkg-unix-release
+| Platform | First build / CI | Cached deps |
+|----------|-------------------|-------------|
+| macOS/Linux | `vcpkg-unix-release` | `unix-release` |
+| Windows | `vcpkg-windows-release` | `windows-release` |
 
-# Build
-cmake --build build/vcpkg-unix-release
-```
+Debug variants: replace `-release` with `-debug`.
 
-**Subsequent builds (dependencies already cached):**
-```bash
-# Configure with preset (macOS/Linux) - uses cached vcpkg dependencies
-cmake --preset unix-release
-
-# Build
-cmake --build build/unix-release
-```
-
-**Windows builds:**
-```bash
-cmake --preset windows-release
-cmake --build build/windows-release --config Release
-```
-
-**Note:** The `unix-release` preset requires dependencies to be already installed or cached from a previous vcpkg build. Use `vcpkg-unix-release` preset for the first build or when dependencies are missing.
-
-**IMPORTANT:** On UNIX systems, you can parallelize builds while reserving 4 CPU cores:
-```bash
-# macOS
-JOBS=$(( $(sysctl -n hw.ncpu) - 4 ))
-if [ "$JOBS" -lt 1 ]; then JOBS=1; fi
-cmake --build build/vcpkg-unix-release --parallel "$JOBS"
-
-# Linux
-JOBS=$(( $(nproc) - 4 ))
-if [ "$JOBS" -lt 1 ]; then JOBS=1; fi
-cmake --build build/vcpkg-unix-release --parallel "$JOBS"
-```
+Windows presets use Visual Studio 17 2022 generator (multi-config).
+Unix presets use Ninja (single-config).
 
 ### Build Options
-- `MCP_SDK_BUILD_TESTS=ON` - Build test suite (default: ON)
-- `MCP_SDK_BUILD_EXAMPLES=ON` - Build examples (default: ON)
-- `BUILD_SHARED_LIBS=ON` - Build shared libraries (default: OFF)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `MCP_SDK_BUILD_TESTS` | ON | Build test suite |
+| `MCP_SDK_BUILD_EXAMPLES` | ON | Build examples |
+| `BUILD_SHARED_LIBS` | OFF | Build shared libraries |
+| `MCP_SDK_ENABLE_TLS` | ON | Enable TLS (requires OpenSSL) |
+| `MCP_SDK_ENABLE_AUTH` | ON | Enable OAuth features |
+| `MCP_SDK_INTEGRATION_TESTS` | OFF | Build integration tests |
+
+### Dependencies
+
+Managed via vcpkg (requires `VCPKG_ROOT` env var): jsoncons, Boost.Asio, Boost.Beast, Boost.Process, OpenSSL, Catch2.
 
 ## Test Commands
 
 ### Run All Tests
+
 ```bash
-# Using CTest (vcpkg preset build)
-ctest --test-dir build/vcpkg-unix-release
-
-# Using CTest (non-vcpkg preset build)
-ctest --test-dir build/unix-release
-
-# Using CMake preset (vcpkg)
-cmake --preset vcpkg-unix-release && cmake --build build/vcpkg-unix-release && ctest --test-dir build/vcpkg-unix-release
+ctest --test-dir build/vcpkg-unix-release                         # macOS/Linux
+ctest --test-dir build/vcpkg-windows-release -C Release -j4       # Windows
 ```
 
 ### Run Single Test
+
 ```bash
-# Run specific test by name
 ctest --test-dir build/vcpkg-unix-release -R mcp_sdk_smoke_test -V
 
-# Or run test executable directly
+ctest --test-dir build/vcpkg-unix-release -R "jsonrpc_messages" -V
+
+# Run test executable directly
 ./build/vcpkg-unix-release/tests/mcp_sdk_test_smoke
 ```
 
-## Lint/Format Commands
-
-### Code Formatting (clang-format)
+Windows (multi-config):
 ```bash
-# Auto-format all source files
-cmake --build build/vcpkg-unix-release --target clang-format
-
-# Check formatting without modifying files
-cmake --build build/vcpkg-unix-release --target clang-format-check
+ctest --test-dir build/vcpkg-windows-release -C Release -R mcp_sdk_smoke_test -V
+./build/vcpkg-windows-release/tests/Release/mcp_sdk_test_smoke.exe
 ```
 
-### Static Analysis (clang-tidy)
+### Run Tests by Tag
+
 ```bash
-# Run during build (automatically enabled if clang-tidy is found)
-cmake --build build/vcpkg-unix-release
+ctest --test-dir build/vcpkg-unix-release -L server
 ```
 
-## Code Style Guidelines
+## Lint / Format Commands
 
-### Language & Standards
-- **C++ Standard**: C++17 minimum
-- **CMake**: 3.16+
-- **File Extensions**: `.cpp` for source, `.hpp` for headers
+```bash
+cmake --build build/vcpkg-unix-release --target clang-format       # auto-format
+cmake --build build/vcpkg-unix-release --target clang-format-check  # check only
+```
 
-### Naming Conventions
-- **Classes/Structs**: `CamelCase` (e.g., `Server`, `ClientConnection`)
-- **Functions/Methods**: `camelBack` (e.g., `getVersion()`, `handleRequest()`)
-- **Private Members**: `camelBack` with `_` suffix (e.g., `connectionState_`)
-- **Constants**: `kCamelBack` for class/static, `UPPER_CASE` for global
-- **Namespaces**: `CamelCase` (e.g., `namespace mcp { namespace sdk {`)
-- **Enums**: `CamelCase` for type, `CamelCase` for values
-- **Macros**: `UPPER_CASE` with underscores
-- **Template Parameters**: `CamelCase`
+clang-tidy runs automatically during build if installed. Resolve all warnings before committing.
 
-### Code Formatting (clang-format)
-- **Indent**: 2 spaces (no tabs)
-- **Line Length**: 180 characters
-- **Braces**: Allman style (opening brace on new line)
-- **Pointers**: Right-aligned (e.g., `const char *ptr`)
-- **Includes**: Sorted with standard library first
-- **Trailing Commas**: Insert in wrapped constructs
+## Code Style
 
-### Static Analysis (clang-tidy)
-- Enabled checks: Most modern C++ checks enabled
-- Warnings treated as errors: None by default
-- Key checks: cppcoreguidelines-, bugprone-, readability-, performance-
-- Disabled: fuchsia-*, llvm-header-guard, llvm-include-order
-- Never commit before all clang-tidy warnings have been resolved
+### Language
+
+- C++20, CMake 3.16+
+- `.cpp` source, `.hpp` headers
+- `#pragma once` for header guards
+
+### Formatting (clang-format)
+
+- 2-space indent, no tabs, 180 column limit
+- Allman braces (opening brace on new line)
+- Right-aligned pointers: `const char *ptr`, `int *count`
+- Trailing commas in wrapped constructs
+- One argument/parameter per line in calls and declarations
+- `AlwaysBreakTemplateDeclarations: Yes`
+
+### Include Order
+
+1. C++ standard library (alphabetical)
+2. Third-party (`<boost/...>`, `<catch2/...>`, `<jsoncons/...>`)
+3. Project public headers (`<mcp/...>`)
+4. Project private headers (`"mcp/..."`)
+
+Empty line between each group. clang-format enforces this via `IncludeBlocks: Regroup`.
+
+In `.cpp` files, always include the corresponding `.hpp` first among project headers using quoted form: `"mcp/foo/bar.hpp"`.
+
+### Naming (clang-tidy enforced)
+
+| Category | Style | Example |
+|----------|-------|---------|
+| Classes / Structs | `CamelCase` | `Server`, `JsonRpcError` |
+| Functions / Methods | `camelBack` | `getVersion()`, `handleRequest()` |
+| Private members | `camelBack_` (suffix) | `connectionState_`, `process_` |
+| Class/static constants | `kCamelBack` (prefix k) | `kMaxRetries`, `kSchemaChunkSize` |
+| Enum types | `CamelCase` | `TaskStatus` |
+| Enum values | `kCamelCase` (prefix k) | `kWorking`, `kInputRequired` |
+| Namespaces | `lower_case` | `mcp::server`, `mcp::detail` |
+| Macros | `UPPER_CASE` | `MCP_SDK_ENABLE_TLS` |
+| Template params | `CamelCase` | `ProcessType`, `Allocator` |
+
+### Return Types
+
+Use trailing return type syntax consistently:
+```cpp
+auto getVersion() const -> std::string_view;
+auto create(ServerConfiguration config) -> std::shared_ptr<Server>;
+static auto parseMessage(std::string_view json) -> jsonrpc::Message;
+```
 
 ### Error Handling
-- Use exceptions for exceptional conditions
-- Prefer RAII and smart pointers over manual memory management
-- Use `const` correctness aggressively
-- Prefer `enum class` over `bool` for binary parameters
 
-### Project Structure
+- Exceptions for exceptional conditions (`std::runtime_error`, `std::invalid_argument`, `std::logic_error`)
+- RAII and smart pointers (`std::unique_ptr`, `std::shared_ptr`) - no raw `new`/`delete`
+- `const` correctness aggressively: mark parameters, methods, and locals `const`
+- `noexcept` on trivial accessors and pure functions
+- `std::optional<T>` for nullable return values (not raw pointers or magic values)
+- Prefer `enum class` over `bool` for binary function parameters (clang-tidy enforced)
+
+### Platform Specificity
+
+- Guard POSIX headers with `#ifndef _WIN32`: `<unistd.h>`, `<fcntl.h>`, `<signal.h>`, `<sys/random.h>`
+- On Windows: `#define NOMINMAX` before `<windows.h>`; include `<windows.h>` before `<bcrypt.h>`
+- Use `#if defined(_WIN32)` for platform branching, not `ifdef _WIN32`
+- Never name local variables `stdin`, `stdout`, or `stderr` (MSVC macro collision) - use `stdinInput`, `stdoutCapture`, `stderrOutput`
+
+### Conventions
+
+- Use `auto` with trailing return type for function declarations
+- Use `std::string_view` for non-owning string parameters
+- Use `std::size_t` (not `unsigned`) for sizes and counts
+- Use `std::int64_t` / `std::uint64_t` for JSON-RPC integer types
+- Catch all exceptions in destructors with `catch (...)`
+- Use `std::scoped_lock` / `std::unique_lock` for mutexes
+- Use `[[nodiscard]]` where return value must not be ignored (clang-tidy may suggest)
+
+## Project Structure
+
 ```
-include/mcp/sdk/  - Public headers
-src/              - Implementation files
-examples/         - Example code
-tests/            - Test files
-cmake/            - CMake modules
+include/mcp/        Public headers (organized by module)
+src/                Implementation files (mirrors include structure)
+tests/              Catch2 test files
+examples/           Example applications
+cmake/              CMake modules (Options.cmake, Dependencies.cmake)
+.tools/checks/      Python-based codebase enforcement checks
+vcpkg/ports/        vcpkg overlay ports
 ```
 
-### Header Guards
-Use `#pragma once` (preferred over include guards in this project)
+## Testing
 
-### Documentation
-- Document public API in header files
-- Use clear, descriptive function/variable names
-- Add comments for complex logic or non-obvious decisions
+- Framework: Catch2 v3 (`#include <catch2/catch_test_macros.hpp>`)
+- Use `TEST_CASE("description", "[tag]")` with descriptive tags
+- Test naming: `mcp_sdk_test_<module>` executable, test names in CTest follow `mcp_sdk_<module>_test`
+- Integration tests (external SDKs) are opt-in via `MCP_SDK_INTEGRATION_TESTS=ON`
