@@ -3,6 +3,22 @@
 # Exclude unit test targets from clang-tidy; keep analysis focused on SDK sources.
 set(CMAKE_CXX_CLANG_TIDY "")
 
+# Generate test TLS certificates before running tests
+find_program(OPENSSL_EXECUTABLE openssl REQUIRED)
+set(TEST_FIXTURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+set(TEST_CERTS_GENERATED "${TEST_FIXTURES_DIR}/tls-localhost-key.pem")
+
+add_custom_command(
+    OUTPUT ${TEST_CERTS_GENERATED}
+    COMMAND ${CMAKE_COMMAND} -E echo "Generating test TLS certificates..."
+    COMMAND bash ${TEST_FIXTURES_DIR}/generate_test_certs.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Generating test TLS certificates for TLS tests"
+    VERBATIM
+)
+
+add_custom_target(generate_test_certs ALL DEPENDS ${TEST_CERTS_GENERATED})
+
 # Helper function to define a test executable
 function(mcp_add_test TEST_NAME SOURCE_FILE)
     add_executable(${TEST_NAME} ${SOURCE_FILE})
