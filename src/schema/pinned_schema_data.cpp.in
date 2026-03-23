@@ -7,9 +7,7 @@ namespace mcp::schema::detail
 
 auto pinnedSchemaJson() -> std::string_view
 {
-  return R"__mcp_schema__(
-@MCP_SDK_PINNED_MCP_SCHEMA_JSON@
-)__mcp_schema__";
+  return@MCP_SDK_PINNED_MCP_SCHEMA_JSON_CHUNKS@;
 }
 
 auto pinnedSchemaSourcePath() -> std::string_view
