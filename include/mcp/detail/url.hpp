@@ -162,7 +162,7 @@ inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbs
   // Validate scheme characters (must start with letter, then alphanumeric or +-.)
   for (std::size_t i = 0; i < schemeView.size(); ++i)
   {
-    const char ch = schemeView[i];
+    const char ch = schemeView.at(i);
     if (i == 0)
     {
       if (std::isalpha(static_cast<unsigned char>(ch)) == 0)
@@ -214,7 +214,7 @@ inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbs
   bool isIpv6 = false;
 
   // Check for IPv6 literal [addr] or [addr]:port
-  if (!hostPort.empty() && hostPort[0] == '[')
+  if (!hostPort.empty() && hostPort.at(0) == '[')
   {
     const std::size_t bracketEnd = hostPort.find(']', 1);
     if (bracketEnd == std::string_view::npos)
@@ -232,7 +232,7 @@ inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbs
     // Check for port after the closing bracket
     if (bracketEnd + 1 < hostPort.size())
     {
-      if (hostPort[bracketEnd + 1] != ':')
+      if (hostPort.at(bracketEnd + 1) != ':')
       {
         return std::nullopt;  // Invalid character after IPv6 bracket
       }
@@ -280,7 +280,7 @@ inline auto parseAbsoluteUrl(std::string_view rawUrl) -> std::optional<ParsedAbs
 
   if (pathStart < remainder.size())
   {
-    const char firstChar = remainder[pathStart];
+    const char firstChar = remainder.at(pathStart);
 
     if (firstChar == '?')
     {

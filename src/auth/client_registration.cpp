@@ -1,10 +1,12 @@
-#include <algorithm>
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+// jsoncons::JsonValue operator[] is a map lookup, not array indexing - safe by design
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <ranges>  // NOLINT(misc-include-cleaner) - required for std::ranges::contains
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -100,7 +102,7 @@ static auto sanitizeStringList(const std::vector<std::string> &values, std::stri
       throw ClientRegistrationError(errorCode, std::string(fieldName) + " contains invalid whitespace or control characters");
     }
 
-    if (std::find(sanitized.begin(), sanitized.end(), trimmed) == sanitized.end())
+    if (!std::ranges::contains(sanitized, trimmed))
     {
       sanitized.emplace_back(trimmed);
     }
@@ -213,7 +215,7 @@ static auto parseOptionalStringArray(const jsonrpc::JsonValue &object, std::stri
     return {};
   }
 
-  const jsonrpc::JsonValue &fieldValue = object[std::string(fieldName)];
+  const jsonrpc::JsonValue &fieldValue = object[std::string(fieldName)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   if (!fieldValue.is_array())
   {
     throw ClientRegistrationError(errorCode, std::string(fieldName) + " must be an array");
@@ -240,7 +242,7 @@ static auto parseOptionalStringField(const jsonrpc::JsonValue &object, std::stri
     return std::nullopt;
   }
 
-  const jsonrpc::JsonValue &fieldValue = object[std::string(fieldName)];
+  const jsonrpc::JsonValue &fieldValue = object[std::string(fieldName)];  // NOLINT(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
   if (!fieldValue.is_string())
   {
     throw ClientRegistrationError(errorCode, std::string(fieldName) + " must be a string when present");
@@ -680,6 +682,8 @@ auto resolveClientRegistration(const ResolveClientRegistrationRequest &request) 
                                 "No feasible client registration strategy was available. Provide pre-registered client information, configure an HTTPS client_id metadata document "
                                 "URL, or enable dynamic registration when the authorization server exposes registration_endpoint.");
 }
+
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
 
 }  // namespace mcp::auth
 

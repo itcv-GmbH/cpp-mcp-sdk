@@ -21,10 +21,12 @@ Checks: "*,\
   -clang-analyzer-optin.cplusplus.VirtualCall, \
   -readability-redundant-access-specifiers, \
   -portability-template-virtual-member-function, \
-  -bugprone-easily-swappable-parameters, \
+  -bugprone-easily-swappable-parameters,\
+  -bugprone-exception-escape,\
   -boost-use-ranges,\
   -portability-avoid-pragma-once,\
-  -modernize-use-designated-initializers"
+  -modernize-use-designated-initializers,\
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access"
 WarningsAsErrors: ''
 HeaderFilterRegex: '^(.*\/)?(src|include)\/.*'
 ExcludeHeaderFilterRegex: '.*/(build/.*/vcpkg_installed|vcpkg_installed|third_party|external)/.*'

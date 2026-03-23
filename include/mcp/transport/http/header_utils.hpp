@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -50,12 +51,13 @@ inline constexpr std::string_view kHeaderWwwAuthenticate = "WWW-Authenticate";
 
 inline auto setHeader(HeaderList &headers, std::string_view name, std::string value) -> void
 {
-  const auto existing = std::find_if(headers.begin(), headers.end(), [name](const Header &header) -> bool { return detail::equalsIgnoreCaseAscii(header.name, name); });
-
-  if (existing != headers.end())
+  for (Header &header : headers)
   {
-    existing->value = std::move(value);
-    return;
+    if (detail::equalsIgnoreCaseAscii(header.name, name))
+    {
+      header.value = std::move(value);
+      return;
+    }
   }
 
   headers.push_back(Header {std::string(name), std::move(value)});
@@ -63,14 +65,15 @@ inline auto setHeader(HeaderList &headers, std::string_view name, std::string va
 
 inline auto getHeader(const HeaderList &headers, std::string_view name) -> std::optional<std::string>
 {
-  const auto existing = std::find_if(headers.begin(), headers.end(), [name](const Header &header) -> bool { return detail::equalsIgnoreCaseAscii(header.name, name); });
-
-  if (existing == headers.end())
+  for (const Header &header : headers)
   {
-    return std::nullopt;
+    if (detail::equalsIgnoreCaseAscii(header.name, name))
+    {
+      return header.value;
+    }
   }
 
-  return existing->value;
+  return std::nullopt;
 }
 
 inline auto isValidSessionId(std::string_view sessionId) noexcept -> bool
@@ -80,18 +83,24 @@ inline auto isValidSessionId(std::string_view sessionId) noexcept -> bool
     return false;
   }
 
-  return std::all_of(sessionId.begin(),
-                     sessionId.end(),
-                     [](char character) -> bool
-                     {
-                       const auto byte = static_cast<unsigned char>(character);
-                       return byte >= detail::kVisibleAsciiFirst && byte <= detail::kVisibleAsciiLast;
-                     });
+  return std::ranges::all_of(sessionId,
+                             [](char character) -> bool
+                             {
+                               const auto byte = static_cast<unsigned char>(character);
+                               return byte >= detail::kVisibleAsciiFirst && byte <= detail::kVisibleAsciiLast;
+                             });
 }
 
 inline auto isValidProtocolVersion(std::string_view version) noexcept -> bool
 {
-  if (version.size() != detail::kProtocolVersionLength || version[detail::kProtocolVersionFirstDash] != '-' || version[detail::kProtocolVersionSecondDash] != '-')
+  if (version.size() != detail::kProtocolVersionLength)
+  {
+    return false;
+  }
+
+  // NOLINTBEGIN(bugprone-exception-escape)
+  // Size is checked above, so .at() will not throw
+  if (version.at(detail::kProtocolVersionFirstDash) != '-' || version.at(detail::kProtocolVersionSecondDash) != '-')
   {
     return false;
   }
@@ -103,23 +112,19 @@ inline auto isValidProtocolVersion(std::string_view version) noexcept -> bool
       continue;
     }
 
-    if (std::isdigit(static_cast<unsigned char>(version[index])) == 0)
+    if (std::isdigit(static_cast<unsigned char>(version.at(index))) == 0)
     {
       return false;
     }
   }
+  // NOLINTEND(bugprone-exception-escape)
 
   return true;
 }
 
 inline auto isSupportedProtocolVersion(std::string_view version, const std::vector<std::string> &supportedVersions) noexcept -> bool
 {
-  if (supportedVersions.empty())
-  {
-    return true;
-  }
-
-  return std::any_of(supportedVersions.begin(), supportedVersions.end(), [version](const std::string &supportedVersion) -> bool { return supportedVersion == version; });
+  return std::ranges::any_of(supportedVersions, [version](const std::string &supportedVersion) -> bool { return supportedVersion == version; });
 }
 
 }  // namespace mcp::transport::http

@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <ranges>  // NOLINT(misc-include-cleaner) - required for std::ranges::contains and std::ranges::all_of
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -233,7 +234,7 @@ static auto parseBearerToken(const HeaderList &headers) -> BearerTokenParseResul
     return result;
   }
 
-  const bool tokenHasWhitespace = std::any_of(token.begin(), token.end(), [](char character) -> bool { return std::isspace(static_cast<unsigned char>(character)) != 0; });
+  const bool tokenHasWhitespace = std::ranges::any_of(token, [](char character) -> bool { return std::isspace(static_cast<unsigned char>(character)) != 0; });
   if (tokenHasWhitespace)
   {
     BearerTokenParseResult result;
@@ -258,7 +259,7 @@ static auto sanitizeScopeSet(const auth::OAuthScopeSet &scopeSet) -> auth::OAuth
       continue;
     }
 
-    if (std::find(sanitized.values.begin(), sanitized.values.end(), normalizedScope) != sanitized.values.end())
+    if (std::ranges::contains(sanitized.values, normalizedScope))
     {
       continue;
     }
@@ -271,10 +272,8 @@ static auto sanitizeScopeSet(const auth::OAuthScopeSet &scopeSet) -> auth::OAuth
 
 static auto hasRequiredScopes(const auth::OAuthScopeSet &grantedScopes, const auth::OAuthScopeSet &requiredScopes) -> bool
 {
-  return std::all_of(requiredScopes.values.begin(),
-                     requiredScopes.values.end(),
-                     [&grantedScopes](const std::string &requiredScope) -> bool
-                     { return std::find(grantedScopes.values.begin(), grantedScopes.values.end(), requiredScope) != grantedScopes.values.end(); });
+  return std::ranges::all_of(requiredScopes.values,
+                             [&grantedScopes](const std::string &requiredScope) -> bool { return std::ranges::contains(grantedScopes.values, requiredScope); });
 }
 
 static auto joinScopeValues(const auth::OAuthScopeSet &scopeSet) -> std::string

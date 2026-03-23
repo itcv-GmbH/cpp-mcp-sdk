@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <ranges>
 #include <string>
 #include <string_view>
 
@@ -63,14 +64,22 @@ constexpr auto toAsciiLower(char c) noexcept -> char
 inline auto trimAsciiWhitespace(std::string_view value) -> std::string_view
 {
   std::size_t begin = 0;
-  while (begin < value.size() && detail::isAsciiWhitespace(value[begin]))
+  while (begin < value.size())
   {
+    if (!detail::isAsciiWhitespace(value.at(begin)))
+    {
+      break;
+    }
     ++begin;
   }
 
   std::size_t end = value.size();
-  while (end > begin && detail::isAsciiWhitespace(value[end - 1]))
+  while (end > begin)
   {
+    if (!detail::isAsciiWhitespace(value.at(end - 1)))
+    {
+      break;
+    }
     --end;
   }
 
@@ -111,8 +120,8 @@ inline auto equalsIgnoreCaseAscii(std::string_view left, std::string_view right)
 
   for (std::size_t index = 0; index < left.size(); ++index)
   {
-    const char leftChar = left[index];
-    const char rightChar = right[index];
+    const char leftChar = left.at(index);
+    const char rightChar = right.at(index);
 
     // Convert both to lowercase using explicit ASCII conversion
     const char leftLower = detail::toAsciiLower(leftChar);
@@ -135,7 +144,7 @@ inline auto equalsIgnoreCaseAscii(std::string_view left, std::string_view right)
 ///       Does NOT use <cctype> functions to avoid locale-dependent behavior.
 inline auto containsAsciiWhitespaceOrControl(std::string_view value) -> bool
 {
-  return std::any_of(value.begin(), value.end(), [](char character) -> bool { return detail::isAsciiWhitespace(character) || detail::isAsciiControl(character); });
+  return std::ranges::any_of(value, [](char character) -> bool { return detail::isAsciiWhitespace(character) || detail::isAsciiControl(character); });
 }
 
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)

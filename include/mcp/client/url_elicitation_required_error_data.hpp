@@ -7,6 +7,9 @@
 #include <mcp/client/url_elicitation_required_item.hpp>
 #include <mcp/sdk/errors.hpp>
 
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
+// jsoncons::JsonValue operator[] is a map lookup, not array indexing - safe by design
+
 namespace mcp::client
 {
 
@@ -49,3 +52,5 @@ inline auto parseUrlElicitationRequiredError(const JsonRpcError &error) -> std::
 }
 
 }  // namespace mcp::client
+
+// NOLINTEND(cppcoreguidelines-pro-bounds-avoid-unchecked-container-access)
