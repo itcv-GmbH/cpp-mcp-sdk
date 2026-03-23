@@ -23,7 +23,8 @@ Checks: "*,\
   -portability-template-virtual-member-function, \
   -bugprone-easily-swappable-parameters, \
   -boost-use-ranges,\
-  -portability-avoid-pragma-once"
+  -portability-avoid-pragma-once,\
+  -modernize-use-designated-initializers"
 WarningsAsErrors: ''
 HeaderFilterRegex: '^(.*\/)?(src|include)\/.*'
 ExcludeHeaderFilterRegex: '.*/(build/.*/vcpkg_installed|vcpkg_installed|third_party|external)/.*'
