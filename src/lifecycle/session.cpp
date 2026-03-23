@@ -343,7 +343,13 @@ auto NegotiatedParameters::instructions() const noexcept -> const std::optional<
 Session::Session(SessionOptions options)
   : options_(std::move(options))
   , configuredServerInfo_(std::string(kDefaultServerName), std::string(kSdkVersion))
-  , router_(jsonrpc::RouterOptions {.errorReporter = options_.errorReporter})
+  , router_(
+      [errorReporter = options_.errorReporter]() -> jsonrpc::RouterOptions
+      {
+        jsonrpc::RouterOptions opts;
+        opts.errorReporter = errorReporter;
+        return opts;
+      }())
 {
 }
 

@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 
 #ifdef _WIN32
@@ -10,8 +11,8 @@
 #    define NOMINMAX
 #  endif
 
-#  include <bcrypt.h>
 #  include <windows.h>
+#  include <bcrypt.h>
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 #  include <cstdlib>
 #elif defined(__linux__)
