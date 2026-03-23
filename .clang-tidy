@@ -24,10 +24,12 @@ Checks: "*,\
   -portability-template-virtual-member-function, \
   -bugprone-easily-swappable-parameters,\
   -bugprone-exception-escape,\
+  -bugprone-empty-catch,\
   -boost-use-ranges,\
   -portability-avoid-pragma-once,\
   -modernize-use-designated-initializers,\
-  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access"
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,\
+  -misc-include-cleaner"
 WarningsAsErrors: ''
 HeaderFilterRegex: '^(.*\/)?(src|include)\/.*'
 ExcludeHeaderFilterRegex: '.*/(build/.*/vcpkg_installed|vcpkg_installed|third_party|external)/.*'
