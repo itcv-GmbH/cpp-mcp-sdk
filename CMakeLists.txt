@@ -157,6 +157,13 @@ target_compile_definitions(mcp_sdk
         MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY=$<BOOL:${MCP_SDK_ENABLE_LEGACY_HTTP_SSE_SERVER_COMPATIBILITY}>
 )
 
+if(WIN32)
+    target_compile_definitions(mcp_sdk
+        PUBLIC
+            _WIN32_WINNT=0x0A00
+    )
+endif()
+
 # Set library properties for shared/static
 set_target_properties(mcp_sdk PROPERTIES
     POSITION_INDEPENDENT_CODE ON

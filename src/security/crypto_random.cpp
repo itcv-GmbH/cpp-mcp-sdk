@@ -6,7 +6,10 @@
 #ifdef _WIN32
 #  include <algorithm>
 #  include <limits>
-#  define NOMINMAX
+
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
 
 #  include <windows.h>
 #  include <bcrypt.h>
