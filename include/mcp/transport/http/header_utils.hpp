@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -83,12 +82,13 @@ inline auto isValidSessionId(std::string_view sessionId) noexcept -> bool
     return false;
   }
 
-  return std::ranges::all_of(sessionId,
-                             [](char character) -> bool
-                             {
-                               const auto byte = static_cast<unsigned char>(character);
-                               return byte >= detail::kVisibleAsciiFirst && byte <= detail::kVisibleAsciiLast;
-                             });
+  return std::all_of(sessionId.begin(),
+                     sessionId.end(),
+                     [](char character) -> bool
+                     {
+                       const auto byte = static_cast<unsigned char>(character);
+                       return byte >= detail::kVisibleAsciiFirst && byte <= detail::kVisibleAsciiLast;
+                     });
 }
 
 inline auto isValidProtocolVersion(std::string_view version) noexcept -> bool
@@ -124,7 +124,7 @@ inline auto isValidProtocolVersion(std::string_view version) noexcept -> bool
 
 inline auto isSupportedProtocolVersion(std::string_view version, const std::vector<std::string> &supportedVersions) noexcept -> bool
 {
-  return std::ranges::any_of(supportedVersions, [version](const std::string &supportedVersion) -> bool { return supportedVersion == version; });
+  return std::any_of(supportedVersions.begin(), supportedVersions.end(), [version](const std::string &supportedVersion) -> bool { return supportedVersion == version; });
 }
 
 }  // namespace mcp::transport::http

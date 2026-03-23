@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ORDIS-Co-Ltd/cpp-mcp-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/ORDIS-Co-Ltd/cpp-mcp-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://isocpp.org/)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/)
 [![MCP Spec](https://img.shields.io/badge/MCP-2025--11--25-green.svg)](https://modelcontextprotocol.io/)
 
 **The first fully MCP 2025-11-25 compliant C++ SDK** - Build production-ready MCP servers and clients with complete protocol support including Streamable HTTP transport and OAuth-based authorization.
@@ -36,7 +36,7 @@
 ### Prerequisites
 
 - CMake 3.16+
-- C++20 compiler (GCC 11+, Clang 14+, MSVC 2022+)
+- C++17 compiler (GCC 7+, Clang 5+, MSVC 2017+)
 - vcpkg (for dependency management)
 - Python 3.12+ (for codebase checks)
 

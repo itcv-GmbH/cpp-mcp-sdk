@@ -4,7 +4,6 @@
 #include <cctype>
 #include <cstdint>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <string_view>
 
@@ -34,12 +33,13 @@ inline auto isValidScheme(std::string_view scheme) -> bool
     return false;
   }
 
-  return std::ranges::all_of(scheme,
-                             [](char character) -> bool
-                             {
-                               const auto unsignedCharacter = static_cast<unsigned char>(character);
-                               return std::isalnum(unsignedCharacter) != 0 || character == '+' || character == '-' || character == '.';
-                             });
+  return std::all_of(scheme.begin(),
+                     scheme.end(),
+                     [](char character) -> bool
+                     {
+                       const auto unsignedCharacter = static_cast<unsigned char>(character);
+                       return std::isalnum(unsignedCharacter) != 0 || character == '+' || character == '-' || character == '.';
+                     });
 }
 
 inline auto parsePort(std::string_view portText) -> std::optional<std::uint16_t>
@@ -49,7 +49,7 @@ inline auto parsePort(std::string_view portText) -> std::optional<std::uint16_t>
     return std::nullopt;
   }
 
-  if (!std::ranges::all_of(portText, [](char character) -> bool { return std::isdigit(static_cast<unsigned char>(character)) != 0; }))
+  if (!std::all_of(portText.begin(), portText.end(), [](char character) -> bool { return std::isdigit(static_cast<unsigned char>(character)) != 0; }))
   {
     return std::nullopt;
   }

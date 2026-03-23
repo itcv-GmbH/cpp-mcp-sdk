@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <ranges>
 #include <string>
 #include <string_view>
 
@@ -49,8 +48,9 @@ inline auto isOriginAllowed(std::string_view origin, const OriginPolicy &policy 
     }
   }
 
-  return std::ranges::any_of(policy.allowedHosts,
-                             [parsedHost = parsedOrigin->host](const std::string &allowedHost) -> bool { return detail::normalizeHost(allowedHost) == parsedHost; });
+  return std::any_of(policy.allowedHosts.begin(),
+                     policy.allowedHosts.end(),
+                     [parsedHost = parsedOrigin->host](const std::string &allowedHost) -> bool { return detail::normalizeHost(allowedHost) == parsedHost; });
 }
 
 }  // namespace mcp::security

@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,17 +25,18 @@ inline auto isVisibleAscii(std::string_view value) -> bool
     return false;
   }
 
-  return std::ranges::all_of(value,
-                             [](char character) -> bool
-                             {
-                               const auto byte = static_cast<unsigned char>(character);
-                               return byte >= kVisibleAsciiFirst && byte <= kVisibleAsciiLast;
-                             });
+  return std::all_of(value.begin(),
+                     value.end(),
+                     [](char character) -> bool
+                     {
+                       const auto byte = static_cast<unsigned char>(character);
+                       return byte >= kVisibleAsciiFirst && byte <= kVisibleAsciiLast;
+                     });
 }
 
 inline auto isValidSseFieldValue(std::string_view value) -> bool
 {
-  return std::ranges::all_of(value, [](char character) -> bool { return character != '\n' && character != '\r'; });
+  return std::all_of(value.begin(), value.end(), [](char character) -> bool { return character != '\n' && character != '\r'; });
 }
 
 inline auto appendDataLines(std::string &encoded, std::string_view data) -> void

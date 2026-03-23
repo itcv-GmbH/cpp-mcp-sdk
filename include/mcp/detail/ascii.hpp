@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <ranges>
 #include <string>
 #include <string_view>
 
@@ -144,7 +143,7 @@ inline auto equalsIgnoreCaseAscii(std::string_view left, std::string_view right)
 ///       Does NOT use <cctype> functions to avoid locale-dependent behavior.
 inline auto containsAsciiWhitespaceOrControl(std::string_view value) -> bool
 {
-  return std::ranges::any_of(value, [](char character) -> bool { return detail::isAsciiWhitespace(character) || detail::isAsciiControl(character); });
+  return std::any_of(value.begin(), value.end(), [](char character) -> bool { return detail::isAsciiWhitespace(character) || detail::isAsciiControl(character); });
 }
 
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)

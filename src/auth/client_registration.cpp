@@ -6,7 +6,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <ranges>  // NOLINT(misc-include-cleaner) - required for std::ranges::contains
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -102,7 +101,7 @@ static auto sanitizeStringList(const std::vector<std::string> &values, std::stri
       throw ClientRegistrationError(errorCode, std::string(fieldName) + " contains invalid whitespace or control characters");
     }
 
-    if (!std::ranges::contains(sanitized, trimmed))
+    if (std::find(sanitized.begin(), sanitized.end(), trimmed) == sanitized.end())
     {
       sanitized.emplace_back(trimmed);
     }

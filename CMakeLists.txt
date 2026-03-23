@@ -6,8 +6,8 @@ project(mcp_cpp_sdk
     LANGUAGES CXX
 )
 
-# Set C++20 standard
-set(CMAKE_CXX_STANDARD 20)
+# Set C++17 standard
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -147,7 +147,7 @@ target_include_directories(mcp_sdk
         $<INSTALL_INTERFACE:include>
 )
 
-target_compile_features(mcp_sdk PUBLIC cxx_std_20)
+target_compile_features(mcp_sdk PUBLIC cxx_std_17)
 
 target_compile_definitions(mcp_sdk
     PUBLIC
