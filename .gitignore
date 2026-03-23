@@ -50,6 +50,9 @@ build**/
 examples/http_server_auth/tls/*.pem
 examples/http_server_auth/tls/*.csr
 examples/http_server_auth/tls/*.srl
+tests/fixtures/*-key.pem
+tests/fixtures/*.csr
+tests/fixtures/*.srl
 
 # Python
 __pycache__/

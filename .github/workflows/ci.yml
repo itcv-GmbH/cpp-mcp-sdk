@@ -108,6 +108,9 @@ jobs:
       - name: Build
         run: cmake --build "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --parallel
 
+      - name: Generate test TLS certificates
+        run: bash tests/fixtures/generate_test_certs.sh
+
       - name: Test (ctest)
         run: ctest --test-dir "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --output-on-failure
 
