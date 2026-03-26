@@ -11,7 +11,7 @@ set(TEST_CERTS_GENERATED "${TEST_FIXTURES_DIR}/tls-localhost-key.pem")
 add_custom_command(
     OUTPUT ${TEST_CERTS_GENERATED}
     COMMAND ${CMAKE_COMMAND} -E echo "Generating test TLS certificates..."
-    COMMAND bash ${TEST_FIXTURES_DIR}/generate_test_certs.sh
+    COMMAND ${CMAKE_COMMAND} -E env MSYS_NO_PATHCONV=1 bash ${TEST_FIXTURES_DIR}/generate_test_certs.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Generating test TLS certificates for TLS tests"
     VERBATIM
