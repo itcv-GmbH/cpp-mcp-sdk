@@ -112,12 +112,28 @@ target_sources(mcp_sdk
 
 set(MCP_SDK_REQUIRES_OPENSSL OFF)
 
+# Boost.System is header-only since 1.69, but we link for compatibility with older versions
+# Boost.Filesystem requires linking unless using std::filesystem (C++17)
+# For Boost 1.71+, we check if filesystem target exists
+if(TARGET Boost::filesystem)
+    set(MCP_SDK_BOOST_FILESYSTEM_AVAILABLE ON)
+else()
+    set(MCP_SDK_BOOST_FILESYSTEM_AVAILABLE OFF)
+endif()
+
 target_link_libraries(mcp_sdk
     PUBLIC
         Boost::asio
-        Boost::system
         jsoncons
 )
+
+# Link Boost.System and Boost.Filesystem only if targets exist (Boost < 1.81)
+if(TARGET Boost::system)
+    target_link_libraries(mcp_sdk PUBLIC Boost::system)
+endif()
+if(TARGET Boost::filesystem)
+    target_link_libraries(mcp_sdk PUBLIC Boost::filesystem)
+endif()
 
 if(WIN32)
     target_link_libraries(mcp_sdk PUBLIC bcrypt)
