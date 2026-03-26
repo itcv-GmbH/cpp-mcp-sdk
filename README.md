@@ -303,7 +303,3 @@ Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 - [Model Context Protocol](https://modelcontextprotocol.io/) specification team
 - [vcpkg](https://vcpkg.io/) for dependency management
 - [Catch2](https://github.com/catchorg/Catch2) for testing framework
-
----
-
-**Built with ❤️ in Bangkok by ORDIS Co., Ltd.**
