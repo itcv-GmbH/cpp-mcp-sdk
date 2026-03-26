@@ -513,6 +513,7 @@ StdioSubprocess::~StdioSubprocess()
 {
   // NOLINTBEGIN(clang-analyzer-optin.cplusplus.VirtualCall) - Boost.Process internal
   static_cast<void>(shutdown());
+  impl_.reset();
   // NOLINTEND(clang-analyzer-optin.cplusplus.VirtualCall)
 }
 
