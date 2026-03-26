@@ -107,7 +107,6 @@ jobs:
             -D CMAKE_BUILD_TYPE="${{ matrix.build_type }}" `
             -D VCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" `
             -D VCPKG_INSTALLED_DIR="$env:VCPKG_INSTALLED_DIR" `
-            -D CMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -D MCP_SDK_BUILD_TESTS=ON `
             -D MCP_SDK_BUILD_EXAMPLES=OFF
 
@@ -115,7 +114,9 @@ jobs:
         run: cmake --build "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --parallel
 
       - name: Generate test TLS certificates
-        run: bash tests/fixtures/generate_test_certs.sh
+        run: |
+          $env:MSYS_NO_PATHCONV = '1'
+          bash tests/fixtures/generate_test_certs.sh
 
       - name: Test (ctest)
         run: ctest --test-dir "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --output-on-failure
@@ -188,7 +189,6 @@ jobs:
             -D CMAKE_BUILD_TYPE=Release \
             -D VCPKG_TARGET_TRIPLET=x64-linux \
             -D VCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
-            -D CMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -D MCP_SDK_BUILD_TESTS=ON \
             -D MCP_SDK_BUILD_EXAMPLES=OFF \
             ${{ matrix.cmake_flags }}
@@ -270,7 +270,6 @@ jobs:
             -D CMAKE_BUILD_TYPE=Release \
             -D VCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" \
             -D VCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
-            -D CMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             -D MCP_SDK_BUILD_TESTS=ON \
             -D MCP_SDK_INTEGRATION_TESTS=ON \
             -D MCP_SDK_BUILD_EXAMPLES=OFF
