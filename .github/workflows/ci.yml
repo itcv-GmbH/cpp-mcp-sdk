@@ -81,8 +81,7 @@ jobs:
           # Override system VCPKG_ROOT (Windows runners have it pre-set to VS installation)
           $env:VCPKG_ROOT = "${{ github.workspace }}/.vcpkg"
           
-          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
-          git -C $env:VCPKG_ROOT checkout $env:VCPKG_COMMIT_ID
+          git clone --depth 1 --branch 2026.03.18 https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
 
           if ($IsWindows)
           {
