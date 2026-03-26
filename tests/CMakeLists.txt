@@ -8,10 +8,17 @@ find_program(OPENSSL_EXECUTABLE openssl REQUIRED)
 set(TEST_FIXTURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 set(TEST_CERTS_GENERATED "${TEST_FIXTURES_DIR}/tls-localhost-key.pem")
 
+if(WIN32)
+    # On Windows, set MSYS_NO_PATHCONV to prevent Git Bash from converting '/' paths
+    set(MSYS_ENV ${CMAKE_COMMAND} -E env MSYS_NO_PATHCONV=1)
+else()
+    set(MSYS_ENV "")
+endif()
+
 add_custom_command(
     OUTPUT ${TEST_CERTS_GENERATED}
     COMMAND ${CMAKE_COMMAND} -E echo "Generating test TLS certificates..."
-    COMMAND ${CMAKE_COMMAND} -E env MSYS_NO_PATHCONV=1 bash ${TEST_FIXTURES_DIR}/generate_test_certs.sh
+    COMMAND ${MSYS_ENV} bash ${TEST_FIXTURES_DIR}/generate_test_certs.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Generating test TLS certificates for TLS tests"
     VERBATIM
