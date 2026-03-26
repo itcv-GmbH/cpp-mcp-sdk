@@ -195,9 +195,13 @@ See [`examples/`](examples/) directory for complete working examples:
 
 - `minimal_example.cpp` - Basic SDK usage
 - `stdio_server/` - stdio transport server
-- `http_server_auth/` - HTTP server with OAuth
-- `http_client_auth/` - HTTP client with authentication
-- `dual_transport_server/` - Multi-transport server
+- `dual_transport_server/` - Multi-transport server (stdio + HTTP)
+- `http_listen_example/` - HTTP server with listen mode
+- `bidirectional_sampling_elicitation/` - Client sampling and elicitation
+- `http_server_auth/` - HTTP server with OAuth (requires TLS)
+- `http_client_auth/` - HTTP client with authentication (requires TLS)
+- `consumer_find_package/` - CMake consumer example
+- `consumer_vcpkg_overlay/` - vcpkg overlay consumer example
 
 ## Architecture
 
@@ -259,7 +263,7 @@ This SDK is **fully compliant** with MCP specification 2025-11-25:
 - ✅ All utilities (ping, cancellation, progress, tasks)
 - ✅ Cross-platform (Linux, macOS, Windows)
 
-See [Gap Matrix](.docs/requirements/cpp-mcp-sdk-gap-matrix.md) for detailed compliance comparison with other C/C++ MCP libraries.
+See the MCP specification in `.docs/requirements/mcp-spec-2025-11-25/` for detailed protocol requirements.
 
 ## Dependencies
 
