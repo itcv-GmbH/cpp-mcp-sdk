@@ -5,7 +5,6 @@
   "description": "Model Context Protocol SDK for C++",
   "license": "MIT",
   "builtin-baseline": "52f5569a8e867859fac967c1e3f10ca0a8a3cc39",
-  "vcpkg-tag": "2026.03.18",
   "dependencies": [
     {
       "name": "jsoncons",
