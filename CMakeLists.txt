@@ -27,10 +27,12 @@ include(cmake/Dependencies.cmake)
 find_program(CLANG_TIDY_EXE NAMES clang-tidy)
 if(CLANG_TIDY_EXE)
     message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
+    # Note: --exclude-header-filter requires clang-tidy 18+
+    # We use --header-filter to only analyze project headers
     set(CMAKE_CXX_CLANG_TIDY
-        ${CLANG_TIDY_EXE}
-        "--header-filter=^(.*\/)?(src|include)\/.*"
-        "--exclude-header-filter=.*/(build/.*/vcpkg_installed|vcpkg_installed|third_party|external)/.*"
+        "${CLANG_TIDY_EXE}"
+        "--header-filter=^(.*/)?(src|include)/.*"
+        "--extra-arg-before=--driver-mode=g++"
     )
 else()
     message(WARNING "clang-tidy not found - static analysis disabled")
