@@ -68,9 +68,9 @@ jobs:
           path: |
             ${{ env.VCPKG_ROOT }}/downloads
             ${{ env.VCPKG_INSTALLED_DIR }}
-          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT_ID }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT_ID }}-
+            vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
 
       - name: Bootstrap pinned vcpkg
         run: |
@@ -159,14 +159,14 @@ jobs:
           path: |
             ${{ env.VCPKG_ROOT }}/downloads
             ${{ env.VCPKG_INSTALLED_DIR }}
-          key: vcpkg-linux-x64-linux-${{ env.VCPKG_COMMIT_ID }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-linux-x64-linux-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
           restore-keys: |
-            vcpkg-linux-x64-linux-${{ env.VCPKG_COMMIT_ID }}-
+            vcpkg-linux-x64-linux-
 
       - name: Bootstrap pinned vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
-          git -C "$VCPKG_ROOT" checkout "$(jq -r '.builtin-baseline' vcpkg.json)"
+          git -C "$VCPKG_ROOT" checkout "$(jq -r '."builtin-baseline"' vcpkg.json)"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Install dependencies (manifest mode)
@@ -237,14 +237,14 @@ jobs:
           path: |
             ${{ env.VCPKG_ROOT }}/downloads
             ${{ env.VCPKG_INSTALLED_DIR }}
-          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT_ID }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ env.VCPKG_COMMIT_ID }}-
+            vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
 
       - name: Bootstrap pinned vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
-          git -C "$VCPKG_ROOT" checkout "$(jq -r '.builtin-baseline' vcpkg.json)"
+          git -C "$VCPKG_ROOT" checkout "$(jq -r '."builtin-baseline"' vcpkg.json)"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Install dependencies (manifest mode)
