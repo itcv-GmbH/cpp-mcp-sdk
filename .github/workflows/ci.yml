@@ -78,6 +78,9 @@ jobs:
 
       - name: Bootstrap pinned vcpkg
         run: |
+          # Override system VCPKG_ROOT (Windows runners have it pre-set to VS installation)
+          $env:VCPKG_ROOT = "${{ github.workspace }}/.vcpkg"
+          
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           git -C $env:VCPKG_ROOT checkout $env:VCPKG_COMMIT_ID
 
@@ -92,6 +95,9 @@ jobs:
 
       - name: Install dependencies (manifest mode)
         run: |
+          # Ensure VCPKG_ROOT is set correctly (override system variable on Windows)
+          $env:VCPKG_ROOT = "${{ github.workspace }}/.vcpkg"
+          
           $vcpkgExe = if ($IsWindows) { "$env:VCPKG_ROOT\vcpkg.exe" } else { "$env:VCPKG_ROOT/vcpkg" }
           & $vcpkgExe install --triplet "${{ matrix.triplet }}" --x-manifest-root "$env:GITHUB_WORKSPACE" --x-install-root "$env:VCPKG_INSTALLED_DIR"
 
