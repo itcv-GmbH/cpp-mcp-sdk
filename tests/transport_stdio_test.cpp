@@ -398,11 +398,15 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
     try
     {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#if defined(__GNUC__) && !defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
       // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto,deprecated-declarations)
       mcp::transport::StdioTransport transport(options);
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) && !defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
       FAIL("Expected constructor to throw std::logic_error");
     }
     catch (const std::logic_error &error)
@@ -421,11 +425,15 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
     try
     {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#if defined(__GNUC__) && !defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
       // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto,deprecated-declarations)
       mcp::transport::StdioTransport transport(options);
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) && !defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
       FAIL("Expected constructor to throw std::logic_error");
     }
     catch (const std::logic_error &error)
@@ -441,11 +449,15 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
   {
     try
     {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#if defined(__GNUC__) && !defined(__clang__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
       // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto,deprecated-declarations)
       mcp::transport::StdioTransport transport;
-#pragma GCC diagnostic pop
+#if defined(__GNUC__) && !defined(__clang__)
+#  pragma GCC diagnostic pop
+#endif
       FAIL("Expected constructor to throw std::logic_error");
     }
     catch (const std::logic_error &error)
