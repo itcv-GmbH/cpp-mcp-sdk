@@ -398,8 +398,11 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
     try
     {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
       // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto,deprecated-declarations)
       mcp::transport::StdioTransport transport(options);
+#pragma GCC diagnostic pop
       FAIL("Expected constructor to throw std::logic_error");
     }
     catch (const std::logic_error &error)
@@ -418,8 +421,11 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
     try
     {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
       // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto,deprecated-declarations)
       mcp::transport::StdioTransport transport(options);
+#pragma GCC diagnostic pop
       FAIL("Expected constructor to throw std::logic_error");
     }
     catch (const std::logic_error &error)
@@ -435,8 +441,11 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
   {
     try
     {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
       // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto,deprecated-declarations)
       mcp::transport::StdioTransport transport;
+#pragma GCC diagnostic pop
       FAIL("Expected constructor to throw std::logic_error");
     }
     catch (const std::logic_error &error)
