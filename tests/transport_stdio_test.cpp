@@ -398,7 +398,7 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
     try
     {
-      // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto)
+      // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto,deprecated-declarations)
       mcp::transport::StdioTransport transport(options);
       FAIL("Expected constructor to throw std::logic_error");
     }
@@ -418,7 +418,7 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
     try
     {
-      // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto)
+      // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto,deprecated-declarations)
       mcp::transport::StdioTransport transport(options);
       FAIL("Expected constructor to throw std::logic_error");
     }
@@ -435,7 +435,7 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
   {
     try
     {
-      // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto)
+      // NOLINTNEXTLINE(hicpp-avoid-goto,cppcoreguidelines-avoid-goto,deprecated-declarations)
       mcp::transport::StdioTransport transport;
       FAIL("Expected constructor to throw std::logic_error");
     }

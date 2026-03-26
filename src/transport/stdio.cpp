@@ -511,7 +511,9 @@ StdioSubprocess::StdioSubprocess(std::unique_ptr<Impl> impl)
 
 StdioSubprocess::~StdioSubprocess()
 {
+  // NOLINTBEGIN(clang-analyzer-optin.cplusplus.VirtualCall) - Boost.Process internal
   static_cast<void>(shutdown());
+  // NOLINTEND(clang-analyzer-optin.cplusplus.VirtualCall)
 }
 
 StdioSubprocess::StdioSubprocess(StdioSubprocess &&other) noexcept = default;
