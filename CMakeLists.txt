@@ -11,9 +11,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# MSVC: enable /bigobj to handle large object files
+# MSVC-specific flags
 if(MSVC)
+    # Enable /bigobj to handle large object files
     add_compile_options(/bigobj)
+    # Explicitly set C++17 standard flag (MSVC defaults to C++14 without this)
+    add_compile_options(/std:c++17)
 endif()
 
 # Include options before anything else
