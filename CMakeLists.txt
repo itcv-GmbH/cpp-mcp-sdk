@@ -116,7 +116,6 @@ target_link_libraries(mcp_sdk
     PUBLIC
         Boost::asio
         Boost::system
-        Boost::filesystem
         jsoncons
 )
 
