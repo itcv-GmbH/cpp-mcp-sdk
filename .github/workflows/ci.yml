@@ -77,7 +77,10 @@ jobs:
           # Override system VCPKG_ROOT (Windows runners have it pre-set to VS installation)
           $env:VCPKG_ROOT = "${{ github.workspace }}/.vcpkg"
           
-          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          if (-not (Test-Path "$env:VCPKG_ROOT/.git")) {
+            Remove-Item -Recurse -Force "$env:VCPKG_ROOT" -ErrorAction SilentlyContinue
+            git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          }
           git -C $env:VCPKG_ROOT checkout (jq -r '."builtin-baseline"' vcpkg.json)
 
           if ($IsWindows)
@@ -166,7 +169,10 @@ jobs:
 
       - name: Bootstrap pinned vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          if [ ! -d "$VCPKG_ROOT/.git" ]; then
+            rm -rf "$VCPKG_ROOT"
+            git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          fi
           git -C "$VCPKG_ROOT" checkout "$(jq -r '."builtin-baseline"' vcpkg.json)"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
@@ -244,7 +250,10 @@ jobs:
 
       - name: Bootstrap pinned vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          if [ ! -d "$VCPKG_ROOT/.git" ]; then
+            rm -rf "$VCPKG_ROOT"
+            git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          fi
           git -C "$VCPKG_ROOT" checkout "$(jq -r '."builtin-baseline"' vcpkg.json)"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
