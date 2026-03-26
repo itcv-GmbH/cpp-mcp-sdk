@@ -191,7 +191,7 @@ jobs:
         run: ctest --test-dir "$BUILD_DIR" -R mcp_sdk_auth_oauth_client_disabled_test --output-on-failure
 
       - name: Test - Remaining Compatible Tests
-        run: ctest --test-dir "$BUILD_DIR" --output-on-failure -E "authorization|mcp_sdk_auth_oauth_client_disabled_test"
+        run: ctest --test-dir "$BUILD_DIR" --output-on-failure -E "authorization|mcp_sdk_test_auth_oauth_client|mcp_sdk_auth_oauth_client_disabled_test"
 
   integration-reference-tests:
     name: Integration Reference Tests / ${{ matrix.os }}
