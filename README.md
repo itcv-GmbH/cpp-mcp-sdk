@@ -1,6 +1,6 @@
 # MCP C++ SDK
 
-[![CI](https://github.com/ORDIS-Co-Ltd/cpp-mcp-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/ORDIS-Co-Ltd/cpp-mcp-sdk/actions/workflows/ci.yml)
+[![CI](https://github.com/itcv-GmbH/cpp-mcp-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/itcv-GmbH/cpp-mcp-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/)
 [![MCP Spec](https://img.shields.io/badge/MCP-2025--11--25-green.svg)](https://modelcontextprotocol.io/)
@@ -44,7 +44,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/ORDIS-Co-Ltd/cpp-mcp-sdk.git
+git clone https://github.com/itcv-GmbH/cpp-mcp-sdk.git
 cd cpp-mcp-sdk
 
 # Configure (macOS/Linux)
@@ -172,7 +172,7 @@ include(FetchContent)
 
 FetchContent_Declare(
   mcp_sdk
-  GIT_REPOSITORY https://github.com/ORDIS-Co-Ltd/cpp-mcp-sdk.git
+  GIT_REPOSITORY https://github.com/itcv-GmbH/cpp-mcp-sdk.git
   GIT_TAG        v0.1.0  # or specific commit
 )
 
