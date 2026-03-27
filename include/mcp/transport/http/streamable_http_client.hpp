@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http/server_request.hpp>
 #include <mcp/transport/http/server_response.hpp>
@@ -13,7 +14,7 @@
 namespace mcp::transport::http
 {
 
-class StreamableHttpClient
+class MCP_SDK_EXPORT StreamableHttpClient
 {
 public:
   using RequestExecutor = std::function<ServerResponse(const ServerRequest &)>;

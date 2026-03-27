@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include <mcp/export.hpp>
 #include <mcp/lifecycle/session/icon.hpp>
 
 namespace mcp::lifecycle::session
@@ -12,7 +13,7 @@ namespace mcp::lifecycle::session
 /**
  * @brief Describes MCP implementation metadata.
  */
-class Implementation
+class MCP_SDK_EXPORT Implementation
 {
 public:
   Implementation() = default;

@@ -3,13 +3,14 @@
 #include <optional>
 #include <string>
 
+#include <mcp/export.hpp>
 #include <mcp/transport/http/header.hpp>
 #include <mcp/transport/http/header_utils.hpp>
 
 namespace mcp::transport::http
 {
 
-class SessionHeaderState
+class MCP_SDK_EXPORT SessionHeaderState
 {
 public:
   auto captureFromInitializeResponse(std::optional<std::string_view> sessionHeader) -> bool

@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/export.hpp>
 #include <mcp/lifecycle/session/client_capabilities.hpp>
 #include <mcp/lifecycle/session/implementation.hpp>
 #include <mcp/lifecycle/session/server_capabilities.hpp>
@@ -14,7 +15,7 @@ namespace mcp::lifecycle::session
 /**
  * @brief Stores negotiated version and capabilities.
  */
-class NegotiatedParameters
+class MCP_SDK_EXPORT NegotiatedParameters
 {
 public:
   NegotiatedParameters() = default;

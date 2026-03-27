@@ -6,11 +6,12 @@
 #include <unordered_map>
 
 #include <mcp/auth/client_credentials_store.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
 
-class InMemoryClientCredentialsStore final : public ClientCredentialsStore
+class MCP_SDK_EXPORT InMemoryClientCredentialsStore final : public ClientCredentialsStore
 {
 public:
   auto load(std::string_view authorizationServerIssuer) const -> std::optional<ResolvedClientIdentity> override;

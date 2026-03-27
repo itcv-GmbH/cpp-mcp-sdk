@@ -2,10 +2,12 @@
 
 #include <string>
 
+#include <mcp/export.hpp>
+
 namespace mcp::auth
 {
 
-class AuthVerifier
+class MCP_SDK_EXPORT AuthVerifier
 {
 public:
   AuthVerifier() = default;

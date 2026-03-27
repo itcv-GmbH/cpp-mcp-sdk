@@ -3,13 +3,14 @@
 #include <cstdint>
 #include <memory>
 
+#include <mcp/export.hpp>
 #include <mcp/server/server_factory.hpp>
 #include <mcp/server/streamable_http_server_runner_options.hpp>
 
 namespace mcp::server
 {
 
-class StreamableHttpServerRunner final
+class MCP_SDK_EXPORT StreamableHttpServerRunner final
 {
 public:
   explicit StreamableHttpServerRunner(ServerFactory serverFactory);

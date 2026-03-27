@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http/request_kind.hpp>
 #include <mcp/transport/http/request_validation_options.hpp>
@@ -23,7 +24,7 @@ using StreamableRequestHandler = std::function<StreamableRequestResult(const jso
 using StreamableNotificationHandler = std::function<bool(const jsonrpc::RequestContext &, const jsonrpc::Notification &)>;
 using StreamableResponseHandler = std::function<bool(const jsonrpc::RequestContext &, const jsonrpc::Response &)>;
 
-class StreamableHttpServer
+class MCP_SDK_EXPORT StreamableHttpServer
 {
 public:
   explicit StreamableHttpServer(StreamableHttpServerOptions options = {});

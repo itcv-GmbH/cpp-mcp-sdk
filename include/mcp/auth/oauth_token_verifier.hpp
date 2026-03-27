@@ -2,11 +2,12 @@
 
 #include <mcp/auth/oauth_token_verification_request.hpp>
 #include <mcp/auth/oauth_token_verification_result.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
 
-class OAuthTokenVerifier
+class MCP_SDK_EXPORT OAuthTokenVerifier
 {
 public:
   OAuthTokenVerifier() = default;

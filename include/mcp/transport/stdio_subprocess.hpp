@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/export.hpp>
 #include <mcp/transport/stdio_subprocess_shutdown_options.hpp>
 
 namespace mcp::transport
@@ -40,7 +41,7 @@ namespace mcp::transport
  * - exitCode() const: Returns std::optional<int>
  * - capturedStderr() const: Returns std::string
  */
-class StdioSubprocess final
+class MCP_SDK_EXPORT StdioSubprocess final
 {
 public:
   StdioSubprocess();

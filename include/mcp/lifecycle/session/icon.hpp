@@ -4,13 +4,15 @@
 #include <string>
 #include <vector>
 
+#include <mcp/export.hpp>
+
 namespace mcp::lifecycle::session
 {
 
 /**
  * @brief Represents an optionally-sized icon for UI display.
  */
-class Icon
+class MCP_SDK_EXPORT Icon
 {
 public:
   Icon() = default;

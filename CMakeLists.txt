@@ -195,8 +195,23 @@ endif()
 set_target_properties(mcp_sdk PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     OUTPUT_NAME mcp_sdk
-    EXPORT_NAME sdk
+    EXPORT_NAME mcp_sdk
 )
+
+# Windows DLL-specific configuration
+if(BUILD_SHARED_LIBS AND WIN32)
+    set_target_properties(mcp_sdk PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+        DEFINE_SYMBOL MCP_SDK_BUILDING_LIBRARY
+    )
+    
+    target_compile_definitions(mcp_sdk
+        PUBLIC
+            MCP_SDK_SHARED_LIBRARY
+        PRIVATE
+            MCP_SDK_BUILDING_LIBRARY
+    )
+endif()
 
 # Build tests if enabled
 if(MCP_SDK_BUILD_TESTS)
@@ -220,6 +235,7 @@ install(TARGETS mcp_sdk
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 # Install headers

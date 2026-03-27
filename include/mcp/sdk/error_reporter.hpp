@@ -5,6 +5,8 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/export.hpp>
+
 namespace mcp
 {
 namespace sdk
@@ -37,7 +39,7 @@ inline auto suppressReporterException() noexcept -> void {}
  * - component() noexcept
  * - message() noexcept
  */
-class ErrorEvent
+class MCP_SDK_EXPORT ErrorEvent
 {
 public:
   /// Constructs an empty error event.

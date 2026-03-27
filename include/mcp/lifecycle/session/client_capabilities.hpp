@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include <jsoncons/json.hpp>
+#include <mcp/export.hpp>
 #include <mcp/lifecycle/session/elicitation_capability.hpp>
 #include <mcp/lifecycle/session/roots_capability.hpp>
 #include <mcp/lifecycle/session/sampling_capability.hpp>
@@ -15,7 +16,7 @@ namespace mcp::lifecycle::session
 /**
  * @brief Capabilities a client may support.
  */
-class ClientCapabilities
+class MCP_SDK_EXPORT ClientCapabilities
 {
 public:
   ClientCapabilities() = default;

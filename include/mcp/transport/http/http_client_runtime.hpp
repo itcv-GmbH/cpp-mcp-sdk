@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <mcp/export.hpp>
 #include <mcp/transport/http/http_client_options.hpp>
 #include <mcp/transport/http/server_request.hpp>
 #include <mcp/transport/http/server_response.hpp>
@@ -11,7 +12,7 @@ namespace mcp::transport::http
 
 using HttpRequestHandler = std::function<ServerResponse(const ServerRequest &)>;
 
-class HttpClientRuntime
+class MCP_SDK_EXPORT HttpClientRuntime
 {
 public:
   explicit HttpClientRuntime(HttpClientOptions options);

@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include <mcp/export.hpp>
 #include <mcp/util/task_create_options.hpp>
 #include <mcp/util/task_record_result.hpp>
 #include <mcp/util/task_terminal_result.hpp>
@@ -14,7 +15,7 @@
 namespace mcp::util
 {
 
-class TaskStore
+class MCP_SDK_EXPORT TaskStore
 {
 public:
   TaskStore() = default;

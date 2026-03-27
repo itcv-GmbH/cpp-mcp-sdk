@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 
+#include <mcp/export.hpp>
 #include <mcp/server/combined_server_runner_options.hpp>
 #include <mcp/server/server_factory.hpp>
 
@@ -12,7 +13,7 @@ namespace mcp::server
 class StdioServerRunner;
 class StreamableHttpServerRunner;
 
-class CombinedServerRunner final
+class MCP_SDK_EXPORT CombinedServerRunner final
 {
 public:
   CombinedServerRunner(ServerFactory serverFactory, CombinedServerRunnerOptions options);

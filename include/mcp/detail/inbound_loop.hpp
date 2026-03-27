@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 
+#include <mcp/export.hpp>
 #include <mcp/sdk/error_reporter.hpp>
 
 namespace mcp::detail
@@ -47,7 +48,7 @@ namespace mcp::detail
  * - stop(), join(), isRunning() are safe to call from any thread
  * - Multiple start/stop calls are handled safely
  */
-class InboundLoop
+class MCP_SDK_EXPORT InboundLoop
 {
 public:
   using LoopBody = std::function<void()>;

@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/util/create_task_result.hpp>
 #include <mcp/util/in_memory_task_store.hpp>
@@ -26,7 +27,7 @@ using TaskStatusObserver = std::function<void(const jsonrpc::RequestContext &, c
 
 auto authContextForRequest(const jsonrpc::RequestContext &context) -> std::optional<std::string>;
 
-class TaskReceiver
+class MCP_SDK_EXPORT TaskReceiver
 {
 public:
   explicit TaskReceiver(std::shared_ptr<TaskStore> store = std::make_shared<InMemoryTaskStore>(),

@@ -2,13 +2,15 @@
 
 #include <functional>
 
+#include <mcp/export.hpp>
+
 namespace mcp::lifecycle::session
 {
 
 /**
  * @brief Abstract executor interface for task scheduling.
  */
-class Executor
+class MCP_SDK_EXPORT Executor
 {
 public:
   virtual ~Executor() = default;

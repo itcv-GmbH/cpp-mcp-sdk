@@ -9,6 +9,7 @@
 
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/handler_types.hpp>
 #include <mcp/jsonrpc/message_functions.hpp>
 #include <mcp/jsonrpc/outbound_request_options.hpp>
@@ -110,7 +111,7 @@ namespace mcp::jsonrpc
  * - All futures associated with in-flight requests will be resolved (either successfully
  *   or with an error) before destruction completes
  */
-class Router
+class MCP_SDK_EXPORT Router
 {
 public:
   explicit Router(RouterOptions options = {});

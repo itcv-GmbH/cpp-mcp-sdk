@@ -1,6 +1,7 @@
 # CMake Options for MCP SDK
 
 # Build shared or static library
+# Shared libraries are supported on all platforms (Windows DLL, Linux .so, macOS .dylib)
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
 # Feature options

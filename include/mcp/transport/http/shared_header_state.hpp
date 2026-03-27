@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 
+#include <mcp/export.hpp>
 #include <mcp/transport/http/header.hpp>
 #include <mcp/transport/http/header_utils.hpp>
 #include <mcp/transport/http/protocol_version_header_state.hpp>
@@ -12,7 +13,7 @@
 namespace mcp::transport::http
 {
 
-class SharedHeaderState final
+class MCP_SDK_EXPORT SharedHeaderState final
 {
 public:
   auto captureFromInitializeResponse(std::optional<std::string_view> sessionHeader, std::string_view protocolVersion) -> bool

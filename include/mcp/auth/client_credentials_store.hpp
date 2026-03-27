@@ -5,11 +5,12 @@
 #include <string_view>
 
 #include <mcp/auth/resolved_client_identity.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
 
-class ClientCredentialsStore
+class MCP_SDK_EXPORT ClientCredentialsStore
 {
 public:
   ClientCredentialsStore() = default;

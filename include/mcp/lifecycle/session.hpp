@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session/capability_error.hpp>
 #include <mcp/lifecycle/session/client_capabilities.hpp>
@@ -137,7 +138,7 @@ namespace lifecycle
  * - handleInitializedNotification() does not throw
  * - configureServerInitialization() does not throw
  */
-class Session : public std::enable_shared_from_this<Session>
+class MCP_SDK_EXPORT Session : public std::enable_shared_from_this<Session>
 {
 public:
   explicit Session(session::SessionOptions options = {});

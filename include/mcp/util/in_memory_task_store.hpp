@@ -2,13 +2,14 @@
 
 #include <memory>
 
+#include <mcp/export.hpp>
 #include <mcp/util/in_memory_task_store_options.hpp>
 #include <mcp/util/task_store.hpp>
 
 namespace mcp::util
 {
 
-class InMemoryTaskStore final : public TaskStore
+class MCP_SDK_EXPORT InMemoryTaskStore final : public TaskStore
 {
 public:
   explicit InMemoryTaskStore(InMemoryTaskStoreOptions options = {});

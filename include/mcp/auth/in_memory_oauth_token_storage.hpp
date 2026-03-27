@@ -8,11 +8,12 @@
 
 #include <mcp/auth/oauth_access_token.hpp>
 #include <mcp/auth/oauth_token_storage.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
 
-class InMemoryOAuthTokenStorage final : public OAuthTokenStorage
+class MCP_SDK_EXPORT InMemoryOAuthTokenStorage final : public OAuthTokenStorage
 {
 public:
   auto load(std::string_view resource) const -> std::optional<OAuthAccessToken> override;

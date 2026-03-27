@@ -8,11 +8,12 @@
 
 #include <mcp/auth/loopback_authorization_code.hpp>
 #include <mcp/auth/loopback_receiver_options.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
 
-class LoopbackRedirectReceiver
+class MCP_SDK_EXPORT LoopbackRedirectReceiver
 {
 public:
   explicit LoopbackRedirectReceiver(LoopbackReceiverOptions options = {});

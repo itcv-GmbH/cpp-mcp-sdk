@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <boost/asio/thread_pool.hpp>
+#include <mcp/export.hpp>
 #include <mcp/client/client_initialize_configuration.hpp>
 #include <mcp/client/elicitation_action.hpp>
 #include <mcp/client/elicitation_context.hpp>
@@ -145,7 +146,7 @@ namespace mcp::client
  * - Notification handlers: Exceptions are not converted to error responses (notifications have
  *   no response); they propagate to the caller or are handled by the transport's error handling
  */
-class Client : public std::enable_shared_from_this<Client>
+class MCP_SDK_EXPORT Client : public std::enable_shared_from_this<Client>
 {
 public:
   static auto create(lifecycle::session::SessionOptions options = {}) -> std::shared_ptr<Client>;

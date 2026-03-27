@@ -5,6 +5,8 @@
 #include <string_view>
 #include <utility>
 
+#include <mcp/export.hpp>
+
 namespace mcp
 {
 namespace sdk
@@ -16,7 +18,7 @@ inline constexpr std::string_view kLatestProtocolVersion = "2025-11-25";
 inline constexpr std::string_view kFallbackProtocolVersion = "2025-03-26";
 inline constexpr std::string_view kLegacyProtocolVersion = "2024-11-05";
 
-class NegotiatedProtocolVersion
+class MCP_SDK_EXPORT NegotiatedProtocolVersion
 {
 public:
   auto setNegotiatedProtocolVersion(std::string protocolVersion) -> void { negotiatedProtocolVersion_ = std::move(protocolVersion); }

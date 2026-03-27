@@ -4,13 +4,14 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/export.hpp>
 #include <mcp/transport/http/header.hpp>
 #include <mcp/transport/http/header_utils.hpp>
 
 namespace mcp::transport::http
 {
 
-class ProtocolVersionHeaderState
+class MCP_SDK_EXPORT ProtocolVersionHeaderState
 {
 public:
   auto setNegotiatedProtocolVersion(std::string_view protocolVersion) -> bool

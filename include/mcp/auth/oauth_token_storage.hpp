@@ -4,11 +4,12 @@
 #include <string_view>
 
 #include <mcp/auth/oauth_access_token.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
 
-class OAuthTokenStorage
+class MCP_SDK_EXPORT OAuthTokenStorage
 {
 public:
   OAuthTokenStorage() = default;

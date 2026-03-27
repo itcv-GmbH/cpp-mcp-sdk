@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/session.hpp>
 
@@ -49,7 +50,7 @@ namespace mcp::transport
  * 3. Never allow exceptions to escape to std::terminate
  */
 
-class Transport
+class MCP_SDK_EXPORT Transport
 {
 public:
   Transport() = default;

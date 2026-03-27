@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include <jsoncons/json.hpp>
+#include <mcp/export.hpp>
 #include <mcp/lifecycle/session/completions_capability.hpp>
 #include <mcp/lifecycle/session/logging_capability.hpp>
 #include <mcp/lifecycle/session/prompts_capability.hpp>
@@ -17,7 +18,7 @@ namespace mcp::lifecycle::session
 /**
  * @brief Capabilities a server may support.
  */
-class ServerCapabilities
+class MCP_SDK_EXPORT ServerCapabilities
 {
 public:
   ServerCapabilities() = default;

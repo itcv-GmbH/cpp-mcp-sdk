@@ -4,11 +4,12 @@
 
 #include <mcp/auth/auth_request_context.hpp>
 #include <mcp/auth/auth_result.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
 
-class AuthProvider
+class MCP_SDK_EXPORT AuthProvider
 {
 public:
   AuthProvider() = default;

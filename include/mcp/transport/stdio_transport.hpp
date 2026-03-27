@@ -3,6 +3,7 @@
 #include <iosfwd>
 #include <string_view>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/transport/stdio_attach_options.hpp>
 #include <mcp/transport/stdio_client_options.hpp>
@@ -65,7 +66,7 @@ namespace mcp::transport
  * - Message parsing errors (logged, loop continues)
  * - Subprocess I/O errors (terminates loop)
  */
-class StdioTransport final : public Transport
+class MCP_SDK_EXPORT StdioTransport final : public Transport
 {
 public:
   [[deprecated(

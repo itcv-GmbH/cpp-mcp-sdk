@@ -35,6 +35,17 @@ function(mcp_add_test TEST_NAME SOURCE_FILE)
             Catch2::Catch2WithMain
             mcp::sdk
     )
+    
+    # On Windows with shared libraries, copy DLL to test output directory
+    if(WIN32 AND BUILD_SHARED_LIBS)
+        add_custom_command(TARGET ${TEST_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:mcp_sdk>
+                $<TARGET_FILE_DIR:${TEST_NAME}>
+            COMMENT "Copying mcp_sdk.dll to test output directory"
+        )
+    endif()
+    
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endfunction()
 
@@ -45,6 +56,17 @@ function(mcp_add_test_no_catch2 TEST_NAME SOURCE_FILE)
         PRIVATE
             mcp::sdk
     )
+    
+    # On Windows with shared libraries, copy DLL to test output directory
+    if(WIN32 AND BUILD_SHARED_LIBS)
+        add_custom_command(TARGET ${TEST_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:mcp_sdk>
+                $<TARGET_FILE_DIR:${TEST_NAME}>
+            COMMENT "Copying mcp_sdk.dll to test output directory"
+        )
+    endif()
+    
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endfunction()
 

@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/router.hpp>
 #include <mcp/lifecycle/session.hpp>
 #include <mcp/server/completion_request.hpp>
@@ -35,7 +36,7 @@
 namespace mcp::server
 {
 
-class Server
+class MCP_SDK_EXPORT Server
 {
 public:
   using CompletionHandler = std::function<CompletionResult(const CompletionRequest &)>;

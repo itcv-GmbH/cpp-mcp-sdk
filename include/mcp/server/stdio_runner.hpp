@@ -9,13 +9,14 @@
 #include <string_view>
 #include <thread>
 
+#include <mcp/export.hpp>
 #include <mcp/server/server_factory.hpp>
 #include <mcp/server/stdio_server_runner_options.hpp>
 
 namespace mcp::server
 {
 
-class StdioServerRunner final
+class MCP_SDK_EXPORT StdioServerRunner final
 {
 public:
   explicit StdioServerRunner(ServerFactory serverFactory);

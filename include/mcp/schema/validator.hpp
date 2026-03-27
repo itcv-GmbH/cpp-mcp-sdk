@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include <jsoncons/json.hpp>
+#include <mcp/export.hpp>
 #include <mcp/schema/pinned_schema_metadata.hpp>
 #include <mcp/schema/tool_schema_kind.hpp>
 #include <mcp/schema/validation_result.hpp>
@@ -13,7 +14,7 @@ namespace mcp::schema
 
 using JsonValue = jsoncons::json;
 
-class Validator
+class MCP_SDK_EXPORT Validator
 {
 public:
   static auto loadPinnedMcpSchema() -> Validator;
