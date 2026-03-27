@@ -114,7 +114,7 @@ jobs:
         run: cmake --build "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --parallel
 
       - name: Test (ctest)
-        run: ctest --test-dir "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --output-on-failure
+        run: ctest --test-dir "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" -C "${{ matrix.build_type }}" --output-on-failure
 
   feature-matrix-test:
     name: Feature Matrix / ${{ matrix.variant }} / Linux Release
@@ -192,10 +192,10 @@ jobs:
         run: cmake --build "$BUILD_DIR" --parallel
 
       - name: Test - Auth Disabled Specific
-        run: ctest --test-dir "$BUILD_DIR" -R mcp_sdk_auth_oauth_client_disabled_test --output-on-failure
+        run: ctest --test-dir "$BUILD_DIR" -C Release -R mcp_sdk_auth_oauth_client_disabled_test --output-on-failure
 
       - name: Test - Remaining Compatible Tests
-        run: ctest --test-dir "$BUILD_DIR" --output-on-failure -E "authorization|mcp_sdk_test_auth_oauth_client|mcp_sdk_auth_oauth_client_disabled_test"
+        run: ctest --test-dir "$BUILD_DIR" -C Release --output-on-failure -E "authorization|mcp_sdk_test_auth_oauth_client|mcp_sdk_auth_oauth_client_disabled_test"
 
   integration-reference-tests:
     name: Integration Reference Tests / ${{ matrix.os }}
@@ -273,4 +273,4 @@ jobs:
         run: cmake --build "build/ci-integration-ref-${{ matrix.os }}" --parallel 4
 
       - name: Run Integration Tests
-        run: ctest --test-dir "build/ci-integration-ref-${{ matrix.os }}" -R integration_reference --output-on-failure
+        run: ctest --test-dir "build/ci-integration-ref-${{ matrix.os }}" -C Release -R integration_reference --output-on-failure
