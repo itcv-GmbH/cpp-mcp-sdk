@@ -609,9 +609,17 @@ TEST_CASE("Implementation metadata storage", "[lifecycle][metadata]")
 
 TEST_CASE("ClientCapabilities construction and access", "[lifecycle][capabilities]")
 {
-  RootsCapability roots {.listChanged = true};
-  SamplingCapability sampling {.context = true, .tools = true};
-  ElicitationCapability elicitation {.form = true, .url = true};
+  RootsCapability roots;
+  roots.listChanged = true;
+
+  SamplingCapability sampling;
+  sampling.context = true;
+  sampling.tools = true;
+
+  ElicitationCapability elicitation;
+  elicitation.form = true;
+  elicitation.url = true;
+
 
   ClientCapabilities caps;
   caps = ClientCapabilities(roots, sampling, elicitation, std::nullopt, std::nullopt);
@@ -628,9 +636,16 @@ TEST_CASE("ClientCapabilities construction and access", "[lifecycle][capabilitie
 
 TEST_CASE("ServerCapabilities construction and access", "[lifecycle][capabilities]")
 {
-  PromptsCapability prompts {.listChanged = true};
-  ResourcesCapability resources {.subscribe = true, .listChanged = true};
-  ToolsCapability tools {.listChanged = true};
+  PromptsCapability prompts;
+  prompts.listChanged = true;
+
+  ResourcesCapability resources;
+  resources.subscribe = true;
+  resources.listChanged = true;
+
+  ToolsCapability tools;
+  tools.listChanged = true;
+
 
   ServerCapabilities caps;
   caps = ServerCapabilities(std::nullopt, std::nullopt, prompts, resources, tools, std::nullopt, std::nullopt);

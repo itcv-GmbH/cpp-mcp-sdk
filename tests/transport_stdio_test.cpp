@@ -70,7 +70,9 @@ TEST_CASE("Stdio transport rejects embedded CR and CRLF framing violations", "[t
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = false};
+  const mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = false;
 
   const std::string withEmbeddedCr = std::string(R"({"jsonrpc":"2.0","id":1,"method":"pi")") + '\r' + R"(ng"})";
   const bool acceptedEmbeddedCr = mcp::transport::StdioTransport::routeIncomingLine(router, withEmbeddedCr, stdoutCapture, &stderrCapture, options);
@@ -98,7 +100,9 @@ TEST_CASE("Stdio transport rejects invalid UTF-8 inbound data", "[transport][std
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = false};
+  const mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = false;
 
   const std::string invalidUtf8 = std::string(R"({"jsonrpc":"2.0","id":1,"method":"ping","params":{"text":")") + std::string("\xC3\x28") + R"("}})";
 
@@ -117,7 +121,9 @@ TEST_CASE("Stdio attach rejects partial EOF frame and does not route it", "[tran
   std::ostringstream simulatedServerStdin;
   std::ostringstream stderrCapture;
 
-  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = true};
+  const mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = true;
 
   {
     StandardStreamRedirect redirect(simulatedServerStdout, simulatedServerStdin, stderrCapture);
@@ -140,8 +146,10 @@ TEST_CASE("Stdio run keeps stdout MCP-only and logs diagnostics to stderr", "[tr
   std::ostringstream stderrCapture;
 
   {
+    mcp::transport::StdioServerOptions serverOpts1;
+    serverOpts1.allowStderrLogs = true;
     StandardStreamRedirect redirect(stdinInput, stdoutCapture, stderrCapture);
-    mcp::transport::StdioTransport::run(router, mcp::transport::StdioServerOptions {.allowStderrLogs = true});
+    mcp::transport::StdioTransport::run(router, serverOpts1);
   }
 
   std::istringstream stdoutStream(stdoutCapture.str());
@@ -170,7 +178,9 @@ TEST_CASE("Stdio transport rejects embedded LF framing violations", "[transport]
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = false};
+  const mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = false;
 
   // Test embedded LF in the middle of a JSON object
   const std::string withEmbeddedLf = std::string(R"({"jsonrpc":"2.0","id":1,"method":"pi")") + '\n' + R"(ng"})";
@@ -187,7 +197,9 @@ TEST_CASE("Stdio transport emits JSON-RPC parse errors when emitParseErrors is t
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = true};
+  const mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = true;
 
   SECTION("Parse error for invalid JSON")
   {
@@ -242,7 +254,10 @@ TEST_CASE("Stdio transport handles max message size limit via direct framing", "
   std::ostringstream stderrCapture;
 
   // Set a very small max message size to trigger the limit
-  mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = true};
+  mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = true;
+
   constexpr std::size_t kSmallMaxMessageSize = 50U;
   options.limits.maxMessageSizeBytes = kSmallMaxMessageSize;
 
@@ -273,7 +288,10 @@ TEST_CASE("Stdio transport handles max message size without emitting parse error
   std::ostringstream stderrCapture;
 
   // Set a very small max message size but disable parse error emission
-  mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = false};
+  mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = false;
+
   constexpr std::size_t kSmallMaxMessageSize = 50U;
   options.limits.maxMessageSizeBytes = kSmallMaxMessageSize;
 
@@ -297,7 +315,9 @@ TEST_CASE("Stdio transport handles empty lines and whitespace-only lines", "[tra
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = false};
+  const mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = false;
 
   SECTION("Empty line is rejected")
   {
@@ -352,7 +372,9 @@ TEST_CASE("Stdio transport parse error emission keeps stdout MCP-only", "[transp
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options {.allowStderrLogs = true, .emitParseErrors = true};
+  const mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = true;
 
   // Send an invalid message that will trigger a parse error response
   const std::string invalidJson = "not valid json";
@@ -394,7 +416,8 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
   SECTION("Server options constructor throws with guidance")
   {
-    mcp::transport::StdioServerOptions options {.allowStderrLogs = true};
+    mcp::transport::StdioServerOptions options;
+    options.allowStderrLogs = true;
 
     try
     {
@@ -421,7 +444,8 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
   SECTION("Client options constructor throws with guidance")
   {
-    mcp::transport::StdioClientOptions options {.executablePath = "/bin/false"};
+    mcp::transport::StdioClientOptions options;
+    options.executablePath = "/bin/false";
 
     try
     {
@@ -478,7 +502,9 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
     std::ostringstream stdoutCapture;
     std::ostringstream stderrCapture;
-    const mcp::transport::StdioAttachOptions attachOptions {.allowStderrLogs = true, .emitParseErrors = false};
+    const mcp::transport::StdioAttachOptions attachOptions;
+    attachOptions.allowStderrLogs = true;
+    attachOptions.emitParseErrors = false;
 
     // Static routeIncomingLine should work without throwing
     const std::string validMessage = R"({"jsonrpc":"2.0","id":1,"method":"ping"})";

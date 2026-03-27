@@ -68,10 +68,9 @@ TEST_CASE("stdio transport enforces newline framing", "[conformance][transport][
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
 
-  const mcp::transport::StdioAttachOptions options {
-    .allowStderrLogs = true,
-    .emitParseErrors = false,
-  };
+  const mcp::transport::StdioAttachOptions options;
+  options.allowStderrLogs = true;
+  options.emitParseErrors = false;
 
   const std::string validFrame = R"({"jsonrpc":"2.0","id":1,"method":"ping"})";
   REQUIRE(mcp::transport::StdioTransport::routeIncomingLine(router, validFrame, stdoutCapture, &stderrCapture, options));
@@ -101,8 +100,10 @@ TEST_CASE("stdio transport keeps stdout MCP-only", "[conformance][transport][std
   std::ostringstream stderrCapture;
 
   {
+    mcp::transport::StdioServerOptions serverOpts3;
+    serverOpts3.allowStderrLogs = true;
     StandardStreamRedirect redirect(stdinInput, stdoutCapture, stderrCapture);
-    mcp::transport::StdioTransport::run(router, mcp::transport::StdioServerOptions {.allowStderrLogs = true});
+    mcp::transport::StdioTransport::run(router, serverOpts3);
   }
 
   std::istringstream stdoutStream(stdoutCapture.str());

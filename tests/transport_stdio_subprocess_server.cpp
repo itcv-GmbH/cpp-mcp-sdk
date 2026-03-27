@@ -48,6 +48,8 @@ auto main() -> int
                                   return makeReadyResponseFuture(mcp::jsonrpc::Response {response});
                                 });
 
-  mcp::transport::StdioTransport::run(router, mcp::transport::StdioServerOptions {.allowStderrLogs = true});
+  mcp::transport::StdioServerOptions serverOpts2;
+  serverOpts2.allowStderrLogs = true;
+  mcp::transport::StdioTransport::run(router, serverOpts2);
   return 0;
 }

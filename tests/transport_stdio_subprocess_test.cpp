@@ -71,10 +71,10 @@ TEST_CASE("Stdio subprocess client spawns helper server and exchanges messages",
 
   requirePingRoundTrip(subprocess, 11);
 
-  REQUIRE(subprocess.shutdown(mcp::transport::StdioSubprocessShutdownOptions {
-    .waitForExitTimeout = std::chrono::milliseconds {1000},
-    .waitAfterTerminateTimeout = std::chrono::milliseconds {1000},
-  }));
+  mcp::transport::StdioSubprocessShutdownOptions shutdownOpts1;
+  shutdownOpts1.waitForExitTimeout = std::chrono::milliseconds {1000};
+  shutdownOpts1.waitAfterTerminateTimeout = std::chrono::milliseconds {1000};
+  REQUIRE(subprocess.shutdown(shutdownOpts1));
 
   const std::string capturedStderr = subprocess.capturedStderr();
   REQUIRE(capturedStderr.find("helper-server-started") != std::string::npos);
@@ -96,10 +96,10 @@ TEST_CASE("Stdio subprocess client supports forwarded stderr mode while exchangi
 
   requirePingRoundTrip(subprocess, 27);
 
-  REQUIRE(subprocess.shutdown(mcp::transport::StdioSubprocessShutdownOptions {
-    .waitForExitTimeout = std::chrono::milliseconds {1000},
-    .waitAfterTerminateTimeout = std::chrono::milliseconds {1000},
-  }));
+  mcp::transport::StdioSubprocessShutdownOptions shutdownOpts2;
+  shutdownOpts2.waitForExitTimeout = std::chrono::milliseconds {1000};
+  shutdownOpts2.waitAfterTerminateTimeout = std::chrono::milliseconds {1000};
+  REQUIRE(subprocess.shutdown(shutdownOpts2));
 }
 
 TEST_CASE("Stdio subprocess client validates spawn options", "[transport][stdio][subprocess]")
@@ -141,10 +141,9 @@ TEST_CASE("Stdio subprocess client shutdown is idempotent", "[transport][stdio][
 
   requirePingRoundTrip(subprocess, 31);
 
-  const mcp::transport::StdioSubprocessShutdownOptions shutdownOptions {
-    .waitForExitTimeout = std::chrono::milliseconds {1000},
-    .waitAfterTerminateTimeout = std::chrono::milliseconds {1000},
-  };
+  const mcp::transport::StdioSubprocessShutdownOptions shutdownOptions;
+  shutdownOptions.waitForExitTimeout = std::chrono::milliseconds {1000};
+  shutdownOptions.waitAfterTerminateTimeout = std::chrono::milliseconds {1000};
 
   REQUIRE(subprocess.shutdown(shutdownOptions));
   REQUIRE(subprocess.shutdown(shutdownOptions));
@@ -161,8 +160,8 @@ TEST_CASE("Stdio subprocess client waitForExit timeout returns false", "[transpo
   REQUIRE_NOTHROW(exited = subprocess.waitForExit(std::chrono::milliseconds {50}));
   REQUIRE_FALSE(exited);
 
-  REQUIRE(subprocess.shutdown(mcp::transport::StdioSubprocessShutdownOptions {
-    .waitForExitTimeout = std::chrono::milliseconds {1000},
-    .waitAfterTerminateTimeout = std::chrono::milliseconds {1000},
-  }));
+  mcp::transport::StdioSubprocessShutdownOptions shutdownOpts3;
+  shutdownOpts3.waitForExitTimeout = std::chrono::milliseconds {1000};
+  shutdownOpts3.waitAfterTerminateTimeout = std::chrono::milliseconds {1000};
+  REQUIRE(subprocess.shutdown(shutdownOpts3));
 }
