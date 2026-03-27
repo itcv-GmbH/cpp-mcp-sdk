@@ -115,8 +115,11 @@ jobs:
 
       - name: Generate test TLS certificates
         run: |
-          $env:MSYS_NO_PATHCONV = '1'
-          bash tests/fixtures/generate_test_certs.sh
+          if ($IsWindows) {
+            powershell -ExecutionPolicy Bypass -File tests/fixtures/generate_test_certs.ps1
+          } else {
+            bash tests/fixtures/generate_test_certs.sh
+          }
 
       - name: Test (ctest)
         run: ctest --test-dir "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --output-on-failure
