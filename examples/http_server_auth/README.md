@@ -1,11 +1,19 @@
 # http_server_auth
 
-Streamable HTTP MCP server over HTTPS with OAuth-style bearer authorization challenge support.
+A Streamable HTTP MCP server running over HTTPS with OAuth-style bearer authorization challenge support.
 
-This example demonstrates:
-- Streamable HTTP transport (`POST /mcp`, `GET /mcp` SSE)
-- authorization via `WWW-Authenticate: Bearer ...`
-- external client-driven session lifecycle (`initialize` then `notifications/initialized`)
+This example demonstrates how to build a secure, production-ready MCP server that requires clients to authenticate using Bearer tokens:
+- **Streamable HTTP transport**: Handles `POST /mcp` for requests and `GET /mcp` (Server-Sent Events) for server-to-client messages.
+- **Authorization via `WWW-Authenticate`**: Challenges unauthenticated requests with `WWW-Authenticate: Bearer ...`.
+- **Token Verification**: Uses a custom `OAuthTokenVerifier` to validate Bearer tokens and enforce scope requirements (e.g., `mcp:read`, `mcp:write`).
+- **External Client-Driven Session Lifecycle**: Requires the standard `initialize` followed by `notifications/initialized` sequence.
+
+## Code Flow
+
+1. **Token Verifier**: Implements a custom `ExampleTokenVerifier` that checks if the incoming Bearer token is valid and has the required scopes.
+2. **Server Configuration**: Configures the `StreamableHttpServer` with `OAuthServerAuthorizationOptions`, pointing to the authorization server and defining required scopes.
+3. **TLS/HTTPS Setup**: Loads the provided SSL certificate and private key to start the server securely. (OAuth Bearer tokens MUST be transmitted over HTTPS).
+4. **Event Loop**: Starts the Boost.Asio event loop to listen for incoming HTTP/HTTPS connections.
 
 ## Build
 
@@ -14,23 +22,16 @@ cmake --preset vcpkg-unix-release -DMCP_SDK_BUILD_EXAMPLES=ON
 cmake --build build/vcpkg-unix-release --target mcp_sdk_example_http_server_auth
 ```
 
-Alternative (only when dependencies are already discoverable without vcpkg):
-
-```bash
-cmake -S . -B build -DMCP_SDK_BUILD_EXAMPLES=ON
-cmake --build build --target mcp_sdk_example_http_server_auth
-```
-
 ## Run (HTTPS required)
 
-Generate local certs first:
+Because authorization metadata and Bearer tokens require encryption, you must generate local TLS certificates first:
 
 ```bash
 chmod +x examples/http_server_auth/tls/generate_local_certs.sh
 ./examples/http_server_auth/tls/generate_local_certs.sh
 ```
 
-Then run:
+Then run the server:
 
 ```bash
 ./build/vcpkg-unix-release/examples/http_server_auth/mcp_sdk_example_http_server_auth \
@@ -40,11 +41,9 @@ Then run:
   --tls-key examples/http_server_auth/tls/localhost-key.pem
 ```
 
-`http_server_auth` requires HTTPS when authorization metadata is enabled.
-
 ## Verify Request Sequence
 
-With the server running, execute a minimal client flow:
+With the server running, you can execute a minimal client flow using Python to see the authorization challenge and successful token usage:
 
 ```bash
 python3 - <<'PY'
@@ -74,6 +73,7 @@ def post(payload, session_id=None):
         body = response.read().decode("utf-8")
         return response.getheader("MCP-Session-Id"), response.status, body
 
+# 1. Initialize
 session_id, status, initialize_body = post({
     "jsonrpc": "2.0",
     "id": 1,
@@ -86,20 +86,14 @@ session_id, status, initialize_body = post({
 })
 print("initialize status:", status)
 print("session id:", session_id)
-print("initialize body:", initialize_body)
 
+# 2. Initialized Notification
 _, status, _ = post({"jsonrpc": "2.0", "method": "notifications/initialized"}, session_id)
 print("notifications/initialized status:", status)
 
+# 3. Call Tool (Requires Auth)
 _, status, tools_body = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, session_id)
 print("tools/list status:", status)
 print("tools/list body:", tools_body)
 PY
 ```
-
-## Notes
-
-- Demo bearer tokens:
-  - `dev-token-read` (`mcp:read`)
-  - `dev-token-write` (`mcp:read mcp:write`)
-- Authorization metadata is published by the HTTP transport at `.well-known/oauth-protected-resource` paths.

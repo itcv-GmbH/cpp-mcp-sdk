@@ -3,7 +3,7 @@
 Streamable HTTP example demonstrating server-initiated messages via GET SSE listen.
 
 This example demonstrates:
-- In-process StreamableHttpServer setup with GET SSE support
+- In-process `StreamableHttpServer` setup with GET SSE (Server-Sent Events) support
 - Client configuration with `enableGetListen = true`
 - Roots provider setup for handling server-initiated requests
 - Complete round-trip: server enqueues `roots/list` → client receives via GET SSE → roots provider invoked → response sent back
@@ -12,21 +12,31 @@ This example demonstrates:
 
 The MCP 2025-11-25 transport specification introduced "Listening for Messages from the Server" - a mechanism for servers to send requests to clients without waiting for a client request. This is achieved via HTTP GET SSE (Server-Sent Events):
 
-- **Client-side**: Configure `HttpClientOptions.enableGetListen = true` to enable GET requests for receiving server-initiated messages
-- **Server-side**: Use `StreamableHttpServer::enqueueServerMessage()` to queue messages for delivery to connected clients
+- **Client-side**: Configure `HttpClientOptions.enableGetListen = true` to enable GET requests for receiving server-initiated messages.
+- **Server-side**: Use `StreamableHttpServer::enqueueServerMessage()` to queue messages for delivery to connected clients.
 
 ## Key Concepts
 
 ### Server-Initiated Requests
-
-Normally MCP follows a request-response pattern where only clients send requests. With GET SSE listen, servers can send:
-- `roots/list` - request the client's roots
+Normally MCP follows a request-response pattern where only clients send requests. With GET SSE listen, servers can send requests to the client, such as:
+- `roots/list` - request the client's roots (directories the server is allowed to access)
 - `sampling/createMessage` - request the client to sample from an LLM
 - `elicitation/create` - request user input from the client
 
 ### Roots Provider
+When a client sets up a roots provider via `client->setRootsProvider(...)`, it becomes capable of responding to server-initiated `roots/list` requests. This is essential for server-initiated messaging workflows.
 
-When a client sets up a roots provider via `Client::setRootsProvider()`, it becomes capable of responding to server-initiated `roots/list` requests. This is essential for server-initiated messaging workflows.
+## Code Flow
+
+1. **Create In-Process Server**: Create a `StreamableHttpServer` instance to handle requests.
+2. **Configure Server Handlers**: Set up a request handler to return `useSse=true` in the initialize response.
+3. **Create Client**: Connect via HTTP with `enableGetListen = true`.
+4. **Set Roots Provider**: Register a callback for handling server-initiated `roots/list` requests.
+5. **Initialize**: Client sends the `initialize` request, server returns roots capability + `useSse=true`.
+6. **Server Enqueues Message**: Server calls `server.enqueueServerMessage()` requesting `roots/list`.
+7. **Client Processes**: Client receives the request via GET SSE and invokes the roots provider callback.
+8. **Response Sent Back**: Client sends the response with roots data back to the server.
+9. **Server Verifies**: Server validates that the response contains the expected roots data.
 
 ## Build
 
@@ -42,7 +52,6 @@ cmake --build build/vcpkg-unix-release --target mcp_sdk_example_http_listen
 ```
 
 ## Expected Output
-
 ```
 === Creating In-Process HTTP Server ===
 
@@ -65,25 +74,4 @@ cmake --build build/vcpkg-unix-release --target mcp_sdk_example_http_listen
 
 === Shutting Down ===
 === Example completed successfully ===
-
-Server-initiated message flow demonstrated:
-  1. Server returned useSse=true in initialize response
-  2. Client enabled GET SSE listen
-  3. Server called enqueueServerMessage(roots/list)
-  4. Client received request via GET SSE
-  5. Client invoked roots provider callback
-  6. Client sent response back to server
-  7. Server received and validated response
 ```
-
-## Code Flow
-
-1. **Create In-Process Server**: Create a `StreamableHttpServer` instance to handle requests
-2. **Configure Server Handlers**: Set up request handler to return `useSse=true` in initialize response
-3. **Create Client**: Connect via HTTP with `enableGetListen = true`
-4. **Set Roots Provider**: Register a callback for handling server-initiated roots/list requests
-5. **Initialize**: Client sends initialize request, server returns roots capability + useSse=true
-6. **Server Enqueues Message**: Server calls `server.enqueueServerMessage(roots/list request)`
-7. **Client Processes**: Client receives request via GET SSE, invokes roots provider
-8. **Response Sent Back**: Client sends response with roots data to server
-9. **Server Verifies**: Server validates response contains expected roots data
