@@ -1,8 +1,8 @@
 # MCP C++ SDK
 
-[![CI](https://github.com/itcv-GmbH/cpp-mcp-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/itcv-GmbH/cpp-mcp-sdk/actions/workflows/ci.yml)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/itcv-GmbH/cpp-mcp-sdk/ci.yml?branch=main&label=CI%20%7C%20Linux%20%E2%80%A2%20macOS%20%E2%80%A2%20Windows&logo=github)](https://github.com/itcv-GmbH/cpp-mcp-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg&logo=c%2B%2B)](https://isocpp.org/)
 [![MCP Spec](https://img.shields.io/badge/MCP-2025--11--25-green.svg)](https://modelcontextprotocol.io/)
 
 **The first fully MCP 2025-11-25 compliant C++ SDK** - Build production-ready MCP servers and clients with complete protocol support including Streamable HTTP transport and OAuth-based authorization.
