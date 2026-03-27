@@ -70,7 +70,7 @@ TEST_CASE("Stdio transport rejects embedded CR and CRLF framing violations", "[t
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options;
+  mcp::transport::StdioAttachOptions options;
   options.allowStderrLogs = true;
   options.emitParseErrors = false;
 
@@ -100,7 +100,7 @@ TEST_CASE("Stdio transport rejects invalid UTF-8 inbound data", "[transport][std
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options;
+  mcp::transport::StdioAttachOptions options;
   options.allowStderrLogs = true;
   options.emitParseErrors = false;
 
@@ -121,7 +121,7 @@ TEST_CASE("Stdio attach rejects partial EOF frame and does not route it", "[tran
   std::ostringstream simulatedServerStdin;
   std::ostringstream stderrCapture;
 
-  const mcp::transport::StdioAttachOptions options;
+  mcp::transport::StdioAttachOptions options;
   options.allowStderrLogs = true;
   options.emitParseErrors = true;
 
@@ -178,7 +178,7 @@ TEST_CASE("Stdio transport rejects embedded LF framing violations", "[transport]
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options;
+  mcp::transport::StdioAttachOptions options;
   options.allowStderrLogs = true;
   options.emitParseErrors = false;
 
@@ -197,7 +197,7 @@ TEST_CASE("Stdio transport emits JSON-RPC parse errors when emitParseErrors is t
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options;
+  mcp::transport::StdioAttachOptions options;
   options.allowStderrLogs = true;
   options.emitParseErrors = true;
 
@@ -315,7 +315,7 @@ TEST_CASE("Stdio transport handles empty lines and whitespace-only lines", "[tra
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options;
+  mcp::transport::StdioAttachOptions options;
   options.allowStderrLogs = true;
   options.emitParseErrors = false;
 
@@ -372,7 +372,7 @@ TEST_CASE("Stdio transport parse error emission keeps stdout MCP-only", "[transp
 
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
-  const mcp::transport::StdioAttachOptions options;
+  mcp::transport::StdioAttachOptions options;
   options.allowStderrLogs = true;
   options.emitParseErrors = true;
 
@@ -502,7 +502,7 @@ TEST_CASE("StdioTransport instance API is deprecated and throws with clear guida
 
     std::ostringstream stdoutCapture;
     std::ostringstream stderrCapture;
-    const mcp::transport::StdioAttachOptions attachOptions;
+    mcp::transport::StdioAttachOptions attachOptions;
     attachOptions.allowStderrLogs = true;
     attachOptions.emitParseErrors = false;
 

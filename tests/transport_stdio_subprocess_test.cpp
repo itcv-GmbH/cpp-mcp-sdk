@@ -141,7 +141,7 @@ TEST_CASE("Stdio subprocess client shutdown is idempotent", "[transport][stdio][
 
   requirePingRoundTrip(subprocess, 31);
 
-  const mcp::transport::StdioSubprocessShutdownOptions shutdownOptions;
+  mcp::transport::StdioSubprocessShutdownOptions shutdownOptions;
   shutdownOptions.waitForExitTimeout = std::chrono::milliseconds {1000};
   shutdownOptions.waitAfterTerminateTimeout = std::chrono::milliseconds {1000};
 

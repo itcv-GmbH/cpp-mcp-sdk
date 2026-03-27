@@ -68,7 +68,7 @@ TEST_CASE("stdio transport enforces newline framing", "[conformance][transport][
   std::ostringstream stdoutCapture;
   std::ostringstream stderrCapture;
 
-  const mcp::transport::StdioAttachOptions options;
+  mcp::transport::StdioAttachOptions options;
   options.allowStderrLogs = true;
   options.emitParseErrors = false;
 
