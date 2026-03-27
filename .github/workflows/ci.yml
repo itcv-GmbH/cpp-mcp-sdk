@@ -111,7 +111,7 @@ jobs:
             -D MCP_SDK_BUILD_EXAMPLES=OFF
 
       - name: Build
-        run: cmake --build "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --parallel
+        run: cmake --build "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" --config "${{ matrix.build_type }}" --parallel
 
       - name: Test (ctest)
         run: ctest --test-dir "build/ci-${{ matrix.target }}-${{ matrix.build_type }}" -C "${{ matrix.build_type }}" --output-on-failure

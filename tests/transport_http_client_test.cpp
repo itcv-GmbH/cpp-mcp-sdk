@@ -744,7 +744,6 @@ TEST_CASE("HTTP client supports concurrent send and pollListenStream", "[transpo
 
   std::atomic<std::size_t> sendSuccessCount {0};
   std::atomic<std::size_t> pollSuccessCount {0};
-  std::atomic<bool> testRunning {true};
 
   mcp_http::StreamableHttpClientOptions options = makeClientOptions();
   options.defaultRetryMilliseconds = 10;
@@ -755,9 +754,9 @@ TEST_CASE("HTTP client supports concurrent send and pollListenStream", "[transpo
   auto startTime = std::chrono::steady_clock::now();
 
   std::thread sendThread(
-    [&client, &sendSuccessCount, &testRunning, &startTime, &kSendCount]()
+    [&client, &sendSuccessCount, &startTime, &kSendCount]()
     {
-      for (std::size_t i = 0; i < kSendCount && testRunning.load(); ++i)
+      for (std::size_t i = 0; i < kSendCount; ++i)
       {
         try
         {
@@ -774,7 +773,7 @@ TEST_CASE("HTTP client supports concurrent send and pollListenStream", "[transpo
       }
     });
 
-  auto pollThreadFunc = [&client, &pollSuccessCount, &testRunning, &startTime, &kPollCount, &kMaxWaitTime]() -> void
+  auto pollThreadFunc = [&client, &pollSuccessCount, &startTime, &kPollCount, &kMaxWaitTime]() -> void
   {
     try
     {
@@ -784,7 +783,7 @@ TEST_CASE("HTTP client supports concurrent send and pollListenStream", "[transpo
         return;
       }
 
-      for (std::size_t i = 0; i < kPollCount && testRunning.load(); ++i)
+      for (std::size_t i = 0; i < kPollCount; ++i)
       {
         try
         {
@@ -812,7 +811,6 @@ TEST_CASE("HTTP client supports concurrent send and pollListenStream", "[transpo
   std::thread pollThread(pollThreadFunc);
 
   sendThread.join();
-  testRunning.store(false);
   pollThread.join();
 
   auto elapsed = std::chrono::steady_clock::now() - startTime;
