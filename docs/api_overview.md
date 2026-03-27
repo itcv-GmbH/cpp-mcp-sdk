@@ -73,7 +73,7 @@ The SDK provides runners for different transport types. The following rules defi
   - `include/mcp/sdk/version.hpp` defines protocol and SDK version constants and negotiated-version accessors.
   - `include/mcp/sdk/errors.hpp` defines structured JSON-RPC error data (`code`, `message`, `data`).
 - Server runners (high-level transport orchestration):
-  - `include/mcp/server/runners.hpp` provides access to all runner types via convenience includes.
+  - `include/mcp/server/all.hpp` provides access to all server and runner types via convenience includes.
   - `include/mcp/server/stdio_runner.hpp` defines `mcp::server::StdioServerRunner` for STDIO transport.
   - `include/mcp/server/streamable_http_runner.hpp` defines `mcp::server::StreamableHttpServerRunner` for Streamable HTTP.
   - `include/mcp/server/combined_runner.hpp` defines `mcp::server::CombinedServerRunner` for multi-transport servers.

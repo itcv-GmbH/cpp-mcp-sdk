@@ -100,6 +100,6 @@ All dependencies are linked via imported CMake targets (no FetchContent).
 
 The following may be added in future versions:
 
-- **fmt**: For formatting (if std::format is insufficient for C++17)
+- **fmt**: For formatting (since `std::format` is not available in C++17)
 - **spdlog**: For structured logging (optional feature)
 - **zlib**: For compression support in HTTP transport
