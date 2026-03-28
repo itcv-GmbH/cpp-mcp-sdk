@@ -377,13 +377,7 @@ auto Server::registerTool(ToolDefinition definition, ToolHandler handler) -> voi
 
   {
     const std::scoped_lock lock(toolsMutex_);
-    const auto existingTool =
-      std::find_if(tools_.begin(), tools_.end(), [&definition](const RegisteredTool &registeredTool) -> bool { return registeredTool.definition.name == definition.name; });
-    if (existingTool != tools_.end())
-    {
-      throw std::invalid_argument("Tool already registered: " + definition.name);
-    }
-
+    detail::throwIfDuplicateExists(tools_, definition.name, [](const RegisteredTool &registeredTool) -> std::string_view { return registeredTool.definition.name; }, "Tool");
     tools_.push_back(RegisteredTool {std::move(definition), std::move(handler)});
   }
 
@@ -451,13 +445,8 @@ auto Server::registerResource(ResourceDefinition definition, ResourceReadHandler
 
   {
     const std::scoped_lock lock(resourcesMutex_);
-    const auto existingResource = std::find_if(
-      resources_.begin(), resources_.end(), [&definition](const RegisteredResource &registeredResource) -> bool { return registeredResource.definition.uri == definition.uri; });
-    if (existingResource != resources_.end())
-    {
-      throw std::invalid_argument("Resource already registered: " + definition.uri);
-    }
-
+    detail::throwIfDuplicateExists(
+      resources_, definition.uri, [](const RegisteredResource &registeredResource) -> std::string_view { return registeredResource.definition.uri; }, "Resource");
     resources_.push_back(RegisteredResource {std::move(definition), std::move(handler)});
   }
 
@@ -506,15 +495,11 @@ auto Server::registerResourceTemplate(ResourceTemplateDefinition definition) -> 
 
   {
     const std::scoped_lock lock(resourcesMutex_);
-    const auto existingTemplate =
-      std::find_if(resourceTemplates_.begin(),
-                   resourceTemplates_.end(),
-                   [&definition](const ResourceTemplateDefinition &templateDefinition) -> bool { return templateDefinition.uriTemplate == definition.uriTemplate; });
-    if (existingTemplate != resourceTemplates_.end())
-    {
-      throw std::invalid_argument("Resource template already registered: " + definition.uriTemplate);
-    }
-
+    detail::throwIfDuplicateExists(
+      resourceTemplates_,
+      definition.uriTemplate,
+      [](const ResourceTemplateDefinition &templateDefinition) -> std::string_view { return templateDefinition.uriTemplate; },
+      "Resource template");
     resourceTemplates_.push_back(std::move(definition));
   }
 
@@ -567,12 +552,8 @@ auto Server::registerPrompt(PromptDefinition definition, PromptHandler handler) 
 
   {
     const std::scoped_lock lock(promptsMutex_);
-    const auto existingPrompt = std::find_if(
-      prompts_.begin(), prompts_.end(), [&definition](const RegisteredPrompt &registeredPrompt) -> bool { return registeredPrompt.definition.name == definition.name; });
-    if (existingPrompt != prompts_.end())
-    {
-      throw std::invalid_argument("Prompt already registered: " + definition.name);
-    }
+    detail::throwIfDuplicateExists(
+      prompts_, definition.name, [](const RegisteredPrompt &registeredPrompt) -> std::string_view { return registeredPrompt.definition.name; }, "Prompt");
 
     for (std::size_t argumentIndex = 0; argumentIndex < definition.arguments.size(); ++argumentIndex)
     {
@@ -1337,6 +1318,7 @@ auto Server::handleResourcesUnsubscribeRequest(const jsonrpc::RequestContext &co
   return response;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 auto Server::handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
 {
   std::optional<jsonrpc::Response> errorResponse;

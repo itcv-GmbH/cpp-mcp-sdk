@@ -88,6 +88,15 @@ MCP_SDK_EXPORT auto endpointName(ListEndpoint endpoint) -> std::string_view;
 MCP_SDK_EXPORT auto validateParamsObject(const jsonrpc::Request &request, std::string_view methodName) -> std::optional<jsonrpc::Response>;
 
 template<typename Container, typename GetNameFn>
-auto throwIfDuplicateExists(const Container &container, std::string_view name, GetNameFn &&getNameFn, std::string_view itemType) -> void;
+auto throwIfDuplicateExists(const Container &container, std::string_view name, GetNameFn &&getNameFn, std::string_view itemType) -> void
+{
+  const auto existing =
+    std::find_if(container.begin(), container.end(), [&name, &getNameFn](const auto &item) -> bool { return std::forward<GetNameFn>(getNameFn)(item) == name; });
+
+  if (existing != container.end())
+  {
+    throw std::invalid_argument(std::string(itemType) + " already registered: " + std::string(name));
+  }
+}
 
 }  // namespace mcp::server::detail

@@ -26,13 +26,16 @@ auto applyPagination(ListEndpoint endpoint,
                      std::optional<jsonrpc::Response> *errorResponse = nullptr) -> PaginationWindow;
 
 template<typename T, typename SerializeFn>
-auto buildListResponse(const jsonrpc::RequestId &requestId, const std::vector<T> &items, const PaginationWindow &window, SerializeFn &&serializeFn, std::string_view resultKey)
-  -> jsonrpc::SuccessResponse
+auto buildListResponse(const jsonrpc::RequestId &requestId,
+                       const std::vector<T> &items,
+                       const PaginationWindow &window,
+                       SerializeFn &&serializeFn,  // NOLINT(cppcoreguidelines-missing-std-forward) - called multiple times, cannot forward
+                       std::string_view resultKey) -> jsonrpc::SuccessResponse
 {
   jsonrpc::JsonValue itemsJson = jsonrpc::JsonValue::array();
   for (std::size_t index = window.startIndex; index < window.endIndex; ++index)
   {
-    itemsJson.push_back(std::forward<SerializeFn>(serializeFn)(items[index]));
+    itemsJson.push_back(serializeFn(items[index]));
   }
 
   jsonrpc::SuccessResponse response;

@@ -580,15 +580,4 @@ auto validateParamsObject(const jsonrpc::Request &request, std::string_view meth
   return std::nullopt;
 }
 
-template<typename Container, typename GetNameFn>
-auto throwIfDuplicateExists(const Container &container, std::string_view name, GetNameFn &&getNameFn, std::string_view itemType) -> void
-{
-  const auto existing = std::find_if(container.begin(), container.end(), [&name, &getNameFn](const auto &item) -> bool { return getNameFn(item) == name; });
-
-  if (existing != container.end())
-  {
-    throw std::invalid_argument(std::string(itemType) + " already registered: " + std::string(name));
-  }
-}
-
 }  // namespace mcp::server::detail
