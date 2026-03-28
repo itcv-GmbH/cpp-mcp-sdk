@@ -552,4 +552,43 @@ auto capabilityForMethod(std::string_view method) -> std::optional<std::string_v
   return std::nullopt;
 }
 
+auto endpointName(ListEndpoint endpoint) -> std::string_view
+{
+  switch (endpoint)
+  {
+    case ListEndpoint::kTools:
+      return "tools";
+    case ListEndpoint::kResources:
+      return "resources";
+    case ListEndpoint::kResourceTemplates:
+      return "resource_templates";
+    case ListEndpoint::kPrompts:
+      return "prompts";
+    case ListEndpoint::kTasks:
+      return "tasks";
+  }
+
+  return "unknown";
+}
+
+auto validateParamsObject(const jsonrpc::Request &request, std::string_view methodName) -> std::optional<jsonrpc::Response>
+{
+  if (!request.params.has_value() || !request.params->is_object())
+  {
+    return detail::makeInvalidParamsResponse(request.id, std::string(methodName) + " requires params object");
+  }
+  return std::nullopt;
+}
+
+template<typename Container, typename GetNameFn>
+auto throwIfDuplicateExists(const Container &container, std::string_view name, GetNameFn &&getNameFn, std::string_view itemType) -> void
+{
+  const auto existing = std::find_if(container.begin(), container.end(), [&name, &getNameFn](const auto &item) -> bool { return getNameFn(item) == name; });
+
+  if (existing != container.end())
+  {
+    throw std::invalid_argument(std::string(itemType) + " already registered: " + std::string(name));
+  }
+}
+
 }  // namespace mcp::server::detail

@@ -84,5 +84,10 @@ MCP_SDK_EXPORT auto logLevelToString(LogLevel level) -> std::string_view;
 MCP_SDK_EXPORT auto parseLogLevel(std::string_view level) -> std::optional<LogLevel>;
 MCP_SDK_EXPORT auto logLevelWeight(LogLevel level) -> int;
 MCP_SDK_EXPORT auto capabilityForMethod(std::string_view method) -> std::optional<std::string_view>;
+MCP_SDK_EXPORT auto endpointName(ListEndpoint endpoint) -> std::string_view;
+MCP_SDK_EXPORT auto validateParamsObject(const jsonrpc::Request &request, std::string_view methodName) -> std::optional<jsonrpc::Response>;
+
+template<typename Container, typename GetNameFn>
+auto throwIfDuplicateExists(const Container &container, std::string_view name, GetNameFn &&getNameFn, std::string_view itemType) -> void;
 
 }  // namespace mcp::server::detail

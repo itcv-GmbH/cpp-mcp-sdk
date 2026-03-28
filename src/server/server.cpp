@@ -42,6 +42,7 @@
 #include "mcp/server/completion_request.hpp"
 #include "mcp/server/completion_result.hpp"
 #include "mcp/server/detail/helpers.hpp"
+#include "mcp/server/detail/list_handler_helpers.hpp"
 #include "mcp/server/list_endpoint.hpp"
 #include "mcp/server/log_level.hpp"
 #include "mcp/server/pagination_window.hpp"
@@ -840,25 +841,14 @@ auto Server::registerCoreHandlers() -> void
                                  { return detail::makeReadyResponseFuture(handleTasksCancelRequest(context, request)); });
 }
 
-auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
+auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
 {
-  std::optional<std::string> cursor;
-  if (request.params.has_value())
+  std::optional<jsonrpc::Response> errorResponse;
+
+  const auto cursor = detail::parseCursorFromParams(request, ListEndpoint::kTools, &errorResponse);
+  if (errorResponse.has_value())
   {
-    if (!request.params->is_object())
-    {
-      return detail::makeInvalidParamsResponse(request.id, "tools/list requires params to be an object when provided");
-    }
-
-    if (request.params->contains("cursor"))
-    {
-      if (!(*request.params)["cursor"].is_string())
-      {
-        return detail::makeInvalidParamsResponse(request.id, "tools/list requires params.cursor to be a string");
-      }
-
-      cursor = (*request.params)["cursor"].as<std::string>();
-    }
+    return *errorResponse;
   }
 
   std::vector<ToolDefinition> toolDefinitions;
@@ -871,65 +861,52 @@ auto Server::handleToolsListRequest(const jsonrpc::Request &request) -> jsonrpc:
     }
   }
 
-  PaginationWindow window;
-  try
+  const auto window = detail::applyPagination(ListEndpoint::kTools, cursor, toolDefinitions.size(), detail::kToolsPageSize, &errorResponse);
+  if (errorResponse.has_value())
   {
-    window = paginateList(ListEndpoint::kTools, cursor, toolDefinitions.size(), detail::kToolsPageSize);
-  }
-  catch (const std::invalid_argument &)
-  {
-    return detail::makeInvalidParamsResponse(request.id, "Invalid tools/list cursor");
+    return *errorResponse;
   }
 
-  jsonrpc::JsonValue toolsJson = jsonrpc::JsonValue::array();
-  for (std::size_t index = window.startIndex; index < window.endIndex; ++index)
-  {
-    const ToolDefinition &definition = toolDefinitions[index];
-    jsonrpc::JsonValue toolJson = jsonrpc::JsonValue::object();
-    toolJson["name"] = definition.name;
-    if (definition.title.has_value())
+  return detail::buildListResponse(
+    request.id,
+    toolDefinitions,
+    window,
+    [](const ToolDefinition &def) -> jsonrpc::JsonValue
     {
-      toolJson["title"] = *definition.title;
-    }
-    if (definition.description.has_value())
-    {
-      toolJson["description"] = *definition.description;
-    }
-    if (definition.icons.has_value())
-    {
-      toolJson["icons"] = *definition.icons;
-    }
-    toolJson["inputSchema"] = definition.inputSchema;
-    if (definition.outputSchema.has_value())
-    {
-      toolJson["outputSchema"] = *definition.outputSchema;
-    }
-    if (definition.annotations.has_value())
-    {
-      toolJson["annotations"] = *definition.annotations;
-    }
-    if (definition.execution.has_value())
-    {
-      toolJson["execution"] = *definition.execution;
-    }
-    if (definition.metadata.has_value())
-    {
-      toolJson["_meta"] = *definition.metadata;
-    }
-
-    toolsJson.push_back(std::move(toolJson));
-  }
-
-  jsonrpc::SuccessResponse response;
-  response.id = request.id;
-  response.result = jsonrpc::JsonValue::object();
-  response.result["tools"] = std::move(toolsJson);
-  if (window.nextCursor.has_value())
-  {
-    response.result["nextCursor"] = *window.nextCursor;
-  }
-
-  return response;
+      jsonrpc::JsonValue toolJson = jsonrpc::JsonValue::object();
+      toolJson["name"] = def.name;
+      if (def.title.has_value())
+      {
+        toolJson["title"] = *def.title;
+      }
+      if (def.description.has_value())
+      {
+        toolJson["description"] = *def.description;
+      }
+      if (def.icons.has_value())
+      {
+        toolJson["icons"] = *def.icons;
+      }
+      toolJson["inputSchema"] = def.inputSchema;
+      if (def.outputSchema.has_value())
+      {
+        toolJson["outputSchema"] = *def.outputSchema;
+      }
+      if (def.annotations.has_value())
+      {
+        toolJson["annotations"] = *def.annotations;
+      }
+      if (def.execution.has_value())
+      {
+        toolJson["execution"] = *def.execution;
+      }
+      if (def.metadata.has_value())
+      {
+        toolJson["_meta"] = *def.metadata;
+      }
+      return toolJson;
+    },
+    "tools");
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -1073,25 +1050,14 @@ auto Server::handleToolsCallRequest(const jsonrpc::RequestContext &context, cons
   return response;
 }
 
-auto Server::handleResourcesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
+auto Server::handleResourcesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
 {
-  std::optional<std::string> cursor;
-  if (request.params.has_value())
+  std::optional<jsonrpc::Response> errorResponse;
+
+  const auto cursor = detail::parseCursorFromParams(request, ListEndpoint::kResources, &errorResponse);
+  if (errorResponse.has_value())
   {
-    if (!request.params->is_object())
-    {
-      return detail::makeInvalidParamsResponse(request.id, "resources/list requires params to be an object when provided");
-    }
-
-    if (request.params->contains("cursor"))
-    {
-      if (!(*request.params)["cursor"].is_string())
-      {
-        return detail::makeInvalidParamsResponse(request.id, "resources/list requires params.cursor to be a string");
-      }
-
-      cursor = (*request.params)["cursor"].as<std::string>();
-    }
+    return *errorResponse;
   }
 
   std::vector<ResourceDefinition> definitions;
@@ -1104,65 +1070,52 @@ auto Server::handleResourcesListRequest(const jsonrpc::Request &request) -> json
     }
   }
 
-  PaginationWindow window;
-  try
+  const auto window = detail::applyPagination(ListEndpoint::kResources, cursor, definitions.size(), detail::kResourcesPageSize, &errorResponse);
+  if (errorResponse.has_value())
   {
-    window = paginateList(ListEndpoint::kResources, cursor, definitions.size(), detail::kResourcesPageSize);
-  }
-  catch (const std::invalid_argument &)
-  {
-    return detail::makeInvalidParamsResponse(request.id, "Invalid resources/list cursor");
+    return *errorResponse;
   }
 
-  jsonrpc::JsonValue resourcesJson = jsonrpc::JsonValue::array();
-  for (std::size_t index = window.startIndex; index < window.endIndex; ++index)
-  {
-    const auto &definition = definitions[index];
-    jsonrpc::JsonValue resourceJson = jsonrpc::JsonValue::object();
-    resourceJson["uri"] = definition.uri;
-    resourceJson["name"] = definition.name;
-    if (definition.title.has_value())
+  return detail::buildListResponse(
+    request.id,
+    definitions,
+    window,
+    [](const ResourceDefinition &def) -> jsonrpc::JsonValue
     {
-      resourceJson["title"] = *definition.title;
-    }
-    if (definition.description.has_value())
-    {
-      resourceJson["description"] = *definition.description;
-    }
-    if (definition.icons.has_value())
-    {
-      resourceJson["icons"] = *definition.icons;
-    }
-    if (definition.mimeType.has_value())
-    {
-      resourceJson["mimeType"] = *definition.mimeType;
-    }
-    if (definition.size.has_value())
-    {
-      resourceJson["size"] = *definition.size;
-    }
-    if (definition.annotations.has_value())
-    {
-      resourceJson["annotations"] = *definition.annotations;
-    }
-    if (definition.metadata.has_value())
-    {
-      resourceJson["_meta"] = *definition.metadata;
-    }
-
-    resourcesJson.push_back(std::move(resourceJson));
-  }
-
-  jsonrpc::SuccessResponse response;
-  response.id = request.id;
-  response.result = jsonrpc::JsonValue::object();
-  response.result["resources"] = std::move(resourcesJson);
-  if (window.nextCursor.has_value())
-  {
-    response.result["nextCursor"] = *window.nextCursor;
-  }
-
-  return response;
+      jsonrpc::JsonValue resourceJson = jsonrpc::JsonValue::object();
+      resourceJson["uri"] = def.uri;
+      resourceJson["name"] = def.name;
+      if (def.title.has_value())
+      {
+        resourceJson["title"] = *def.title;
+      }
+      if (def.description.has_value())
+      {
+        resourceJson["description"] = *def.description;
+      }
+      if (def.icons.has_value())
+      {
+        resourceJson["icons"] = *def.icons;
+      }
+      if (def.mimeType.has_value())
+      {
+        resourceJson["mimeType"] = *def.mimeType;
+      }
+      if (def.size.has_value())
+      {
+        resourceJson["size"] = *def.size;
+      }
+      if (def.annotations.has_value())
+      {
+        resourceJson["annotations"] = *def.annotations;
+      }
+      if (def.metadata.has_value())
+      {
+        resourceJson["_meta"] = *def.metadata;
+      }
+      return resourceJson;
+    },
+    "resources");
 }
 
 auto Server::handleResourcesReadRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
@@ -1254,23 +1207,12 @@ auto Server::handleResourcesReadRequest(const jsonrpc::RequestContext &context, 
 
 auto Server::handleResourceTemplatesListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
 {
-  std::optional<std::string> cursor;
-  if (request.params.has_value())
+  std::optional<jsonrpc::Response> errorResponse;
+
+  const auto cursor = detail::parseCursorFromParams(request, ListEndpoint::kResourceTemplates, &errorResponse);
+  if (errorResponse.has_value())
   {
-    if (!request.params->is_object())
-    {
-      return detail::makeInvalidParamsResponse(request.id, "resources/templates/list requires params to be an object when provided");
-    }
-
-    if (request.params->contains("cursor"))
-    {
-      if (!(*request.params)["cursor"].is_string())
-      {
-        return detail::makeInvalidParamsResponse(request.id, "resources/templates/list requires params.cursor to be a string");
-      }
-
-      cursor = (*request.params)["cursor"].as<std::string>();
-    }
+    return *errorResponse;
   }
 
   std::vector<ResourceTemplateDefinition> templates;
@@ -1279,61 +1221,48 @@ auto Server::handleResourceTemplatesListRequest(const jsonrpc::Request &request)
     templates = resourceTemplates_;
   }
 
-  PaginationWindow window;
-  try
+  const auto window = detail::applyPagination(ListEndpoint::kResourceTemplates, cursor, templates.size(), detail::kResourceTemplatesPageSize, &errorResponse);
+  if (errorResponse.has_value())
   {
-    window = paginateList(ListEndpoint::kResourceTemplates, cursor, templates.size(), detail::kResourceTemplatesPageSize);
-  }
-  catch (const std::invalid_argument &)
-  {
-    return detail::makeInvalidParamsResponse(request.id, "Invalid resources/templates/list cursor");
+    return *errorResponse;
   }
 
-  jsonrpc::JsonValue templatesJson = jsonrpc::JsonValue::array();
-  for (std::size_t index = window.startIndex; index < window.endIndex; ++index)
-  {
-    const auto &templateDefinition = templates[index];
-    jsonrpc::JsonValue templateJson = jsonrpc::JsonValue::object();
-    templateJson["uriTemplate"] = templateDefinition.uriTemplate;
-    templateJson["name"] = templateDefinition.name;
-    if (templateDefinition.title.has_value())
+  return detail::buildListResponse(
+    request.id,
+    templates,
+    window,
+    [](const ResourceTemplateDefinition &def) -> jsonrpc::JsonValue
     {
-      templateJson["title"] = *templateDefinition.title;
-    }
-    if (templateDefinition.description.has_value())
-    {
-      templateJson["description"] = *templateDefinition.description;
-    }
-    if (templateDefinition.icons.has_value())
-    {
-      templateJson["icons"] = *templateDefinition.icons;
-    }
-    if (templateDefinition.mimeType.has_value())
-    {
-      templateJson["mimeType"] = *templateDefinition.mimeType;
-    }
-    if (templateDefinition.annotations.has_value())
-    {
-      templateJson["annotations"] = *templateDefinition.annotations;
-    }
-    if (templateDefinition.metadata.has_value())
-    {
-      templateJson["_meta"] = *templateDefinition.metadata;
-    }
-
-    templatesJson.push_back(std::move(templateJson));
-  }
-
-  jsonrpc::SuccessResponse response;
-  response.id = request.id;
-  response.result = jsonrpc::JsonValue::object();
-  response.result["resourceTemplates"] = std::move(templatesJson);
-  if (window.nextCursor.has_value())
-  {
-    response.result["nextCursor"] = *window.nextCursor;
-  }
-
-  return response;
+      jsonrpc::JsonValue templateJson = jsonrpc::JsonValue::object();
+      templateJson["uriTemplate"] = def.uriTemplate;
+      templateJson["name"] = def.name;
+      if (def.title.has_value())
+      {
+        templateJson["title"] = *def.title;
+      }
+      if (def.description.has_value())
+      {
+        templateJson["description"] = *def.description;
+      }
+      if (def.icons.has_value())
+      {
+        templateJson["icons"] = *def.icons;
+      }
+      if (def.mimeType.has_value())
+      {
+        templateJson["mimeType"] = *def.mimeType;
+      }
+      if (def.annotations.has_value())
+      {
+        templateJson["annotations"] = *def.annotations;
+      }
+      if (def.metadata.has_value())
+      {
+        templateJson["_meta"] = *def.metadata;
+      }
+      return templateJson;
+    },
+    "resourceTemplates");
 }
 
 auto Server::handleResourcesSubscribeRequest(const jsonrpc::RequestContext &context, const jsonrpc::Request &request) -> jsonrpc::Response
@@ -1408,25 +1337,14 @@ auto Server::handleResourcesUnsubscribeRequest(const jsonrpc::RequestContext &co
   return response;
 }
 
-auto Server::handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response  // NOLINT(readability-function-cognitive-complexity)
+auto Server::handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrpc::Response
 {
-  std::optional<std::string> cursor;
-  if (request.params.has_value())
+  std::optional<jsonrpc::Response> errorResponse;
+
+  const auto cursor = detail::parseCursorFromParams(request, ListEndpoint::kPrompts, &errorResponse);
+  if (errorResponse.has_value())
   {
-    if (!request.params->is_object())
-    {
-      return detail::makeInvalidParamsResponse(request.id, "prompts/list requires params to be an object when provided");
-    }
-
-    if (request.params->contains("cursor"))
-    {
-      if (!(*request.params)["cursor"].is_string())
-      {
-        return detail::makeInvalidParamsResponse(request.id, "prompts/list requires params.cursor to be a string");
-      }
-
-      cursor = (*request.params)["cursor"].as<std::string>();
-    }
+    return *errorResponse;
   }
 
   std::vector<PromptDefinition> promptDefinitions;
@@ -1439,80 +1357,67 @@ auto Server::handlePromptsListRequest(const jsonrpc::Request &request) -> jsonrp
     }
   }
 
-  PaginationWindow window;
-  try
+  const auto window = detail::applyPagination(ListEndpoint::kPrompts, cursor, promptDefinitions.size(), detail::kPromptsPageSize, &errorResponse);
+  if (errorResponse.has_value())
   {
-    window = paginateList(ListEndpoint::kPrompts, cursor, promptDefinitions.size(), detail::kPromptsPageSize);
-  }
-  catch (const std::invalid_argument &)
-  {
-    return detail::makeInvalidParamsResponse(request.id, "Invalid prompts/list cursor");
+    return *errorResponse;
   }
 
-  jsonrpc::JsonValue promptsJson = jsonrpc::JsonValue::array();
-  for (std::size_t index = window.startIndex; index < window.endIndex; ++index)
-  {
-    const PromptDefinition &definition = promptDefinitions[index];
-    jsonrpc::JsonValue promptJson = jsonrpc::JsonValue::object();
-    promptJson["name"] = definition.name;
-    if (definition.title.has_value())
+  return detail::buildListResponse(
+    request.id,
+    promptDefinitions,
+    window,
+    [](const PromptDefinition &def) -> jsonrpc::JsonValue
     {
-      promptJson["title"] = *definition.title;
-    }
-    if (definition.description.has_value())
-    {
-      promptJson["description"] = *definition.description;
-    }
-    if (definition.icons.has_value())
-    {
-      promptJson["icons"] = *definition.icons;
-    }
-    if (!definition.arguments.empty())
-    {
-      jsonrpc::JsonValue argumentsJson = jsonrpc::JsonValue::array();
-      for (const auto &argument : definition.arguments)
+      jsonrpc::JsonValue promptJson = jsonrpc::JsonValue::object();
+      promptJson["name"] = def.name;
+      if (def.title.has_value())
       {
-        jsonrpc::JsonValue argumentJson = jsonrpc::JsonValue::object();
-        argumentJson["name"] = argument.name;
-        if (argument.title.has_value())
-        {
-          argumentJson["title"] = *argument.title;
-        }
-        if (argument.description.has_value())
-        {
-          argumentJson["description"] = *argument.description;
-        }
-        if (argument.required.has_value())
-        {
-          argumentJson["required"] = *argument.required;
-        }
-        if (argument.metadata.has_value())
-        {
-          argumentJson["_meta"] = *argument.metadata;
-        }
-        argumentsJson.push_back(std::move(argumentJson));
+        promptJson["title"] = *def.title;
       }
+      if (def.description.has_value())
+      {
+        promptJson["description"] = *def.description;
+      }
+      if (def.icons.has_value())
+      {
+        promptJson["icons"] = *def.icons;
+      }
+      if (!def.arguments.empty())
+      {
+        jsonrpc::JsonValue argumentsJson = jsonrpc::JsonValue::array();
+        for (const auto &argument : def.arguments)
+        {
+          jsonrpc::JsonValue argumentJson = jsonrpc::JsonValue::object();
+          argumentJson["name"] = argument.name;
+          if (argument.title.has_value())
+          {
+            argumentJson["title"] = *argument.title;
+          }
+          if (argument.description.has_value())
+          {
+            argumentJson["description"] = *argument.description;
+          }
+          if (argument.required.has_value())
+          {
+            argumentJson["required"] = *argument.required;
+          }
+          if (argument.metadata.has_value())
+          {
+            argumentJson["_meta"] = *argument.metadata;
+          }
+          argumentsJson.push_back(std::move(argumentJson));
+        }
 
-      promptJson["arguments"] = std::move(argumentsJson);
-    }
-    if (definition.metadata.has_value())
-    {
-      promptJson["_meta"] = *definition.metadata;
-    }
-
-    promptsJson.push_back(std::move(promptJson));
-  }
-
-  jsonrpc::SuccessResponse response;
-  response.id = request.id;
-  response.result = jsonrpc::JsonValue::object();
-  response.result["prompts"] = std::move(promptsJson);
-  if (window.nextCursor.has_value())
-  {
-    response.result["nextCursor"] = *window.nextCursor;
-  }
-
-  return response;
+        promptJson["arguments"] = std::move(argumentsJson);
+      }
+      if (def.metadata.has_value())
+      {
+        promptJson["_meta"] = *def.metadata;
+      }
+      return promptJson;
+    },
+    "prompts");
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)

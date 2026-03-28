@@ -52,6 +52,7 @@ add_library(mcp::sdk ALIAS mcp_sdk)
 
 set(MCP_SDK_SOURCES
     src/jsonrpc/messages.cpp
+    src/jsonrpc/response_factories.cpp
     src/jsonrpc/router.cpp
     src/auth/client_registration.cpp
     src/auth/loopback_receiver.cpp
@@ -62,6 +63,7 @@ set(MCP_SDK_SOURCES
     src/detail/initialize_codec.cpp
     src/security/crypto_random.cpp
     src/server/detail/helpers.cpp
+    src/server/detail/list_handler_helpers.cpp
     src/server/server.cpp
     src/server/stdio_runner.cpp
     src/server/streamable_http_runner.cpp

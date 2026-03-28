@@ -4,6 +4,7 @@
 
 #include <mcp/export.hpp>
 #include <mcp/jsonrpc/error_response.hpp>
+#include <mcp/jsonrpc/success_response.hpp>
 #include <mcp/jsonrpc/types.hpp>
 #include <mcp/sdk/errors.hpp>
 
@@ -26,5 +27,14 @@ MCP_SDK_EXPORT auto makeErrorResponse(JsonRpcError error, std::optional<RequestI
  * @return ErrorResponse structure with hasUnknownId set to true
  */
 MCP_SDK_EXPORT auto makeUnknownIdErrorResponse(JsonRpcError error) -> ErrorResponse;
+
+/**
+ * @brief Create a success response with the given ID and result object.
+ *
+ * @param requestId The request ID to echo
+ * @param result The result object (will be moved)
+ * @return SuccessResponse with id and result set
+ */
+MCP_SDK_EXPORT auto makeSuccessResponse(const RequestId &requestId, JsonValue result) -> SuccessResponse;
 
 }  // namespace mcp::jsonrpc
