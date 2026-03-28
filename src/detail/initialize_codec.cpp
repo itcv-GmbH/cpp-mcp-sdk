@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "mcp/detail/initialize_codec.hpp"
-#include "mcp/export.hpp"
 
 #include <jsoncons/json.hpp>  // NOLINT(misc-include-cleaner)
 
@@ -60,7 +59,7 @@ auto parseIcon(const jsoncons::json &iconJson) -> std::optional<lifecycle::sessi
 
 }  // namespace
 
-MCP_SDK_EXPORT auto iconToJson(const lifecycle::session::Icon &icon) -> jsoncons::json
+auto iconToJson(const lifecycle::session::Icon &icon) -> jsoncons::json
 {
   jsoncons::json iconJson = jsoncons::json::object();
   iconJson["src"] = icon.src();
@@ -83,7 +82,7 @@ MCP_SDK_EXPORT auto iconToJson(const lifecycle::session::Icon &icon) -> jsoncons
   return iconJson;
 }
 
-MCP_SDK_EXPORT auto implementationToJson(const lifecycle::session::Implementation &implementation) -> jsoncons::json
+auto implementationToJson(const lifecycle::session::Implementation &implementation) -> jsoncons::json
 {
   jsoncons::json implementationJson = jsoncons::json::object();
   implementationJson["name"] = implementation.name();
@@ -118,7 +117,7 @@ MCP_SDK_EXPORT auto implementationToJson(const lifecycle::session::Implementatio
   return implementationJson;
 }
 
-MCP_SDK_EXPORT auto parseImplementation(const jsoncons::json &implementationJson, std::string defaultName, std::string defaultVersion) -> lifecycle::session::Implementation
+auto parseImplementation(const jsoncons::json &implementationJson, std::string defaultName, std::string defaultVersion) -> lifecycle::session::Implementation
 {
   if (!implementationJson.is_object())
   {
@@ -168,7 +167,7 @@ MCP_SDK_EXPORT auto parseImplementation(const jsoncons::json &implementationJson
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-MCP_SDK_EXPORT auto clientCapabilitiesToJson(const lifecycle::session::ClientCapabilities &capabilities) -> jsoncons::json
+auto clientCapabilitiesToJson(const lifecycle::session::ClientCapabilities &capabilities) -> jsoncons::json
 {
   jsoncons::json capabilitiesJson = jsoncons::json::object();
 
@@ -263,7 +262,7 @@ MCP_SDK_EXPORT auto clientCapabilitiesToJson(const lifecycle::session::ClientCap
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-MCP_SDK_EXPORT auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> lifecycle::session::ClientCapabilities
+auto parseClientCapabilities(const jsoncons::json &capabilitiesJson) -> lifecycle::session::ClientCapabilities
 {
   if (!capabilitiesJson.is_object())
   {
@@ -346,7 +345,7 @@ MCP_SDK_EXPORT auto parseClientCapabilities(const jsoncons::json &capabilitiesJs
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-MCP_SDK_EXPORT auto serverCapabilitiesToJson(const lifecycle::session::ServerCapabilities &capabilities) -> jsoncons::json
+auto serverCapabilitiesToJson(const lifecycle::session::ServerCapabilities &capabilities) -> jsoncons::json
 {
   jsoncons::json capabilitiesJson = jsoncons::json::object();
 
@@ -432,7 +431,7 @@ MCP_SDK_EXPORT auto serverCapabilitiesToJson(const lifecycle::session::ServerCap
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-MCP_SDK_EXPORT auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> lifecycle::session::ServerCapabilities
+auto parseServerCapabilities(const jsoncons::json &capabilitiesJson) -> lifecycle::session::ServerCapabilities
 {
   if (!capabilitiesJson.is_object())
   {

@@ -13,11 +13,13 @@
 #include "mcp/jsonrpc/message.hpp"
 
 #include "mcp/jsonrpc/encode_options.hpp"
+#include "mcp/jsonrpc/error_factories.hpp"
 #include "mcp/jsonrpc/error_response.hpp"
 #include "mcp/jsonrpc/message_functions.hpp"
 #include "mcp/jsonrpc/message_validation_error.hpp"
 #include "mcp/jsonrpc/notification.hpp"
 #include "mcp/jsonrpc/request.hpp"
+#include "mcp/jsonrpc/response_factories.hpp"
 #include "mcp/jsonrpc/success_response.hpp"
 #include "mcp/jsonrpc/types.hpp"
 #include "mcp/schema/format_diagnostics.hpp"
@@ -520,7 +522,7 @@ auto serializeMessage(const Message &message, const EncodeOptions &options) -> s
   return serializedMessage;
 }
 
-MCP_SDK_EXPORT auto makeJsonRpcError(JsonRpcErrorCode code, std::string message, std::optional<JsonValue> data) -> JsonRpcError
+auto makeJsonRpcError(JsonRpcErrorCode code, std::string message, std::optional<JsonValue> data) -> JsonRpcError
 {
   JsonRpcError error;
   error.code = static_cast<std::int32_t>(code);
@@ -529,37 +531,37 @@ MCP_SDK_EXPORT auto makeJsonRpcError(JsonRpcErrorCode code, std::string message,
   return error;
 }
 
-MCP_SDK_EXPORT auto makeParseError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
+auto makeParseError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
 {
   return makeJsonRpcError(JsonRpcErrorCode::kParseError, std::move(message), std::move(data));
 }
 
-MCP_SDK_EXPORT auto makeInvalidRequestError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
+auto makeInvalidRequestError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
 {
   return makeJsonRpcError(JsonRpcErrorCode::kInvalidRequest, std::move(message), std::move(data));
 }
 
-MCP_SDK_EXPORT auto makeMethodNotFoundError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
+auto makeMethodNotFoundError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
 {
   return makeJsonRpcError(JsonRpcErrorCode::kMethodNotFound, std::move(message), std::move(data));
 }
 
-MCP_SDK_EXPORT auto makeInvalidParamsError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
+auto makeInvalidParamsError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
 {
   return makeJsonRpcError(JsonRpcErrorCode::kInvalidParams, std::move(message), std::move(data));
 }
 
-MCP_SDK_EXPORT auto makeInternalError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
+auto makeInternalError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
 {
   return makeJsonRpcError(JsonRpcErrorCode::kInternalError, std::move(message), std::move(data));
 }
 
-MCP_SDK_EXPORT auto makeUrlElicitationRequiredError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
+auto makeUrlElicitationRequiredError(std::optional<JsonValue> data, std::string message) -> JsonRpcError
 {
   return makeJsonRpcError(JsonRpcErrorCode::kUrlElicitationRequired, std::move(message), std::move(data));
 }
 
-MCP_SDK_EXPORT auto makeErrorResponse(JsonRpcError error, std::optional<RequestId> id) -> ErrorResponse
+auto makeErrorResponse(JsonRpcError error, std::optional<RequestId> id) -> ErrorResponse
 {
   ErrorResponse response;
   response.id = std::move(id);
@@ -568,7 +570,7 @@ MCP_SDK_EXPORT auto makeErrorResponse(JsonRpcError error, std::optional<RequestI
   return response;
 }
 
-MCP_SDK_EXPORT auto makeUnknownIdErrorResponse(JsonRpcError error) -> ErrorResponse
+auto makeUnknownIdErrorResponse(JsonRpcError error) -> ErrorResponse
 {
   ErrorResponse response;
   response.id = std::nullopt;
