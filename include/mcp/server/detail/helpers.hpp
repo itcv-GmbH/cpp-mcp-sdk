@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/request_context.hpp>
 #include <mcp/jsonrpc/response.hpp>
 #include <mcp/jsonrpc/types.hpp>
@@ -60,28 +61,28 @@ enum class ToolTaskSupport : std::uint8_t
   kRequired,
 };
 
-auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>;
-auto makePingResponse(const jsonrpc::RequestId &requestId) -> jsonrpc::Response;
-auto makeMethodNotFoundResponse(const jsonrpc::RequestId &requestId, std::string_view method) -> jsonrpc::Response;
-auto makeInvalidParamsResponse(const jsonrpc::RequestId &requestId, std::string message, std::optional<jsonrpc::JsonValue> data = std::nullopt) -> jsonrpc::Response;
-auto parseToolTaskSupport(const ToolDefinition &definition) -> ToolTaskSupport;
-auto makeResourceNotFoundResponse(const jsonrpc::RequestId &requestId, const std::string &uri) -> jsonrpc::Response;
-auto sessionKeyForContext(const jsonrpc::RequestContext &context) -> std::string;
-auto encodeStandardBase64(std::string_view bytes) -> std::string;
-auto executeToolCall(const jsonrpc::RequestContext &context,
-                     const jsonrpc::RequestId &requestId,
-                     const std::string &toolName,
-                     const ToolDefinition &definition,
-                     const ToolHandler &handler,
-                     jsonrpc::JsonValue arguments) -> jsonrpc::Response;
-auto mcpSchemaValidator() -> const schema::Validator &;
-auto makeLifecycleRejectedResponse(const jsonrpc::RequestId &requestId, std::string_view method) -> jsonrpc::Response;
-auto defaultServerInfo() -> lifecycle::session::Implementation;
-auto makePaginationCursor(ListEndpoint endpoint, std::size_t startIndex) -> std::string;
-auto parsePaginationCursor(ListEndpoint endpoint, std::string_view cursor) -> std::optional<std::size_t>;
-auto logLevelToString(LogLevel level) -> std::string_view;
-auto parseLogLevel(std::string_view level) -> std::optional<LogLevel>;
-auto logLevelWeight(LogLevel level) -> int;
-auto capabilityForMethod(std::string_view method) -> std::optional<std::string_view>;
+MCP_SDK_EXPORT auto makeReadyResponseFuture(jsonrpc::Response response) -> std::future<jsonrpc::Response>;
+MCP_SDK_EXPORT auto makePingResponse(const jsonrpc::RequestId &requestId) -> jsonrpc::Response;
+MCP_SDK_EXPORT auto makeMethodNotFoundResponse(const jsonrpc::RequestId &requestId, std::string_view method) -> jsonrpc::Response;
+MCP_SDK_EXPORT auto makeInvalidParamsResponse(const jsonrpc::RequestId &requestId, std::string message, std::optional<jsonrpc::JsonValue> data = std::nullopt) -> jsonrpc::Response;
+MCP_SDK_EXPORT auto parseToolTaskSupport(const ToolDefinition &definition) -> ToolTaskSupport;
+MCP_SDK_EXPORT auto makeResourceNotFoundResponse(const jsonrpc::RequestId &requestId, const std::string &uri) -> jsonrpc::Response;
+MCP_SDK_EXPORT auto sessionKeyForContext(const jsonrpc::RequestContext &context) -> std::string;
+MCP_SDK_EXPORT auto encodeStandardBase64(std::string_view bytes) -> std::string;
+MCP_SDK_EXPORT auto executeToolCall(const jsonrpc::RequestContext &context,
+                                    const jsonrpc::RequestId &requestId,
+                                    const std::string &toolName,
+                                    const ToolDefinition &definition,
+                                    const ToolHandler &handler,
+                                    jsonrpc::JsonValue arguments) -> jsonrpc::Response;
+MCP_SDK_EXPORT auto mcpSchemaValidator() -> const schema::Validator &;
+MCP_SDK_EXPORT auto makeLifecycleRejectedResponse(const jsonrpc::RequestId &requestId, std::string_view method) -> jsonrpc::Response;
+MCP_SDK_EXPORT auto defaultServerInfo() -> lifecycle::session::Implementation;
+MCP_SDK_EXPORT auto makePaginationCursor(ListEndpoint endpoint, std::size_t startIndex) -> std::string;
+MCP_SDK_EXPORT auto parsePaginationCursor(ListEndpoint endpoint, std::string_view cursor) -> std::optional<std::size_t>;
+MCP_SDK_EXPORT auto logLevelToString(LogLevel level) -> std::string_view;
+MCP_SDK_EXPORT auto parseLogLevel(std::string_view level) -> std::optional<LogLevel>;
+MCP_SDK_EXPORT auto logLevelWeight(LogLevel level) -> int;
+MCP_SDK_EXPORT auto capabilityForMethod(std::string_view method) -> std::optional<std::string_view>;
 
 }  // namespace mcp::server::detail

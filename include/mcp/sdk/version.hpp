@@ -41,7 +41,7 @@ private:
   std::optional<std::string> negotiatedProtocolVersion_;
 };
 
-auto getLibraryVersion() noexcept -> const char *;
+MCP_SDK_EXPORT auto getLibraryVersion() noexcept -> const char *;
 
 inline auto getVersion() noexcept -> const char *
 {

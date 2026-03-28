@@ -26,16 +26,17 @@
 #include <mcp/auth/oauth_token_request_execution_request.hpp>
 #include <mcp/auth/oauth_token_storage.hpp>
 #include <mcp/auth/pkce_code_pair.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
 
-auto validateAuthorizationServerPkceS256Support(const AuthorizationServerMetadata &metadata) -> void;
-auto validateRedirectUriForAuthorizationCodeFlow(std::string_view redirectUri) -> void;
-auto generatePkceCodePair(std::size_t verifierEntropyBytes = kDefaultPkceVerifierEntropyBytes) -> PkceCodePair;
-auto buildAuthorizationUrl(const OAuthAuthorizationUrlRequest &request) -> std::string;
-auto buildTokenExchangeHttpRequest(const OAuthTokenExchangeRequest &request) -> OAuthTokenHttpRequest;
-auto executeTokenRequestWithPolicy(const OAuthTokenRequestExecutionRequest &request) -> OAuthHttpResponse;
-auto executeProtectedResourceRequestWithStepUp(const OAuthStepUpExecutionRequest &request) -> OAuthHttpResponse;
+MCP_SDK_EXPORT auto validateAuthorizationServerPkceS256Support(const AuthorizationServerMetadata &metadata) -> void;
+MCP_SDK_EXPORT auto validateRedirectUriForAuthorizationCodeFlow(std::string_view redirectUri) -> void;
+MCP_SDK_EXPORT auto generatePkceCodePair(std::size_t verifierEntropyBytes = kDefaultPkceVerifierEntropyBytes) -> PkceCodePair;
+MCP_SDK_EXPORT auto buildAuthorizationUrl(const OAuthAuthorizationUrlRequest &request) -> std::string;
+MCP_SDK_EXPORT auto buildTokenExchangeHttpRequest(const OAuthTokenExchangeRequest &request) -> OAuthTokenHttpRequest;
+MCP_SDK_EXPORT auto executeTokenRequestWithPolicy(const OAuthTokenRequestExecutionRequest &request) -> OAuthHttpResponse;
+MCP_SDK_EXPORT auto executeProtectedResourceRequestWithStepUp(const OAuthStepUpExecutionRequest &request) -> OAuthHttpResponse;
 
 }  // namespace mcp::auth

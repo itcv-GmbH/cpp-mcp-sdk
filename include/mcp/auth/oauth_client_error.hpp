@@ -4,11 +4,12 @@
 #include <string>
 
 #include <mcp/auth/oauth_client_error_code.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
 
-class OAuthClientError : public std::runtime_error
+class MCP_SDK_EXPORT OAuthClientError : public std::runtime_error
 {
 public:
   OAuthClientError(OAuthClientErrorCode code, const std::string &message);

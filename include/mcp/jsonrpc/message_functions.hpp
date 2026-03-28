@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/encode_options.hpp>
 #include <mcp/jsonrpc/message.hpp>
 #include <mcp/jsonrpc/message_validation_error.hpp>
@@ -26,7 +27,7 @@ namespace mcp::jsonrpc
  * - Missing required JSON-RPC fields (jsonrpc, method for requests)
  * - Type mismatches in message structure
  */
-auto parseMessage(std::string_view utf8Json) -> Message;
+MCP_SDK_EXPORT auto parseMessage(std::string_view utf8Json) -> Message;
 
 /**
  * @brief Parse a JSON-RPC message from a jsoncons value.
@@ -35,7 +36,7 @@ auto parseMessage(std::string_view utf8Json) -> Message;
  * @return Parsed Message variant
  * @throws MessageValidationError for invalid message structure
  */
-auto parseMessageJson(const JsonValue &messageJson) -> Message;
+MCP_SDK_EXPORT auto parseMessageJson(const JsonValue &messageJson) -> Message;
 
 /**
  * @brief Convert a Message to a jsoncons JSON value.
@@ -43,7 +44,7 @@ auto parseMessageJson(const JsonValue &messageJson) -> Message;
  * @param message Message to convert
  * @return JSON value representation
  */
-auto toJson(const Message &message) -> JsonValue;
+MCP_SDK_EXPORT auto toJson(const Message &message) -> JsonValue;
 
 /**
  * @brief Serialize a Message to a JSON string.
@@ -53,6 +54,6 @@ auto toJson(const Message &message) -> JsonValue;
  * @return JSON string
  * @throws std::runtime_error on serialization failure (rare)
  */
-auto serializeMessage(const Message &message, const EncodeOptions &options = {}) -> std::string;
+MCP_SDK_EXPORT auto serializeMessage(const Message &message, const EncodeOptions &options = {}) -> std::string;
 
 }  // namespace mcp::jsonrpc

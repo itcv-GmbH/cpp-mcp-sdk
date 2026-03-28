@@ -5,6 +5,8 @@
 #include <string>
 #include <string_view>
 
+#include <mcp/export.hpp>
+
 namespace mcp::util
 {
 
@@ -19,9 +21,9 @@ enum class TaskStatus : std::uint8_t
   kCancelled,
 };
 
-auto toString(TaskStatus status) -> std::string_view;
-auto taskStatusFromString(std::string_view status) -> std::optional<TaskStatus>;
-auto isTerminalTaskStatus(TaskStatus status) -> bool;
-auto isValidTaskStatusTransition(TaskStatus from, TaskStatus targetStatus) -> bool;
+MCP_SDK_EXPORT auto toString(TaskStatus status) -> std::string_view;
+MCP_SDK_EXPORT auto taskStatusFromString(std::string_view status) -> std::optional<TaskStatus>;
+MCP_SDK_EXPORT auto isTerminalTaskStatus(TaskStatus status) -> bool;
+MCP_SDK_EXPORT auto isValidTaskStatusTransition(TaskStatus from, TaskStatus targetStatus) -> bool;
 
 }  // namespace mcp::util

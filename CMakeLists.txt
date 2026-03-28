@@ -201,7 +201,6 @@ set_target_properties(mcp_sdk PROPERTIES
 # Windows DLL-specific configuration
 if(BUILD_SHARED_LIBS AND WIN32)
     set_target_properties(mcp_sdk PROPERTIES
-        WINDOWS_EXPORT_ALL_SYMBOLS ON
         DEFINE_SYMBOL MCP_SDK_BUILDING_LIBRARY
     )
     

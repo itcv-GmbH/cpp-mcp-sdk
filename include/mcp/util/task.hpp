@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/util/task_status.hpp>
 
@@ -21,6 +22,6 @@ struct Task
   std::optional<std::int64_t> pollInterval;
 };
 
-auto taskToJson(const Task &task) -> jsonrpc::JsonValue;
+MCP_SDK_EXPORT auto taskToJson(const Task &task) -> jsonrpc::JsonValue;
 
 }  // namespace mcp::util

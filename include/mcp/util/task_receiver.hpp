@@ -25,7 +25,7 @@ inline constexpr std::size_t kDefaultTaskListPageSize = 50;
 
 using TaskStatusObserver = std::function<void(const jsonrpc::RequestContext &, const Task &)>;
 
-auto authContextForRequest(const jsonrpc::RequestContext &context) -> std::optional<std::string>;
+MCP_SDK_EXPORT auto authContextForRequest(const jsonrpc::RequestContext &context) -> std::optional<std::string>;
 
 class MCP_SDK_EXPORT TaskReceiver
 {

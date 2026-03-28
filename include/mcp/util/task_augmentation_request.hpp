@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/all.hpp>
 
 namespace mcp::util
@@ -16,6 +17,6 @@ struct TaskAugmentationRequest
   std::optional<std::int64_t> ttl;
 };
 
-auto parseTaskAugmentation(const std::optional<jsonrpc::JsonValue> &params, std::string *errorMessage = nullptr) -> TaskAugmentationRequest;
+MCP_SDK_EXPORT auto parseTaskAugmentation(const std::optional<jsonrpc::JsonValue> &params, std::string *errorMessage = nullptr) -> TaskAugmentationRequest;
 
 }  // namespace mcp::util

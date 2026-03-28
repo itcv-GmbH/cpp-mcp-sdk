@@ -5,6 +5,7 @@
 #include <string_view>
 #include <utility>
 
+#include "mcp/export.hpp"
 #include "mcp/schema/validator.hpp"
 
 #include <jsoncons_ext/jsonschema/common/validator.hpp>
@@ -329,7 +330,7 @@ auto Validator::metadata() const noexcept -> const PinnedSchemaMetadata &
   return metadata_;
 }
 
-auto formatDiagnostics(const ValidationResult &result) -> std::string
+MCP_SDK_EXPORT auto formatDiagnostics(const ValidationResult &result) -> std::string
 {
   std::string encodedDiagnostics;
   diagnosticsJson(result).dump(encodedDiagnostics);

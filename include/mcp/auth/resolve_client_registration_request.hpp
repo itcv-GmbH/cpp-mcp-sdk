@@ -10,6 +10,7 @@
 #include <mcp/auth/client_registration_result.hpp>
 #include <mcp/auth/client_registration_strategy_configuration.hpp>
 #include <mcp/auth/in_memory_client_credentials_store.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
@@ -25,6 +26,6 @@ struct ResolveClientRegistrationRequest
 };
 
 // Free function for client registration resolution
-auto resolveClientRegistration(const ResolveClientRegistrationRequest &request) -> ClientRegistrationResult;
+MCP_SDK_EXPORT auto resolveClientRegistration(const ResolveClientRegistrationRequest &request) -> ClientRegistrationResult;
 
 }  // namespace mcp::auth

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <mcp/auth/client_authentication_method.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
@@ -20,8 +21,8 @@ struct ClientIdMetadataDocumentConfiguration
 };
 
 // Free functions for client ID metadata document handling
-auto validateClientIdMetadataDocumentClientIdUrl(std::string_view clientIdUrl) -> void;
-auto buildClientIdMetadataDocumentPayload(const ClientIdMetadataDocumentConfiguration &configuration) -> std::string;
-auto validateClientIdMetadataDocumentPayload(std::string_view metadataDocumentJson, std::string_view expectedClientIdUrl) -> void;
+MCP_SDK_EXPORT auto validateClientIdMetadataDocumentClientIdUrl(std::string_view clientIdUrl) -> void;
+MCP_SDK_EXPORT auto buildClientIdMetadataDocumentPayload(const ClientIdMetadataDocumentConfiguration &configuration) -> std::string;
+MCP_SDK_EXPORT auto validateClientIdMetadataDocumentPayload(std::string_view metadataDocumentJson, std::string_view expectedClientIdUrl) -> void;
 
 }  // namespace mcp::auth

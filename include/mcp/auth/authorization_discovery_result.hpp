@@ -9,6 +9,7 @@
 #include <mcp/auth/bearer_www_authenticate_challenge.hpp>
 #include <mcp/auth/oauth_scope_set.hpp>
 #include <mcp/auth/protected_resource_metadata_data.hpp>
+#include <mcp/export.hpp>
 
 namespace mcp::auth
 {
@@ -26,10 +27,10 @@ struct AuthorizationDiscoveryResult
 };
 
 // Free functions for parsing and authorization discovery
-auto parseBearerWwwAuthenticateChallenges(const std::vector<std::string> &headerValues) -> std::vector<BearerWwwAuthenticateChallenge>;
-auto parseProtectedResourceMetadata(std::string_view jsonDocument) -> ProtectedResourceMetadata;
-auto parseAuthorizationServerMetadata(std::string_view jsonDocument) -> AuthorizationServerMetadata;
-auto selectScopesForAuthorization(const std::vector<BearerWwwAuthenticateChallenge> &bearerChallenges, const ProtectedResourceMetadata &metadata) -> std::optional<OAuthScopeSet>;
-auto discoverAuthorizationMetadata(const AuthorizationDiscoveryRequest &request) -> AuthorizationDiscoveryResult;
+MCP_SDK_EXPORT auto parseBearerWwwAuthenticateChallenges(const std::vector<std::string> &headerValues) -> std::vector<BearerWwwAuthenticateChallenge>;
+MCP_SDK_EXPORT auto parseProtectedResourceMetadata(std::string_view jsonDocument) -> ProtectedResourceMetadata;
+MCP_SDK_EXPORT auto parseAuthorizationServerMetadata(std::string_view jsonDocument) -> AuthorizationServerMetadata;
+MCP_SDK_EXPORT auto selectScopesForAuthorization(const std::vector<BearerWwwAuthenticateChallenge> &bearerChallenges, const ProtectedResourceMetadata &metadata) -> std::optional<OAuthScopeSet>;
+MCP_SDK_EXPORT auto discoverAuthorizationMetadata(const AuthorizationDiscoveryRequest &request) -> AuthorizationDiscoveryResult;
 
 }  // namespace mcp::auth

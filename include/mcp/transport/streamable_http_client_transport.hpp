@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 
+#include <mcp/export.hpp>
 #include <mcp/jsonrpc/all.hpp>
 #include <mcp/transport/http/streamable_http_client.hpp>
 #include <mcp/transport/http/streamable_http_client_options.hpp>
@@ -49,8 +50,8 @@ namespace mcp::transport
  * @param inboundMessageHandler Callback for received messages
  * @return std::shared_ptr<Transport> A Transport implementation
  */
-auto makeStreamableHttpClientTransport(http::StreamableHttpClientOptions options,
-                                       http::StreamableHttpClient::RequestExecutor requestExecutor,
-                                       std::function<void(const jsonrpc::Message &)> inboundMessageHandler) -> std::shared_ptr<Transport>;
+MCP_SDK_EXPORT auto makeStreamableHttpClientTransport(http::StreamableHttpClientOptions options,
+                                                      http::StreamableHttpClient::RequestExecutor requestExecutor,
+                                                      std::function<void(const jsonrpc::Message &)> inboundMessageHandler) -> std::shared_ptr<Transport>;
 
 }  // namespace mcp::transport

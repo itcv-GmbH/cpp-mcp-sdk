@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mcp/export.hpp>
 #include <stdexcept>
 
 namespace mcp::jsonrpc
@@ -13,7 +14,7 @@ namespace mcp::jsonrpc
  * - Missing required JSON-RPC fields (jsonrpc, method for requests)
  * - Type mismatches in message structure
  */
-class MessageValidationError : public std::runtime_error
+class MCP_SDK_EXPORT MessageValidationError : public std::runtime_error
 {
 public:
   using std::runtime_error::runtime_error;
