@@ -137,13 +137,8 @@ target_link_libraries(mcp_sdk
         jsoncons
 )
 
-# Link Boost.System and Boost.Filesystem only if targets exist (Boost < 1.81)
-if(TARGET Boost::system)
-    target_link_libraries(mcp_sdk PUBLIC Boost::system)
-endif()
-if(TARGET Boost::filesystem)
-    target_link_libraries(mcp_sdk PUBLIC Boost::filesystem)
-endif()
+# Boost.System and Boost.Filesystem are transitively provided by Boost::asio and Boost::beast.
+# Explicit linking causes duplicate library warnings with shared builds, so we rely on transitive deps.
 
 if(WIN32)
     target_link_libraries(mcp_sdk PUBLIC bcrypt)
