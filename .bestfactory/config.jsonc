@@ -1,0 +1,52 @@
+// BestFactory Project Configuration
+// This file is auto-generated on first activation.
+// Edit to customize workflows, policies, and verification commands.
+
+{
+  "version": "1.0",
+  "workflows": {
+    "default": "software-full"
+  },
+  "policies": {
+    "default": "balanced"
+  },
+  "models": {
+    "aliases": {
+      // Map abstract policy pairs to concrete provider/model pairs.
+      // "default/default-model": { "providerId": "openai", "modelId": "gpt-5.4" },
+      // "default/high-quality-model": { "providerId": "openai", "modelId": "gpt-5.4" }
+    }
+  },
+  "sessions": {
+    "maxReusePerWorkstream": 3,
+    "deleteRetiredSessions": true,
+    "keepRecentPerWorkstream": 3
+  },
+  "sync": {
+    "autoSync": true,
+    "confirmOverwrite": true
+  },
+  "guards": {
+    "protectStateAccess": true
+  },
+  "git": {
+    "requireCommits": true,
+    "excludedPaths": [
+      ".bestfactory/state/**",
+      ".bestfactory/**/*.generated.md",
+      ".bestfactory/sub-projects/**/versions/**",
+      ".bestfactory/sub-projects/**/requirements/current.md",
+      ".bestfactory/sub-projects/**/plans/current.md",
+      ".bestfactory/sub-projects/**/reports/**/current.md",
+      ".bestfactory/sub-projects/**/jobs/**/task-graph/current.json"
+    ]
+  },
+  "verification": {
+    "commands": [
+      // Add explicit verification commands here
+      // Example:
+      // { "name": "test", "command": "bun test" },
+      // { "name": "typecheck", "command": "bun run typecheck" }
+    ]
+  }
+}
