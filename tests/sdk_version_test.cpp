@@ -44,6 +44,10 @@ TEST_CASE("Protocol version constants format", "[sdk][version]")
   std::string_view fallback = mcp::kFallbackProtocolVersion;
   REQUIRE(mcp::transport::http::isValidProtocolVersion(fallback));
 
+  // Validate kStableProtocolVersion matches YYYY-MM-DD format
+  std::string_view stable = mcp::kStableProtocolVersion;
+  REQUIRE(mcp::transport::http::isValidProtocolVersion(stable));
+
   // Validate kLegacyProtocolVersion matches YYYY-MM-DD format
   std::string_view legacy = mcp::kLegacyProtocolVersion;
   REQUIRE(mcp::transport::http::isValidProtocolVersion(legacy));
@@ -53,6 +57,9 @@ TEST_CASE("Protocol version constants are distinct", "[sdk][version]")
 {
   // All protocol version constants should be different
   REQUIRE(mcp::kLatestProtocolVersion != mcp::kFallbackProtocolVersion);
+  REQUIRE(mcp::kLatestProtocolVersion != mcp::kStableProtocolVersion);
+  REQUIRE(mcp::kStableProtocolVersion != mcp::kFallbackProtocolVersion);
+  REQUIRE(mcp::kStableProtocolVersion != mcp::kLegacyProtocolVersion);
   REQUIRE(mcp::kFallbackProtocolVersion != mcp::kLegacyProtocolVersion);
   REQUIRE(mcp::kLatestProtocolVersion != mcp::kLegacyProtocolVersion);
 }

@@ -25,8 +25,9 @@ struct HttpServerOptions
   bool requireSessionId = false;
   std::vector<std::string> supportedProtocolVersions = {
     std::string(kLatestProtocolVersion),
-    std::string(kLegacyProtocolVersion),
+    std::string(kStableProtocolVersion),
     std::string(kFallbackProtocolVersion),
+    std::string(kLegacyProtocolVersion),
   };
   /// Error reporter callback for background execution context failures.
   /// If not set, errors are silently suppressed.

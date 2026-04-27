@@ -15,6 +15,7 @@ namespace sdk
 inline constexpr std::string_view kSdkVersion = "0.1.0";
 inline constexpr std::string_view kJsonRpcVersion = "2.0";
 inline constexpr std::string_view kLatestProtocolVersion = "2025-11-25";
+inline constexpr std::string_view kStableProtocolVersion = "2025-06-18";
 inline constexpr std::string_view kFallbackProtocolVersion = "2025-03-26";
 inline constexpr std::string_view kLegacyProtocolVersion = "2024-11-05";
 
@@ -63,6 +64,7 @@ using sdk::kFallbackProtocolVersion;
 using sdk::kJsonRpcVersion;
 using sdk::kLatestProtocolVersion;
 using sdk::kLegacyProtocolVersion;
+using sdk::kStableProtocolVersion;
 using sdk::kSdkVersion;
 using sdk::NegotiatedProtocolVersion;
 

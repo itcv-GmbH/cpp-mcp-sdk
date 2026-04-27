@@ -18,6 +18,8 @@ struct SessionOptions
   SessionThreading threading;
   std::vector<std::string> supportedProtocolVersions = {
     std::string(kLatestProtocolVersion),
+    std::string(kStableProtocolVersion),
+    std::string(kFallbackProtocolVersion),
     std::string(kLegacyProtocolVersion),
   };
   /// Error reporter callback for background execution context failures.

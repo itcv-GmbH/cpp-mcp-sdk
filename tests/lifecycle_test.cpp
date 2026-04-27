@@ -12,8 +12,10 @@
 using namespace mcp::lifecycle;
 using namespace mcp::lifecycle::session;
 namespace jsonrpc = mcp::jsonrpc;
+using mcp::kFallbackProtocolVersion;
 using mcp::kLatestProtocolVersion;
 using mcp::kLegacyProtocolVersion;
+using mcp::kStableProtocolVersion;
 
 TEST_CASE("Session starts in Created state", "[lifecycle][session]")
 {
@@ -39,8 +41,10 @@ TEST_CASE("Session defaults to standard protocol versions", "[lifecycle][session
   Session session;
 
   const auto &versions = session.supportedProtocolVersions();
-  REQUIRE(versions.size() >= 2);
+  REQUIRE(versions.size() == 4);
   REQUIRE(std::find(versions.begin(), versions.end(), std::string(kLatestProtocolVersion)) != versions.end());
+  REQUIRE(std::find(versions.begin(), versions.end(), std::string(kStableProtocolVersion)) != versions.end());
+  REQUIRE(std::find(versions.begin(), versions.end(), std::string(kFallbackProtocolVersion)) != versions.end());
   REQUIRE(std::find(versions.begin(), versions.end(), std::string(kLegacyProtocolVersion)) != versions.end());
 }
 
@@ -171,7 +175,7 @@ TEST_CASE("Server handles initialize request with supported version", "[lifecycl
   REQUIRE(*session.negotiatedProtocolVersion() == kLatestProtocolVersion);
 }
 
-TEST_CASE("Server negotiates version when client proposes unsupported version", "[lifecycle][server][negotiation]")
+TEST_CASE("Server suggests latest supported version when client proposes unsupported version", "[lifecycle][server][negotiation]")
 {
   Session session;
   session.setRole(SessionRole::kServer);
